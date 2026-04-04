@@ -4,6 +4,12 @@ import { Search } from "lucide-react";
 import type { Stock } from "@/src/types/investment";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 
+const jpyFmt = new Intl.NumberFormat("ja-JP", {
+  style: "currency",
+  currency: "JPY",
+  maximumFractionDigits: 0,
+});
+
 export function InventoryTable({ stocks }: { stocks: Stock[] }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
@@ -68,10 +74,21 @@ export function InventoryTable({ stocks }: { stocks: Stock[] }) {
                   )}
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <div className="flex flex-col items-end">
+                  <div className="flex flex-col items-end gap-0.5">
                     <span className="font-mono text-slate-300 font-bold">{stock.quantity}</span>
-                    <span className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">
-                      {stock.weight > 0 ? `${stock.weight}% Wgt` : "—"}
+                    {stock.currentPrice != null && stock.currentPrice > 0 ? (
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        @ {stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}
+                      </span>
+                    ) : null}
+                    <span className="text-[9px] text-slate-500 font-bold tracking-tighter">
+                      {stock.marketValue > 0 ? `${jpyFmt.format(stock.marketValue)}（推定）` : "—"}
+                    </span>
+                    {stock.valuationFactor !== 1 ? (
+                      <span className="text-[8px] text-amber-500/90 font-mono">factor {stock.valuationFactor}</span>
+                    ) : null}
+                    <span className="text-[9px] font-bold uppercase tracking-tighter text-blue-400">
+                      {stock.weight > 0 ? `${stock.weight.toFixed(1)}% wt` : stock.marketValue > 0 ? "0% wt" : "—"}
                     </span>
                   </div>
                 </td>

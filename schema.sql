@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS holdings (
   structure_tags TEXT NOT NULL DEFAULT '[]', -- text[] → JSON文字列で保持
   category TEXT NOT NULL CHECK (category IN ('Core','Satellite')),
   provider_symbol TEXT,                     -- Yahoo Finance 等の取得用シンボル（任意）
+  valuation_factor REAL NOT NULL DEFAULT 1, -- 指数等のスケール補正（評価額 = qty×価格×factor×為替）
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 
   FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE

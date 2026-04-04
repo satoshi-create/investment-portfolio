@@ -14,7 +14,12 @@ export function useAlphaSignals(stocks: Stock[]): Signal[] {
         const isWarning = lastThree.length >= 3 && lastThree.every((a) => a < 0);
         const isBuy = prevAlpha < 0 && currentAlpha > 0;
 
-        return { ...stock, isWarning, isBuy, currentAlpha };
+        return {
+          ...stock,
+          isWarning,
+          isBuy,
+          currentAlpha: currentAlpha ?? 0,
+        };
       })
       .filter((s) => s.isWarning || s.isBuy);
   }, [stocks]);

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState, useTransition } from "react";
 
 import { generateSignalsAction } from "@/app/actions/signals";
-import type { Signal, Stock } from "@/src/types/investment";
+import type { CoreSatelliteBreakdown, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
@@ -16,7 +16,14 @@ const DEFAULT_USER_ID =
     ? process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID
     : "user-satoshi";
 
-type DashboardPayload = { userId: string; stocks: Stock[]; signals: Signal[] };
+type DashboardPayload = {
+  userId: string;
+  stocks: Stock[];
+  signals: Signal[];
+  structureByTag: StructureTagSlice[];
+  coreSatellite: CoreSatelliteBreakdown;
+  totalMarketValue: number;
+};
 
 export function DashboardPage() {
   const [data, setData] = useState<DashboardPayload | null>(null);
@@ -32,16 +39,24 @@ export function DashboardPage() {
       const res = await fetch(`/api/dashboard?userId=${encodeURIComponent(DEFAULT_USER_ID)}`, {
         cache: "no-store",
       });
-      const json = (await res.json()) as DashboardPayload & { error?: string; hint?: string };
+      const json = (await res.json()) as Partial<DashboardPayload> & { error?: string; hint?: string };
       if (!res.ok) {
         setData(null);
         setError(json.error ?? `HTTP ${res.status}${json.hint ? ` — ${json.hint}` : ""}`);
         return;
       }
       setData({
-        userId: json.userId,
-        stocks: json.stocks,
-        signals: json.signals,
+        userId: json.userId!,
+        stocks: json.stocks ?? [],
+        signals: json.signals ?? [],
+        structureByTag: json.structureByTag ?? [],
+        coreSatellite: json.coreSatellite ?? {
+          coreWeightPercent: 0,
+          satelliteWeightPercent: 0,
+          targetCorePercent: 90,
+          coreGapVsTarget: 0,
+        },
+        totalMarketValue: json.totalMarketValue ?? 0,
       });
     } catch (e) {
       setData(null);
@@ -68,6 +83,14 @@ export function DashboardPage() {
 
   const stocks = data?.stocks ?? [];
   const signals = data?.signals ?? [];
+  const structureByTag = data?.structureByTag ?? [];
+  const coreSatellite = data?.coreSatellite ?? {
+    coreWeightPercent: 0,
+    satelliteWeightPercent: 0,
+    targetCorePercent: 90,
+    coreGapVsTarget: 0,
+  };
+  const totalMarketValue = data?.totalMarketValue ?? 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
@@ -116,7 +139,11 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <StrategySection />
+        <StrategySection
+          structureByTag={structureByTag}
+          coreSatellite={coreSatellite}
+          totalMarketValue={totalMarketValue}
+        />
         <SignalsSection signals={signals} />
         <InventoryTable stocks={stocks} />
       </div>

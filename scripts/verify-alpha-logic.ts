@@ -6,10 +6,14 @@ import assert from "node:assert/strict";
 import {
   classifyTickerInstrument,
   computeAlphaPercent,
+  convertValueToJpy,
   dailyReturnPercent,
+  quoteCurrencyForDashboardWeights,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
+  USD_JPY_RATE,
 } from "../src/lib/alpha-logic";
+import { normalizedHoldingValueJpy } from "../src/lib/dashboard-data";
 
 function eq(actual: unknown, expected: unknown, msg?: string) {
   assert.equal(actual, expected, msg);
@@ -44,5 +48,50 @@ eq(computeAlphaPercent(dailyReturnPercent(10_000, 10_200), 0), 2);
 
 eq(computeAlphaPercent(null, 1), null);
 eq(computeAlphaPercent(1, null), null);
+
+eq(convertValueToJpy(100, "JPY"), 100);
+eq(convertValueToJpy(2, "USD"), 2 * USD_JPY_RATE);
+
+eq(quoteCurrencyForDashboardWeights("NVDA"), "USD");
+eq(quoteCurrencyForDashboardWeights("06311181"), "JPY");
+
+// NVDA: qty × USD price × factor × USD_JPY
+eq(
+  normalizedHoldingValueJpy({
+    ticker: "NVDA",
+    quantity: 10,
+    currentPrice: 100,
+    valuationFactor: 1,
+  }),
+  10 * 100 * USD_JPY_RATE,
+);
+// JP fund: JPY path (no FX), factor scales index-style quotes toward NAV
+eq(
+  normalizedHoldingValueJpy({
+    ticker: "06311181",
+    quantity: 100,
+    currentPrice: 14_000,
+    valuationFactor: 0.000_02,
+  }),
+  100 * 14_000 * 0.000_02,
+);
+eq(
+  normalizedHoldingValueJpy({
+    ticker: "06311181",
+    quantity: 10,
+    currentPrice: 1000,
+    valuationFactor: 1,
+  }),
+  10_000,
+);
+eq(
+  normalizedHoldingValueJpy({
+    ticker: "06311181",
+    quantity: 1,
+    currentPrice: null,
+    valuationFactor: 1,
+  }),
+  0,
+);
 
 console.log("verify-alpha-logic: all assertions passed.");

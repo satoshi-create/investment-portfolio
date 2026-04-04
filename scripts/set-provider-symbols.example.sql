@@ -6,3 +6,6 @@
 
 -- Bulk by ticker pattern (digits-only JP codes):
 -- UPDATE holdings SET provider_symbol = ticker || '.T' WHERE provider_symbol IS NULL AND ticker GLOB '[0-9]*';
+
+-- Index / synthetic quotes: shrink notional so JPY weights match reality (tune per line):
+-- UPDATE holdings SET valuation_factor = 0.02 WHERE id = 'hold-fang' AND provider_symbol LIKE '^%';

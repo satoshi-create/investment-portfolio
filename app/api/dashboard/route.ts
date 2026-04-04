@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
-import { fetchStocksForUser, fetchUnresolvedSignalsForUser } from "@/src/lib/dashboard-data";
+import { fetchUnresolvedSignalsForUser, getDashboardData } from "@/src/lib/dashboard-data";
 import { getDb, isDbConfigured } from "@/src/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +19,15 @@ export async function GET(request: Request) {
 
   try {
     const db = getDb();
-    const [stocks, signals] = await Promise.all([
-      fetchStocksForUser(db, userId),
-      fetchUnresolvedSignalsForUser(db, userId),
-    ]);
-    return NextResponse.json({ userId, stocks, signals });
+    const [dash, signals] = await Promise.all([getDashboardData(db, userId), fetchUnresolvedSignalsForUser(db, userId)]);
+    return NextResponse.json({
+      userId,
+      stocks: dash.stocks,
+      signals,
+      structureByTag: dash.structureByTag,
+      coreSatellite: dash.coreSatellite,
+      totalMarketValue: dash.totalMarketValue,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
