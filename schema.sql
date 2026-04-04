@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS holdings (
   avg_acquisition_price REAL,                -- numeric
   structure_tags TEXT NOT NULL DEFAULT '[]', -- text[] → JSON文字列で保持
   category TEXT NOT NULL CHECK (category IN ('Core','Satellite')),
+  provider_symbol TEXT,                     -- Yahoo Finance 等の取得用シンボル（任意）
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 
   FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE

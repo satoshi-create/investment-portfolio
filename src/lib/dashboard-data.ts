@@ -1,12 +1,12 @@
 import type { Client } from "@libsql/client";
 
 import type { Signal, Stock } from "@/src/types/investment";
-import { SIGNAL_BENCHMARK_TICKER } from "@/src/lib/generate-signals";
+import { SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
 import { primaryStructureTag } from "@/src/lib/structure-tags";
 
 export async function fetchStocksForUser(db: Client, userId: string): Promise<Stock[]> {
   const h = await db.execute({
-    sql: `SELECT id, ticker, name, quantity, structure_tags, category
+    sql: `SELECT id, ticker, name, quantity, structure_tags, category, provider_symbol
           FROM holdings
           WHERE user_id = ?
           ORDER BY ticker`,
@@ -42,6 +42,7 @@ export async function fetchStocksForUser(db: Client, userId: string): Promise<St
       alphaHistory,
       weight: 0,
       quantity: Number(row.quantity),
+      providerSymbol: row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
     };
   });
 }
@@ -50,7 +51,7 @@ export async function fetchStocksForUser(db: Client, userId: string): Promise<St
 export async function fetchUnresolvedSignalsForUser(db: Client, userId: string): Promise<Signal[]> {
   const rs = await db.execute({
     sql: `SELECT s.id AS signal_id, s.signal_type, s.alpha_at_signal,
-                 h.ticker, h.name, h.structure_tags
+                 h.ticker, h.name, h.structure_tags, h.provider_symbol
           FROM signals s
           JOIN holdings h ON h.id = s.holding_id
           WHERE h.user_id = ? AND s.is_resolved = 0
@@ -75,6 +76,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       isWarning: isWarn,
       isBuy: isBuy,
       currentAlpha: alpha,
+      providerSymbol:
+        row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
     };
   });
 }

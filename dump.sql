@@ -22,17 +22,18 @@ CREATE TABLE IF NOT EXISTS holdings (
   avg_acquisition_price REAL,                -- numeric
   structure_tags TEXT NOT NULL DEFAULT '[]', -- text[] → JSON文字列で保持
   category TEXT NOT NULL CHECK (category IN ('Core','Satellite')),
+  provider_symbol TEXT,
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 
   FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
-INSERT INTO holdings VALUES('hold-nflx','user-satoshi','NFLX','Netflix Inc',2,600,'["FANG+"]','Satellite','2026-04-02 13:04:23');
-INSERT INTO holdings VALUES('hold-nvda','user-satoshi','NVDA','NVIDIA Corp',1,800,'["AI Infrastructure"]','Satellite','2026-04-02 13:04:23');
-INSERT INTO holdings VALUES('hold-cop','user-satoshi','COP','ConocoPhillips',1,110,'["老朽化インフラ"]','Satellite','2026-04-02 13:04:23');
-INSERT INTO holdings VALUES('hold-fang','user-satoshi','06311181','iFreeNEXT FANG+',389,45000,'["FANG+","Core-Sat"]','Core','2026-04-02 13:04:23');
-INSERT INTO holdings VALUES('hold-nio','user-satoshi','NIO','Nio Inc - ADR',1,15,'["非石油文明","EV"]','Satellite','2026-04-02 13:04:23');
-INSERT INTO holdings VALUES('hold-enph','user-satoshi','ENPH','Enphase Energy Inc',1,120,'["非石油文明","再エネ"]','Satellite','2026-04-02 13:04:23');
-INSERT INTO holdings VALUES('hold-wmt','user-satoshi','WMT','Walmart Inc',1,60,'["実体経済"]','Satellite','2026-04-02 13:04:23');
+INSERT INTO holdings (id,user_id,ticker,name,quantity,avg_acquisition_price,structure_tags,category,provider_symbol,created_at) VALUES('hold-nflx','user-satoshi','NFLX','Netflix Inc',2,600,'["FANG+"]','Satellite',NULL,'2026-04-02 13:04:23');
+INSERT INTO holdings (id,user_id,ticker,name,quantity,avg_acquisition_price,structure_tags,category,provider_symbol,created_at) VALUES('hold-nvda','user-satoshi','NVDA','NVIDIA Corp',1,800,'["AI Infrastructure"]','Satellite',NULL,'2026-04-02 13:04:23');
+INSERT INTO holdings (id,user_id,ticker,name,quantity,avg_acquisition_price,structure_tags,category,provider_symbol,created_at) VALUES('hold-cop','user-satoshi','COP','ConocoPhillips',1,110,'["老朽化インフラ"]','Satellite',NULL,'2026-04-02 13:04:23');
+INSERT INTO holdings (id,user_id,ticker,name,quantity,avg_acquisition_price,structure_tags,category,provider_symbol,created_at) VALUES('hold-fang','user-satoshi','06311181','iFreeNEXT FANG+',389,45000,'["FANG+","Core-Sat"]','Core',NULL,'2026-04-02 13:04:23');
+INSERT INTO holdings (id,user_id,ticker,name,quantity,avg_acquisition_price,structure_tags,category,provider_symbol,created_at) VALUES('hold-nio','user-satoshi','NIO','Nio Inc - ADR',1,15,'["非石油文明","EV"]','Satellite',NULL,'2026-04-02 13:04:23');
+INSERT INTO holdings (id,user_id,ticker,name,quantity,avg_acquisition_price,structure_tags,category,provider_symbol,created_at) VALUES('hold-enph','user-satoshi','ENPH','Enphase Energy Inc',1,120,'["非石油文明","再エネ"]','Satellite',NULL,'2026-04-02 13:04:23');
+INSERT INTO holdings (id,user_id,ticker,name,quantity,avg_acquisition_price,structure_tags,category,provider_symbol,created_at) VALUES('hold-wmt','user-satoshi','WMT','Walmart Inc',1,60,'["実体経済"]','Satellite',NULL,'2026-04-02 13:04:23');
 CREATE TABLE IF NOT EXISTS alpha_history (
   id TEXT PRIMARY KEY,                       -- uuid
   holding_id TEXT NOT NULL,

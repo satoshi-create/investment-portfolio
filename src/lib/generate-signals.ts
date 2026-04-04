@@ -1,9 +1,34 @@
 import type { Client } from "@libsql/client";
 
+import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
 import { getDb } from "@/src/lib/db";
+import type { HoldingPriceInput } from "@/src/lib/price-service";
+import type { Holding } from "@/src/types/investment";
 
-/** Alpha benchmark used for BUY/WARN rules (must exist in `benchmarks`). */
-export const SIGNAL_BENCHMARK_TICKER = "VOO";
+export { SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+
+/** Holdings row for `userId` including `provider_symbol` (for Yahoo / alpha sync). */
+export async function fetchHoldingsWithProviderForUser(db: Client, userId: string): Promise<Holding[]> {
+  const rs = await db.execute({
+    sql: `SELECT id, ticker, provider_symbol FROM holdings WHERE user_id = ? ORDER BY ticker`,
+    args: [userId],
+  });
+  return rs.rows.map((row) => ({
+    id: String(row.id),
+    ticker: String(row.ticker),
+    providerSymbol:
+      row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
+  }));
+}
+
+/** Bridge DB holdings → `fetchLatestAlphaSnapshotsForHoldings` / `fetchLatestAlphaSnapshot`. */
+export function holdingsToPriceInputs(holdings: Holding[]): HoldingPriceInput[] {
+  return holdings.map((h) => ({
+    holdingId: h.id,
+    ticker: h.ticker,
+    providerSymbol: h.providerSymbol,
+  }));
+}
 
 export type GenerateSignalsDetail = { holdingId: string; type: "BUY" | "WARN" };
 
@@ -51,16 +76,13 @@ export async function generateSignalsForUser(
   userId: string,
   db: Client = getDb(),
 ): Promise<GenerateSignalsResult> {
-  const holdingsRs = await db.execute({
-    sql: "SELECT id FROM holdings WHERE user_id = ?",
-    args: [userId],
-  });
+  const holdings = await fetchHoldingsWithProviderForUser(db, userId);
 
   const details: GenerateSignalsDetail[] = [];
   let inserted = 0;
 
-  for (const row of holdingsRs.rows) {
-    const holdingId = String(row.id);
+  for (const h of holdings) {
+    const holdingId = h.id;
     const alphaRs = await db.execute({
       sql: `SELECT recorded_at, alpha_value FROM alpha_history
             WHERE holding_id = ? AND benchmark_ticker = ?
@@ -80,7 +102,13 @@ export async function generateSignalsForUser(
       const last3 = alphas.slice(-3);
       if (last3.every((a) => a < 0)) {
         if (!(await signalExistsForDay(db, holdingId, "WARN", dateYmd))) {
-          await insertSignal(db, holdingId, "WARN", alphas[alphas.length - 1]!, dateYmd);
+          await insertSignal(
+            db,
+            holdingId,
+            "WARN",
+            roundAlphaMetric(alphas[alphas.length - 1]!),
+            dateYmd,
+          );
           inserted += 1;
           details.push({ holdingId, type: "WARN" });
         }
@@ -92,7 +120,7 @@ export async function generateSignalsForUser(
       const cur = alphas[alphas.length - 1]!;
       if (prev < 0 && cur > 0) {
         if (!(await signalExistsForDay(db, holdingId, "BUY", dateYmd))) {
-          await insertSignal(db, holdingId, "BUY", cur, dateYmd);
+          await insertSignal(db, holdingId, "BUY", roundAlphaMetric(cur), dateYmd);
           inserted += 1;
           details.push({ holdingId, type: "BUY" });
         }
