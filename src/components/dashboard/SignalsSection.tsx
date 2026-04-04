@@ -12,9 +12,14 @@ export function SignalsSection({ signals }: { signals: Signal[] }) {
         Live Signals
       </h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {signals.map((signal) => (
-          <SignalCard key={signal.id} signal={signal} />
-        ))}
+        {signals.length === 0 ? (
+          <p className="text-sm text-slate-500 col-span-full">
+            No unresolved signals. Run <span className="font-mono text-slate-400">Generate signals</span> after
+            loading alpha history.
+          </p>
+        ) : (
+          signals.map((signal) => <SignalCard key={signal.id} signal={signal} />)
+        )}
       </div>
     </div>
   );

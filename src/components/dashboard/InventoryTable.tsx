@@ -44,20 +44,34 @@ export function InventoryTable({ stocks }: { stocks: Stock[] }) {
                 </td>
                 <td
                   className={`px-6 py-4 text-right font-mono font-bold ${
-                    stock.alphaHistory.slice(-1)[0] > 0 ? "text-emerald-400" : "text-rose-400"
+                    stock.alphaHistory.length === 0
+                      ? "text-slate-500"
+                      : stock.alphaHistory.slice(-1)[0]! > 0
+                        ? "text-emerald-400"
+                        : "text-rose-400"
                   }`}
                 >
-                  {stock.alphaHistory.slice(-1)[0] > 0 ? "+" : ""}
-                  {stock.alphaHistory.slice(-1)[0]}%
+                  {stock.alphaHistory.length === 0 ? (
+                    "—"
+                  ) : (
+                    <>
+                      {stock.alphaHistory.slice(-1)[0]! > 0 ? "+" : ""}
+                      {stock.alphaHistory.slice(-1)[0]}%
+                    </>
+                  )}
                 </td>
                 <td className="px-6 py-4">
-                  <TrendMiniChart history={stock.alphaHistory} />
+                  {stock.alphaHistory.length === 0 ? (
+                    <span className="text-slate-600 text-xs">No data</span>
+                  ) : (
+                    <TrendMiniChart history={stock.alphaHistory} />
+                  )}
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex flex-col items-end">
                     <span className="font-mono text-slate-300 font-bold">{stock.quantity}</span>
                     <span className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">
-                      {stock.weight}% Wgt
+                      {stock.weight > 0 ? `${stock.weight}% Wgt` : "—"}
                     </span>
                   </div>
                 </td>

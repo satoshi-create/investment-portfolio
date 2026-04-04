@@ -1,7 +1,7 @@
 export type AlphaHistory = number[];
 
 export interface Stock {
-  id: number;
+  id: string;
   ticker: string;
   name: string;
   tag: string;
