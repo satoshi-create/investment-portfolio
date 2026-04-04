@@ -27,6 +27,7 @@ export async function GET(request: Request) {
       structureByTag: dash.structureByTag,
       coreSatellite: dash.coreSatellite,
       totalMarketValue: dash.totalMarketValue,
+      summary: dash.summary,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

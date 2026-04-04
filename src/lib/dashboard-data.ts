@@ -2,6 +2,7 @@ import type { Client } from "@libsql/client";
 
 import type {
   CoreSatelliteBreakdown,
+  DashboardData,
   HoldingCategory,
   Signal,
   Stock,
@@ -22,6 +23,7 @@ import {
   sanitizeMarketValueForAggregation,
   secondaryStructureTag,
 } from "@/src/lib/structure-tags";
+import { fetchLatestPrice } from "@/src/lib/price-service";
 
 const TARGET_CORE_PERCENT = 90;
 
@@ -118,13 +120,24 @@ function computeCoreSatellite(stocks: Stock[]): CoreSatelliteBreakdown {
   };
 }
 
-export type DashboardData = {
-  stocks: Stock[];
-  structureByTag: StructureTagSlice[];
-  coreSatellite: CoreSatelliteBreakdown;
-  /** Sum of JPY-normalized holding values */
-  totalMarketValue: number;
-};
+function computePortfolioAverageAlpha(stocks: Stock[]): number {
+  const latest = stocks
+    .map((s) => (s.alphaHistory.length > 0 ? s.alphaHistory[s.alphaHistory.length - 1]! : null))
+    .filter((x): x is number => x != null && Number.isFinite(x));
+  if (latest.length === 0) return 0;
+  const sum = latest.reduce((a, b) => a + b, 0);
+  return roundAlphaMetric(sum / latest.length);
+}
+
+async function resolveBenchmarkLatestClose(): Promise<number> {
+  try {
+    const snap = await fetchLatestPrice(SIGNAL_BENCHMARK_TICKER);
+    if (snap != null && Number.isFinite(snap.close) && snap.close > 0) return snap.close;
+  } catch {
+    /* Yahoo 失敗時は 0（UI は —） */
+  }
+  return 0;
+}
 
 /**
  * ダッシュボード用: 保有の Alpha 履歴・最新終値・円ベース評価額・ウェイト・構造別 / Core-Satellite 集計。
@@ -140,21 +153,30 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
   const holdingIds = h.rows.map((r) => String(r.id));
   if (holdingIds.length === 0) {
+    const benchmarkLatestPrice = await resolveBenchmarkLatestClose();
     return {
       stocks: [],
       structureByTag: [],
       coreSatellite: computeCoreSatellite([]),
       totalMarketValue: 0,
+      summary: {
+        portfolioAverageAlpha: 0,
+        benchmarkLatestPrice,
+        totalHoldings: 0,
+      },
     };
   }
 
   const placeholders = holdingIds.map(() => "?").join(",");
-  const a = await db.execute({
-    sql: `SELECT holding_id, alpha_value, recorded_at, close_price FROM alpha_history
-          WHERE benchmark_ticker = ? AND holding_id IN (${placeholders})
-          ORDER BY recorded_at ASC`,
-    args: [SIGNAL_BENCHMARK_TICKER, ...holdingIds],
-  });
+  const [a, benchmarkLatestPrice] = await Promise.all([
+    db.execute({
+      sql: `SELECT holding_id, alpha_value, recorded_at, close_price FROM alpha_history
+            WHERE benchmark_ticker = ? AND holding_id IN (${placeholders})
+            ORDER BY recorded_at ASC`,
+      args: [SIGNAL_BENCHMARK_TICKER, ...holdingIds],
+    }),
+    resolveBenchmarkLatestClose(),
+  ]);
 
   const byHolding = new Map<string, AlphaPoint[]>();
   for (const row of a.rows) {
@@ -262,7 +284,13 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
   const coreSatellite = computeCoreSatellite(stocks);
 
-  return { stocks, structureByTag, coreSatellite, totalMarketValue };
+  const summary = {
+    portfolioAverageAlpha: computePortfolioAverageAlpha(stocks),
+    benchmarkLatestPrice,
+    totalHoldings: stocks.length,
+  };
+
+  return { stocks, structureByTag, coreSatellite, totalMarketValue, summary };
 }
 
 export async function fetchStocksForUser(db: Client, userId: string): Promise<Stock[]> {

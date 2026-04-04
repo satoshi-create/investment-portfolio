@@ -80,3 +80,21 @@ export interface SignalPerformanceLog {
   result: string;
   status: "Active" | "Avoided" | "Success" | "Failed";
 }
+
+/** ダッシュボードヘッダー / 一覧フッター用の集計（`getDashboardData` が生成）。 */
+export type DashboardSummary = {
+  /** 各保有の最新 Alpha（日次）の単純平均 */
+  portfolioAverageAlpha: number;
+  /** VOO の最新終値（USD）。`alpha_history` は銘柄終値のみ保持のため Yahoo から取得。 */
+  benchmarkLatestPrice: number;
+  /** 保有銘柄数 */
+  totalHoldings: number;
+};
+
+export type DashboardData = {
+  stocks: Stock[];
+  structureByTag: StructureTagSlice[];
+  coreSatellite: CoreSatelliteBreakdown;
+  totalMarketValue: number;
+  summary: DashboardSummary;
+};

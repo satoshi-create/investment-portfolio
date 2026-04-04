@@ -3,7 +3,13 @@
 import React, { useCallback, useEffect, useState, useTransition } from "react";
 
 import { generateSignalsAction } from "@/app/actions/signals";
-import type { CoreSatelliteBreakdown, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
+import type {
+  CoreSatelliteBreakdown,
+  DashboardSummary,
+  Signal,
+  Stock,
+  StructureTagSlice,
+} from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
@@ -17,6 +23,12 @@ const DEFAULT_USER_ID =
     ? process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID
     : "user-satoshi";
 
+const EMPTY_SUMMARY: DashboardSummary = {
+  portfolioAverageAlpha: 0,
+  benchmarkLatestPrice: 0,
+  totalHoldings: 0,
+};
+
 type DashboardPayload = {
   userId: string;
   stocks: Stock[];
@@ -24,6 +36,7 @@ type DashboardPayload = {
   structureByTag: StructureTagSlice[];
   coreSatellite: CoreSatelliteBreakdown;
   totalMarketValue: number;
+  summary: DashboardSummary;
 };
 
 export function DashboardPage() {
@@ -58,6 +71,7 @@ export function DashboardPage() {
           coreGapVsTarget: 0,
         },
         totalMarketValue: json.totalMarketValue ?? 0,
+        summary: json.summary ?? EMPTY_SUMMARY,
       });
     } catch (e) {
       setData(null);
@@ -92,11 +106,15 @@ export function DashboardPage() {
     coreGapVsTarget: 0,
   };
   const totalMarketValue = data?.totalMarketValue ?? 0;
+  const summary = data?.summary ?? EMPTY_SUMMARY;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
-        <DashboardHeader />
+        <DashboardHeader
+          totalAlpha={summary.portfolioAverageAlpha}
+          benchmarkPrice={summary.benchmarkLatestPrice}
+        />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-3">
           <div className="text-xs text-slate-400">
@@ -146,7 +164,11 @@ export function DashboardPage() {
           totalMarketValue={totalMarketValue}
         />
         <SignalsSection signals={signals} />
-        <InventoryTable stocks={stocks} />
+        <InventoryTable
+          stocks={stocks}
+          totalHoldings={summary.totalHoldings}
+          averageAlpha={summary.portfolioAverageAlpha}
+        />
         <HoldingsDetailTable stocks={stocks} />
       </div>
     </div>

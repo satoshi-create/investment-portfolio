@@ -10,7 +10,18 @@ const jpyFmt = new Intl.NumberFormat("ja-JP", {
   maximumFractionDigits: 0,
 });
 
-export function InventoryTable({ stocks }: { stocks: Stock[] }) {
+export function InventoryTable({
+  stocks,
+  totalHoldings,
+  averageAlpha,
+}: {
+  stocks: Stock[];
+  totalHoldings: number;
+  averageAlpha: number;
+}) {
+  const avgAlphaClass =
+    averageAlpha > 0 ? "text-emerald-400" : averageAlpha < 0 ? "text-rose-400" : "text-slate-400";
+  const avgAlphaSign = averageAlpha > 0 ? "+" : "";
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
       <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
@@ -95,6 +106,20 @@ export function InventoryTable({ stocks }: { stocks: Stock[] }) {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="bg-slate-900/90 border-t border-slate-700">
+              <td className="px-6 py-3 text-xs font-bold text-slate-300">
+                Total: {totalHoldings} {totalHoldings === 1 ? "item" : "items"}
+              </td>
+              <td className={`px-6 py-3 text-right text-xs font-mono font-bold ${avgAlphaClass}`}>
+                Avg: {Number.isFinite(averageAlpha) ? `${avgAlphaSign}${averageAlpha.toFixed(2)}%` : "—"}
+              </td>
+              <td className="px-6 py-3 text-center text-[10px] text-slate-600 uppercase font-bold">
+                Portfolio
+              </td>
+              <td className="px-6 py-3" />
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
