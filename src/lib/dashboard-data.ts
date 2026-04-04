@@ -6,16 +6,21 @@ import type {
   Signal,
   Stock,
   StructureTagSlice,
+  TickerInstrumentKind,
 } from "@/src/types/investment";
 import {
+  classifyTickerInstrument,
   convertValueToJpy,
+  dailyReturnPercent,
   quoteCurrencyForDashboardWeights,
+  roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
 } from "@/src/lib/alpha-logic";
 import {
   aggregateByPrimaryStructureTag,
   primaryStructureTag,
   sanitizeMarketValueForAggregation,
+  secondaryStructureTag,
 } from "@/src/lib/structure-tags";
 
 const TARGET_CORE_PERCENT = 90;
@@ -32,6 +37,48 @@ function latestCloseFromSeries(series: AlphaPoint[]): number | null {
     if (c != null && Number.isFinite(c) && c > 0) return c;
   }
   return null;
+}
+
+/** Latest and previous valid closes (chronological: prev then latest) for day-over-day %. */
+function lastTwoClosesFromSeries(series: AlphaPoint[]): { prevClose: number; latestClose: number } | null {
+  const found: number[] = [];
+  for (let i = series.length - 1; i >= 0 && found.length < 2; i--) {
+    const c = series[i]!.close;
+    if (c != null && Number.isFinite(c) && c > 0) found.push(c);
+  }
+  if (found.length < 2) return null;
+  return { prevClose: found[1]!, latestClose: found[0]! };
+}
+
+function parseAvgAcquisitionPrice(raw: unknown): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function quoteCurrencyForInstrument(kind: TickerInstrumentKind): "JPY" | "USD" {
+  return kind === "JP_INVESTMENT_TRUST" ? "JPY" : "USD";
+}
+
+function computeUnrealizedPnlLocal(
+  currentPrice: number | null,
+  avgAcquisition: number | null,
+  quantity: number,
+  valuationFactor: number,
+): { local: number; percent: number } {
+  if (currentPrice == null || !Number.isFinite(currentPrice) || currentPrice <= 0) {
+    return { local: 0, percent: 0 };
+  }
+  if (avgAcquisition == null) return { local: 0, percent: 0 };
+  if (!Number.isFinite(quantity) || quantity <= 0) return { local: 0, percent: 0 };
+  const f = Number.isFinite(valuationFactor) && valuationFactor > 0 ? valuationFactor : 1;
+  const local = (currentPrice - avgAcquisition) * quantity * f;
+  const pct = ((currentPrice - avgAcquisition) / avgAcquisition) * 100;
+  return {
+    local: Number.isFinite(local) ? local : 0,
+    percent: Number.isFinite(pct) ? roundAlphaMetric(pct) : 0,
+  };
 }
 
 /**
@@ -84,7 +131,7 @@ export type DashboardData = {
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
   const h = await db.execute({
-    sql: `SELECT id, ticker, name, quantity, structure_tags, category, provider_symbol, valuation_factor
+    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, category, provider_symbol, valuation_factor
           FROM holdings
           WHERE user_id = ?
           ORDER BY ticker`,
@@ -141,6 +188,20 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       valuationFactor,
     });
     const tagsJson = String(row.structure_tags);
+    const instrumentKind = classifyTickerInstrument(ticker);
+    const avgAcquisitionPrice = parseAvgAcquisitionPrice(row.avg_acquisition_price);
+    const { local: unrealizedPnlLocal, percent: unrealizedPnlPercent } = computeUnrealizedPnlLocal(
+      currentPrice,
+      avgAcquisitionPrice,
+      qty,
+      valuationFactor,
+    );
+    const unrealizedPnlJpy = convertValueToJpy(unrealizedPnlLocal, quoteCurrencyForInstrument(instrumentKind));
+    const two = lastTwoClosesFromSeries(series);
+    const dayChangeRaw =
+      two != null ? dailyReturnPercent(two.prevClose, two.latestClose) : null;
+    const dayChangePercent =
+      dayChangeRaw != null && Number.isFinite(dayChangeRaw) ? roundAlphaMetric(dayChangeRaw) : null;
 
     return {
       id,
@@ -150,6 +211,13 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       alphaHistory,
       quantity: qty,
       category: asCategory(String(row.category)),
+      avgAcquisitionPrice,
+      unrealizedPnlLocal,
+      unrealizedPnlJpy,
+      unrealizedPnlPercent,
+      dayChangePercent,
+      instrumentKind,
+      secondaryTag: secondaryStructureTag(tagsJson),
       currentPrice,
       marketValue,
       valuationFactor,
@@ -173,6 +241,13 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       alphaHistory: d.alphaHistory,
       quantity: d.quantity,
       category: d.category,
+      avgAcquisitionPrice: d.avgAcquisitionPrice,
+      unrealizedPnlLocal: d.unrealizedPnlLocal,
+      unrealizedPnlJpy: d.unrealizedPnlJpy,
+      unrealizedPnlPercent: d.unrealizedPnlPercent,
+      dayChangePercent: d.dayChangePercent,
+      instrumentKind: d.instrumentKind,
+      secondaryTag: d.secondaryTag,
       currentPrice: d.currentPrice,
       marketValue: mv,
       valuationFactor: d.valuationFactor,
@@ -212,16 +287,26 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
     const isWarn = String(row.signal_type) === "WARN";
     const isBuy = String(row.signal_type) === "BUY";
     const alpha = Number(row.alpha_at_signal);
-    const tag = primaryStructureTag(String(row.structure_tags));
+    const stags = String(row.structure_tags);
+    const tag = primaryStructureTag(stags);
+    const ticker = String(row.ticker);
+    const instrumentKind = classifyTickerInstrument(ticker);
     return {
       id: String(row.signal_id),
-      ticker: String(row.ticker),
+      ticker,
       name: row.name != null ? String(row.name) : "",
       tag,
       alphaHistory: [alpha],
       weight: 0,
       quantity: 0,
       category: asCategory(String(row.category)),
+      avgAcquisitionPrice: null,
+      unrealizedPnlLocal: 0,
+      unrealizedPnlJpy: 0,
+      unrealizedPnlPercent: 0,
+      dayChangePercent: null,
+      instrumentKind,
+      secondaryTag: secondaryStructureTag(stags),
       currentPrice: null,
       marketValue: 0,
       valuationFactor: 1,

@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState, useTransition } from "react";
 import { generateSignalsAction } from "@/app/actions/signals";
 import type { CoreSatelliteBreakdown, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
+import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
@@ -146,6 +147,7 @@ export function DashboardPage() {
         />
         <SignalsSection signals={signals} />
         <InventoryTable stocks={stocks} />
+        <HoldingsDetailTable stocks={stocks} />
       </div>
     </div>
   );

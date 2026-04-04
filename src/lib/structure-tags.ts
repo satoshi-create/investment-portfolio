@@ -17,6 +17,12 @@ export function primaryStructureTag(structureTagsJson: string, fallback = "—")
   return tags[0] ?? fallback;
 }
 
+/** Second tag as provisional industry / sub-category (dashboard accounting view). */
+export function secondaryStructureTag(structureTagsJson: string, fallback = "Other"): string {
+  const tags = parseStructureTags(structureTagsJson);
+  return tags[1] ?? fallback;
+}
+
 const OTHER_TAG = "その他";
 
 /** Non-negative finite market values only (missing / invalid price → 0, avoids NaN in totals). */

@@ -39,6 +39,19 @@ export interface Stock {
   weight: number;
   quantity: number;
   category: HoldingCategory;
+  /** `holdings.avg_acquisition_price`（銘柄建て・未設定は null） */
+  avgAcquisitionPrice: number | null;
+  /** 含み損益（銘柄の建て通貨ベース、quantity×factor 込み） */
+  unrealizedPnlLocal: number;
+  /** 含み損益の円換算（米株は USD_JPY を適用） */
+  unrealizedPnlJpy: number;
+  /** (現在価格 − 平均取得) / 平均取得 × 100（取得単価が無効なら 0） */
+  unrealizedPnlPercent: number;
+  /** 直近 2 件の終値から算出した前日比 %（算出不可は null） */
+  dayChangePercent: number | null;
+  instrumentKind: TickerInstrumentKind;
+  /** `structure_tags` の 2 番目を業界代理で使用（無ければ Other） */
+  secondaryTag: string;
   /** `alpha_history` 最新行の終値（無ければ null） */
   currentPrice: number | null;
   /**
