@@ -100,3 +100,20 @@ export type DashboardData = {
   totalMarketValue: number;
   summary: DashboardSummary;
 };
+
+/** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */
+export type PortfolioDailySnapshotRow = {
+  id: string;
+  userId: string;
+  snapshotDate: string;
+  recordedAt: string;
+  fxUsdJpy: number;
+  benchmarkTicker: string;
+  benchmarkClose: number | null;
+  totalMarketValueJpy: number;
+  totalUnrealizedPnlJpy: number | null;
+  portfolioAvgAlpha: number | null;
+  portfolioReturnVsPrevPct: number | null;
+  benchmarkReturnVsPrevPct: number | null;
+  alphaVsPrevPct: number | null;
+};

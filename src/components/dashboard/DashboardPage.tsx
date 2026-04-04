@@ -2,20 +2,23 @@
 
 import React, { useCallback, useEffect, useState, useTransition } from "react";
 
+import { recordPortfolioSnapshotAction } from "@/app/actions/snapshot";
 import { generateSignalsAction } from "@/app/actions/signals";
 import type {
   CoreSatelliteBreakdown,
   DashboardSummary,
+  PortfolioDailySnapshotRow,
   Signal,
   Stock,
   StructureTagSlice,
 } from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
+import { PortfolioSnapshotsTable } from "@/src/components/dashboard/PortfolioSnapshotsTable";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
-import { RefreshCw } from "lucide-react";
+import { Camera, RefreshCw } from "lucide-react";
 
 const DEFAULT_USER_ID =
   typeof process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID === "string" &&
@@ -37,6 +40,7 @@ type DashboardPayload = {
   coreSatellite: CoreSatelliteBreakdown;
   totalMarketValue: number;
   summary: DashboardSummary;
+  portfolioSnapshots: PortfolioDailySnapshotRow[];
 };
 
 export function DashboardPage() {
@@ -45,6 +49,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [snapshotPending, startSnapshotTransition] = useTransition();
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -72,6 +77,7 @@ export function DashboardPage() {
         },
         totalMarketValue: json.totalMarketValue ?? 0,
         summary: json.summary ?? EMPTY_SUMMARY,
+        portfolioSnapshots: json.portfolioSnapshots ?? [],
       });
     } catch (e) {
       setData(null);
@@ -96,6 +102,17 @@ export function DashboardPage() {
     });
   };
 
+  const onRecordSnapshot = () => {
+    setActionMessage(null);
+    startSnapshotTransition(async () => {
+      const result = await recordPortfolioSnapshotAction(DEFAULT_USER_ID);
+      setActionMessage(result.message);
+      if (result.ok) {
+        await loadDashboard();
+      }
+    });
+  };
+
   const stocks = data?.stocks ?? [];
   const signals = data?.signals ?? [];
   const structureByTag = data?.structureByTag ?? [];
@@ -107,6 +124,7 @@ export function DashboardPage() {
   };
   const totalMarketValue = data?.totalMarketValue ?? 0;
   const summary = data?.summary ?? EMPTY_SUMMARY;
+  const portfolioSnapshots = data?.portfolioSnapshots ?? [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
@@ -127,7 +145,10 @@ export function DashboardPage() {
             {actionMessage && (
               <span
                 className={`ml-2 block sm:inline mt-1 sm:mt-0 ${
-                  actionMessage.includes("failed") || actionMessage.includes("not configured")
+                  actionMessage.includes("failed") ||
+                  actionMessage.includes("not configured") ||
+                  actionMessage.includes("missing") ||
+                  actionMessage.includes("Table missing")
                     ? "text-rose-400"
                     : "text-emerald-400"
                 }`}
@@ -155,6 +176,16 @@ export function DashboardPage() {
               <RefreshCw size={14} className={pending ? "animate-spin" : ""} />
               Generate signals
             </button>
+            <button
+              type="button"
+              onClick={onRecordSnapshot}
+              disabled={snapshotPending || !!error || loading}
+              className="text-[10px] font-bold text-cyan-400 border border-cyan-500/35 px-3 py-2 rounded-lg hover:bg-cyan-500/10 transition-all flex items-center gap-2 disabled:opacity-50"
+              title="Saves portfolio_daily_snapshots (UTC date). Re-run same day overwrites the row."
+            >
+              <Camera size={14} className={snapshotPending ? "animate-pulse" : ""} />
+              Record snapshot
+            </button>
           </div>
         </div>
 
@@ -170,6 +201,7 @@ export function DashboardPage() {
           averageAlpha={summary.portfolioAverageAlpha}
         />
         <HoldingsDetailTable stocks={stocks} />
+        <PortfolioSnapshotsTable rows={portfolioSnapshots} />
       </div>
     </div>
   );

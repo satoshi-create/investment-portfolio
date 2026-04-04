@@ -68,3 +68,25 @@ CREATE TABLE IF NOT EXISTS signals (
 CREATE INDEX IF NOT EXISTS idx_signals_holding_id ON signals(holding_id);
 CREATE INDEX IF NOT EXISTS idx_signals_detected_at ON signals(detected_at);
 CREATE INDEX IF NOT EXISTS idx_signals_unresolved ON signals(is_resolved, detected_at);
+
+-- portfolio_daily_snapshots (patrol / 乖離検証ログ)
+CREATE TABLE IF NOT EXISTS portfolio_daily_snapshots (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  snapshot_date TEXT NOT NULL,
+  recorded_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  fx_usd_jpy REAL NOT NULL,
+  benchmark_ticker TEXT NOT NULL,
+  benchmark_close REAL,
+  total_market_value_jpy REAL NOT NULL,
+  total_unrealized_pnl_jpy REAL,
+  portfolio_avg_alpha REAL,
+  portfolio_return_vs_prev_pct REAL,
+  benchmark_return_vs_prev_pct REAL,
+  alpha_vs_prev_pct REAL,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  UNIQUE (user_id, snapshot_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_user_date
+  ON portfolio_daily_snapshots(user_id, snapshot_date DESC);

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 
 import type { Stock, TickerInstrumentKind } from "@/src/types/investment";
 
@@ -37,7 +37,60 @@ function formatSignedPercent(v: number | null): string {
   return `${sign}${v.toFixed(2)}%`;
 }
 
+function computeFooterAggregates(stocks: Stock[]) {
+  let sumQty = 0;
+  let sumMarketValueJpy = 0;
+  let sumUnrealizedPnlJpy = 0;
+  let sumImpliedCostJpy = 0;
+  const dayChanges: number[] = [];
+
+  for (const s of stocks) {
+    // 投信などは「口」・米株は「株」で単位が異なるため、数量合計は米国株のみ。
+    if (s.instrumentKind === "US_EQUITY" && Number.isFinite(s.quantity) && s.quantity > 0) {
+      sumQty += s.quantity;
+    }
+    if (s.marketValue > 0 && Number.isFinite(s.marketValue)) {
+      sumMarketValueJpy += s.marketValue;
+    }
+    if (s.avgAcquisitionPrice != null && s.currentPrice != null && s.currentPrice > 0) {
+      sumUnrealizedPnlJpy += Number.isFinite(s.unrealizedPnlJpy) ? s.unrealizedPnlJpy : 0;
+      const impliedCost = s.marketValue - s.unrealizedPnlJpy;
+      if (Number.isFinite(impliedCost) && impliedCost > 0) {
+        sumImpliedCostJpy += impliedCost;
+      }
+    }
+    if (s.dayChangePercent != null && Number.isFinite(s.dayChangePercent)) {
+      dayChanges.push(s.dayChangePercent);
+    }
+  }
+
+  const avgDayChangePercent =
+    dayChanges.length > 0
+      ? Math.round((dayChanges.reduce((a, b) => a + b, 0) / dayChanges.length) * 100) / 100
+      : null;
+
+  const portfolioUnrealizedPercent =
+    sumImpliedCostJpy > 0 ? Math.round((sumUnrealizedPnlJpy / sumImpliedCostJpy) * 10000) / 100 : null;
+
+  const hasJpTrust = stocks.some((s) => s.instrumentKind === "JP_INVESTMENT_TRUST");
+
+  return {
+    count: stocks.length,
+    sumQty,
+    sumMarketValueJpy,
+    sumUnrealizedPnlJpy,
+    avgDayChangePercent,
+    portfolioUnrealizedPercent,
+    pnlRowCount: stocks.filter(
+      (s) => s.avgAcquisitionPrice != null && s.currentPrice != null && s.currentPrice > 0,
+    ).length,
+    hasJpTrust,
+  };
+}
+
 export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
+  const footer = useMemo(() => computeFooterAggregates(stocks), [stocks]);
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
       <div className="p-5 border-b border-slate-800 bg-slate-900/50">
@@ -117,6 +170,71 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="bg-slate-900/95 border-t border-slate-700">
+              <td className="px-4 py-3 text-xs font-bold text-slate-300 whitespace-nowrap">
+                Σ / 平均
+                <span className="block text-[10px] font-normal text-slate-500 font-mono">
+                  {footer.count} 銘柄
+                </span>
+              </td>
+              <td className="px-4 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+              <td className="px-4 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+              <td
+                className="px-4 py-3 text-right whitespace-nowrap"
+                title="米国株の株数合計。投信（口・FANG+ 等）は単位が異なるため含みません。"
+              >
+                <span className="font-mono text-sm font-bold text-slate-200">
+                  {footer.sumQty > 0 ? footer.sumQty : "—"}
+                </span>
+                {footer.hasJpTrust ? (
+                  <span className="block text-[9px] font-normal text-slate-500 leading-tight mt-0.5">
+                    株のみ（投信の口は除外）
+                  </span>
+                ) : null}
+              </td>
+              <td className="px-4 py-3 text-right text-[10px] text-slate-600 whitespace-nowrap">—</td>
+              <td className="px-4 py-3 text-right text-[10px] text-slate-600 whitespace-nowrap">—</td>
+              <td
+                className={`px-4 py-3 text-right font-mono text-xs font-bold whitespace-nowrap ${signedPctClass(footer.avgDayChangePercent)}`}
+              >
+                {footer.avgDayChangePercent != null ? (
+                  <span title="前日比が取れた銘柄の算術平均">
+                    Avg {formatSignedPercent(footer.avgDayChangePercent)}
+                  </span>
+                ) : (
+                  "—"
+                )}
+              </td>
+              <td className="px-4 py-3 text-right font-mono text-sm font-bold text-slate-100 whitespace-nowrap">
+                {footer.sumMarketValueJpy > 0 ? jpyFmt.format(footer.sumMarketValueJpy) : "—"}
+              </td>
+              <td
+                className={`px-4 py-3 text-right font-mono text-sm font-bold whitespace-nowrap ${signedValueClass(footer.sumUnrealizedPnlJpy)}`}
+              >
+                {footer.pnlRowCount > 0 ? (
+                  <>
+                    {footer.sumUnrealizedPnlJpy > 0 ? "+" : ""}
+                    {jpyFmt.format(footer.sumUnrealizedPnlJpy)}
+                  </>
+                ) : (
+                  "—"
+                )}
+              </td>
+              <td
+                className={`px-4 py-3 text-right font-mono text-xs font-bold whitespace-nowrap ${signedPctClass(footer.portfolioUnrealizedPercent)}`}
+              >
+                {footer.portfolioUnrealizedPercent != null ? (
+                  <span title="Σ損益(円) ÷ Σ取得相当(円)（評価額−損益）">
+                    {formatSignedPercent(footer.portfolioUnrealizedPercent)}
+                  </span>
+                ) : (
+                  "—"
+                )}
+              </td>
+              <td className="px-4 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>

@@ -11,7 +11,8 @@
     "seed:benchmarks": "tsx scripts/seed-benchmarks.ts",
     "verify:prices": "tsx scripts/verify-price-alpha.ts",
     "set:provider-symbol": "tsx scripts/set-provider-symbol.ts",
-    "backfill:alpha": "tsx scripts/backfill-alpha-history.ts"
+    "backfill:alpha": "tsx scripts/backfill-alpha-history.ts",
+    "snapshot:daily": "tsx scripts/record-portfolio-snapshot.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",
