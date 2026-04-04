@@ -4,7 +4,13 @@ import { Zap } from "lucide-react";
 import type { Signal } from "@/src/types/investment";
 import { SignalCard } from "@/src/components/dashboard/SignalCard";
 
-export function SignalsSection({ signals }: { signals: Signal[] }) {
+type Props = {
+  signals: Signal[];
+  userId: string;
+  onSignalResolved?: () => void;
+};
+
+export function SignalsSection({ signals, userId, onSignalResolved }: Props) {
   return (
     <div className="space-y-4">
       <h2 className="text-xs font-bold text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2">
@@ -18,7 +24,14 @@ export function SignalsSection({ signals }: { signals: Signal[] }) {
             loading alpha history.
           </p>
         ) : (
-          signals.map((signal) => <SignalCard key={signal.id} signal={signal} />)
+          signals.map((signal) => (
+            <SignalCard
+              key={signal.id}
+              signal={signal}
+              userId={userId}
+              onResolved={onSignalResolved}
+            />
+          ))
         )}
       </div>
     </div>

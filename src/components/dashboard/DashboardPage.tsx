@@ -163,7 +163,7 @@ export function DashboardPage() {
           coreSatellite={coreSatellite}
           totalMarketValue={totalMarketValue}
         />
-        <SignalsSection signals={signals} />
+        <SignalsSection signals={signals} userId={DEFAULT_USER_ID} onSignalResolved={() => void loadDashboard()} />
         <InventoryTable
           stocks={stocks}
           totalHoldings={summary.totalHoldings}

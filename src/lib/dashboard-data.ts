@@ -301,7 +301,7 @@ export async function fetchStocksForUser(db: Client, userId: string): Promise<St
 /** Unresolved signals for dashboard cards (`id` is the `signals.id` row). */
 export async function fetchUnresolvedSignalsForUser(db: Client, userId: string): Promise<Signal[]> {
   const rs = await db.execute({
-    sql: `SELECT s.id AS signal_id, s.signal_type, s.alpha_at_signal,
+    sql: `SELECT s.id AS signal_id, s.signal_type, s.alpha_at_signal, s.detected_at,
                  h.ticker, h.name, h.structure_tags, h.provider_symbol, h.category
           FROM signals s
           JOIN holdings h ON h.id = s.holding_id
@@ -341,6 +341,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       isWarning: isWarn,
       isBuy: isBuy,
       currentAlpha: alpha,
+      detectedAt: row.detected_at != null ? String(row.detected_at) : "",
       providerSymbol:
         row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
     };

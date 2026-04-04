@@ -36,3 +36,11 @@ export async function upsertAlphaHistoryRow(db: Client, row: UpsertAlphaHistoryR
     args: [id, row.holdingId, benchmark, row.recordedAtYmd, row.closePrice, alpha],
   });
 }
+
+/** Mark a signal row as reviewed / resolved (`is_resolved = 1`). */
+export async function resolveSignal(db: Client, signalId: string): Promise<void> {
+  await db.execute({
+    sql: `UPDATE signals SET is_resolved = 1 WHERE id = ?`,
+    args: [signalId],
+  });
+}

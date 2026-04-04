@@ -71,6 +71,8 @@ export interface Signal extends Stock {
   isWarning: boolean;
   isBuy: boolean;
   currentAlpha: number;
+  /** ISO timestamp from `signals.detected_at`（クライアント合成シグナルでは空文字可） */
+  detectedAt: string;
 }
 
 export interface SignalPerformanceLog {

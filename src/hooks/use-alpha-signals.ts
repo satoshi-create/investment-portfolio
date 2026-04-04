@@ -19,6 +19,7 @@ export function useAlphaSignals(stocks: Stock[]): Signal[] {
           isWarning,
           isBuy,
           currentAlpha: currentAlpha ?? 0,
+          detectedAt: "",
         };
       })
       .filter((s) => s.isWarning || s.isBuy);
