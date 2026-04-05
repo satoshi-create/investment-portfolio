@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS holdings (
   name TEXT,
   quantity REAL NOT NULL DEFAULT 0,
   avg_acquisition_price REAL,                -- numeric
-  structure_tags TEXT NOT NULL DEFAULT '[]', -- text[] → JSON文字列で保持
+  structure_tags TEXT DEFAULT '[]', -- NULL 可。未設定は NULL または '[]'
   sector TEXT,                               -- 明示セクター（未設定時は structure_tags の 2 番目で代替）
   category TEXT NOT NULL CHECK (category IN ('Core','Satellite')),
   provider_symbol TEXT,                     -- Yahoo Finance 等の取得用シンボル（任意）

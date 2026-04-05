@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       userId,
       stocks: dash.stocks,
       signals,
-      structureByTag: dash.structureByTag,
+      structureByTheme: dash.structureByTheme,
       structureBySector: dash.structureBySector,
       coreSatellite: dash.coreSatellite,
       totalMarketValue: dash.totalMarketValue,

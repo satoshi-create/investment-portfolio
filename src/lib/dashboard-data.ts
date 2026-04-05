@@ -19,10 +19,10 @@ import {
 } from "@/src/lib/alpha-logic";
 import {
   aggregateByHoldingSector,
-  aggregateByPrimaryStructureTag,
-  primaryStructureTag,
+  aggregateByTheme,
   sanitizeMarketValueForAggregation,
-  secondaryStructureTag,
+  sectorFromStructureTags,
+  themeFromStructureTags,
 } from "@/src/lib/structure-tags";
 import { fetchLatestPrice } from "@/src/lib/price-service";
 
@@ -215,7 +215,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     const financial = computeFinancialTotals([], totalRealizedPnlJpy);
     return {
       stocks: [],
-      structureByTag: [],
+      structureByTheme: [],
       structureBySector: [],
       coreSatellite: computeCoreSatellite([]),
       totalMarketValue: 0,
@@ -271,7 +271,8 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       currentPrice,
       valuationFactor,
     });
-    const tagsJson = String(row.structure_tags);
+    const rawStructureTags = row.structure_tags;
+    const tagsJson = rawStructureTags == null ? "[]" : String(rawStructureTags);
     const sector = parseSector(row.sector);
     const instrumentKind = classifyTickerInstrument(ticker);
     const avgAcquisitionPrice = parseAvgAcquisitionPrice(row.avg_acquisition_price);
@@ -292,7 +293,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       id,
       ticker,
       name: row.name != null ? String(row.name) : "",
-      tag: primaryStructureTag(tagsJson),
+      tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
       quantity: qty,
       category: asCategory(String(row.category)),
@@ -302,7 +303,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       unrealizedPnlPercent,
       dayChangePercent,
       instrumentKind,
-      secondaryTag: secondaryStructureTag(tagsJson),
+      secondaryTag: sectorFromStructureTags(tagsJson),
       sector,
       currentPrice,
       marketValue,
@@ -344,7 +345,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   });
 
   const aggRows = drafts.map((d) => ({ structureTagsJson: d.structureTagsJson, marketValue: d.marketValue }));
-  const structureByTag = aggregateByPrimaryStructureTag(aggRows);
+  const structureByTheme = aggregateByTheme(aggRows);
   const structureBySector = aggregateByHoldingSector(
     drafts.map((d) => ({ sector: d.sector, structureTagsJson: d.structureTagsJson, marketValue: d.marketValue })),
   );
@@ -359,7 +360,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     ...financial,
   };
 
-  return { stocks, structureByTag, structureBySector, coreSatellite, totalMarketValue, summary };
+  return { stocks, structureByTheme, structureBySector, coreSatellite, totalMarketValue, summary };
 }
 
 export async function fetchStocksForUser(db: Client, userId: string): Promise<Stock[]> {
@@ -384,8 +385,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
     const isWarn = String(row.signal_type) === "WARN";
     const isBuy = String(row.signal_type) === "BUY";
     const alpha = Number(row.alpha_at_signal);
-    const stags = String(row.structure_tags);
-    const tag = primaryStructureTag(stags);
+    const stags = row.structure_tags == null ? "[]" : String(row.structure_tags);
+    const tag = row.structure_tags == null ? "" : themeFromStructureTags(stags);
     const ticker = String(row.ticker);
     const instrumentKind = classifyTickerInstrument(ticker);
     return {
@@ -403,7 +404,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       unrealizedPnlPercent: 0,
       dayChangePercent: null,
       instrumentKind,
-      secondaryTag: secondaryStructureTag(stags),
+      secondaryTag: sectorFromStructureTags(stags),
       sector: parseSector(row.sector),
       currentPrice: null,
       marketValue: 0,

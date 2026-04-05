@@ -1,6 +1,7 @@
 import type { Client, Transaction } from "@libsql/core/api";
 
 import { classifyTickerInstrument, USD_JPY_RATE } from "@/src/lib/alpha-logic";
+import { structureTagsJsonFromThemeSector } from "@/src/lib/structure-tags";
 
 export type ExecuteTradeParams = {
   userId: string;
@@ -17,6 +18,9 @@ export type ExecuteTradeParams = {
   tradeDate: string;
   /** 新規 BUY で holdings を作るときのみ使用 */
   categoryForNewHolding: "Core" | "Satellite";
+  /** `structure_tags` の [0]=テーマ、[1]=セクター として保存 */
+  structureTheme: string;
+  structureSector: string;
 };
 
 export type ExecuteTradeResult =
@@ -103,6 +107,12 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
     return { ok: false, message: "金額の計算に失敗しました。単価・数量を確認してください。" };
   }
 
+  const structureTagsJson = structureTagsJsonFromThemeSector(p.structureTheme ?? "", p.structureSector ?? "");
+  const sectorColumn =
+    p.structureSector != null && String(p.structureSector).trim().length > 0
+      ? String(p.structureSector).trim()
+      : null;
+
   if (p.side === "BUY") {
     const existing = await selectHolding(tx, p.userId, ticker);
     const tradeId = crypto.randomUUID();
@@ -122,8 +132,18 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
         sql: `INSERT INTO holdings (
                 id, user_id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category,
                 provider_symbol, valuation_factor, created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, '[]', NULL, ?, NULL, 1, datetime('now'))`,
-        args: [holdingId, p.userId, ticker, displayName, newQty, newAvg, p.categoryForNewHolding],
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, datetime('now'))`,
+        args: [
+          holdingId,
+          p.userId,
+          ticker,
+          displayName,
+          newQty,
+          newAvg,
+          structureTagsJson,
+          sectorColumn,
+          p.categoryForNewHolding,
+        ],
       });
     } else {
       holdingId = existing.id;
@@ -137,8 +157,8 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
         newAvg = (oldQ * oldAvg + qty * unit) / newQty;
       }
       await tx.execute({
-        sql: `UPDATE holdings SET quantity = ?, avg_acquisition_price = ?, name = ? WHERE id = ? AND user_id = ?`,
-        args: [newQty, newAvg, displayName, holdingId, p.userId],
+        sql: `UPDATE holdings SET quantity = ?, avg_acquisition_price = ?, name = ?, structure_tags = ?, sector = ? WHERE id = ? AND user_id = ?`,
+        args: [newQty, newAvg, displayName, structureTagsJson, sectorColumn, holdingId, p.userId],
       });
     }
 
@@ -210,8 +230,8 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
   });
 
   await tx.execute({
-    sql: `UPDATE holdings SET quantity = ?, avg_acquisition_price = ? WHERE id = ? AND user_id = ?`,
-    args: [Math.max(0, newQty), newAvg, existing.id, p.userId],
+    sql: `UPDATE holdings SET quantity = ?, avg_acquisition_price = ?, structure_tags = ?, sector = ? WHERE id = ? AND user_id = ?`,
+    args: [Math.max(0, newQty), newAvg, structureTagsJson, sectorColumn, existing.id, p.userId],
   });
 
   await resolveSignalsForHolding(tx, existing.id);

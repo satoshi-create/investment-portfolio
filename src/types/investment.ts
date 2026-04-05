@@ -12,7 +12,7 @@ export interface Holding {
 
 export type HoldingCategory = "Core" | "Satellite";
 
-/** プライマリ／セクター（セカンダリ）タグ別の評価額シェア（サーバー集計、円ベース）。 */
+/** テーマまたはセクター軸の評価額シェア（サーバー集計、円ベース）。 */
 export interface StructureTagSlice {
   tag: string;
   marketValue: number;
@@ -35,6 +35,7 @@ export interface Stock {
   id: string;
   ticker: string;
   name: string;
+  /** 構造投資テーマ（`structure_tags` 先頭） */
   tag: string;
   alphaHistory: AlphaHistory;
   /** ポートフォリオ内ウェイト %（円換算・valuation_factor 後の評価額ベース） */
@@ -52,7 +53,7 @@ export interface Stock {
   /** 直近 2 件の終値から算出した前日比 %（算出不可は null） */
   dayChangePercent: number | null;
   instrumentKind: TickerInstrumentKind;
-  /** `structure_tags` の 2 番目（無ければ Other）。`sector` 列が空のときのフォールバック表示にも使う */
+  /** セクター（`structure_tags` の 2 番目。無ければ Other）。`sector` 列が空のときのフォールバック表示にも使う */
   secondaryTag: string;
   /** DB `holdings.sector`（明示セクター）。未設定は null（表示・集計は secondaryTag で代替） */
   sector: string | null;
@@ -107,8 +108,9 @@ export type DashboardSummary = {
 
 export type DashboardData = {
   stocks: Stock[];
-  structureByTag: StructureTagSlice[];
-  /** `holdings.sector` 優先、空なら structure_tags の 2 番目で集計した評価額・銘柄数 */
+  /** 構造投資テーマ（`structure_tags` 先頭）別の評価額・銘柄数 */
+  structureByTheme: StructureTagSlice[];
+  /** `holdings.sector` 優先、空なら `structure_tags` の 2 番目で集計した評価額・銘柄数 */
   structureBySector: StructureTagSlice[];
   coreSatellite: CoreSatelliteBreakdown;
   totalMarketValue: number;

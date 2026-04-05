@@ -1,18 +1,9 @@
 import React, { useMemo } from "react";
-import { GitBranch, LayoutGrid, Radar } from "lucide-react";
+import { GitBranch, Radar } from "lucide-react";
 
 import type { StructureTagSlice } from "@/src/types/investment";
 import { USD_JPY_RATE } from "@/src/lib/alpha-logic";
 import { StatBox } from "@/src/components/dashboard/StatBox";
-
-const THEME_BAR_COLORS = [
-  "bg-indigo-500",
-  "bg-emerald-500",
-  "bg-cyan-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-violet-500",
-];
 
 const SATELLITE_TARGET_MIN = 6;
 const SATELLITE_TARGET_MAX = 10;
@@ -167,7 +158,6 @@ function satelliteGaugeClass(count: number): string {
 }
 
 type Props = {
-  structureByTag: StructureTagSlice[];
   structureBySector: StructureTagSlice[];
   /** Satellite かつ評価額 > 0 の銘柄数（個別株モニタ用） */
   satelliteStockCount: number;
@@ -178,7 +168,6 @@ type Props = {
 };
 
 export function StrategySection({
-  structureByTag,
   structureBySector,
   satelliteStockCount,
   totalMarketValue,
@@ -186,7 +175,6 @@ export function StrategySection({
   totalReturnPct,
   totalCostBasisJpy,
 }: Props) {
-  const hasThemes = structureByTag.length > 0;
   const hasSectors = structureBySector.length > 0;
   const sortedSectors = useMemo(() => sortSectorsForBalanceBar(structureBySector), [structureBySector]);
   const gcBalance = useMemo(() => growthCyclicalFromSortedSectors(sortedSectors), [sortedSectors]);
@@ -250,67 +238,10 @@ export function StrategySection({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Panel A: Primary themes */}
-        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-          <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2 tracking-widest">
-            <LayoutGrid size={14} /> Structural investment themes (primary)
-          </h3>
-          <p className="text-[10px] text-slate-600 mb-4 leading-relaxed">
-            構造変化テーマ（先頭タグ）別の評価額シェアと銘柄数。米株は 1 USD = {USD_JPY_RATE} 円換算。
-          </p>
-          {hasThemes ? (
-            <>
-              <div className="h-5 w-full bg-slate-800 rounded-full overflow-hidden flex border border-slate-700">
-                {structureByTag.map((slice, i) => (
-                  <div
-                    key={slice.tag}
-                    className={`h-full shrink-0 ${THEME_BAR_COLORS[i % THEME_BAR_COLORS.length]!} transition-all`}
-                    style={{ width: `${slice.weightPercent}%` }}
-                    title={`${slice.tag}: ${slice.weightPercent}% · ${slice.count} 銘柄`}
-                  />
-                ))}
-              </div>
-              <ul className="mt-4 space-y-2">
-                {structureByTag.map((slice, i) => (
-                  <li
-                    key={slice.tag}
-                    className="flex justify-between items-center gap-2 text-[10px] font-bold uppercase tracking-tighter"
-                  >
-                    <span
-                      className={`flex items-center gap-2 min-w-0 ${
-                        i === 0
-                          ? "text-indigo-400"
-                          : i === 1
-                            ? "text-emerald-400"
-                            : i === 2
-                              ? "text-cyan-400"
-                              : "text-slate-400"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-2 w-2 shrink-0 rounded-full ${THEME_BAR_COLORS[i % THEME_BAR_COLORS.length]}`}
-                      />
-                      <span className="truncate">{slice.tag}</span>
-                    </span>
-                    <span className="text-slate-300 font-mono shrink-0 text-right">
-                      <span className="text-slate-500 font-normal normal-case mr-2">{slice.count} 銘柄</span>
-                      {slice.weightPercent}%
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="text-xs text-slate-600">評価額データが無いか、タグが未設定です。</p>
-          )}
-        </div>
-
-        {/* Panel B: Sector balance */}
-        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
           <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
             <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 tracking-widest">
-              <Radar size={14} /> Sector diversification & balance (secondary)
+              <Radar size={14} /> Sector Balance
             </h3>
             {hasSectors ? (
               <div className="flex flex-wrap items-center justify-end gap-2">
@@ -407,7 +338,6 @@ export function StrategySection({
           ) : (
             <p className="text-xs text-slate-600">セクターデータがありません。</p>
           )}
-        </div>
       </div>
 
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">

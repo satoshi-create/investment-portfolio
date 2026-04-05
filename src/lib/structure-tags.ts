@@ -11,16 +11,28 @@ export function parseStructureTags(structureTagsJson: string): string[] {
   }
 }
 
-/** Parse holdings.structure_tags JSON array; first tag for display, or fallback. */
-export function primaryStructureTag(structureTagsJson: string, fallback = "—"): string {
+/** `structure_tags` の先頭 = 構造投資テーマ（未設定は fallback）。 */
+export function themeFromStructureTags(structureTagsJson: string, fallback = "—"): string {
   const tags = parseStructureTags(structureTagsJson);
   return tags[0] ?? fallback;
 }
 
-/** Second tag as provisional industry / sub-category (dashboard accounting view). */
-export function secondaryStructureTag(structureTagsJson: string, fallback = "Other"): string {
+/** `structure_tags` の 2 番目 = セクター（タグ上の値。未設定は fallback）。 */
+export function sectorFromStructureTags(structureTagsJson: string, fallback = "Other"): string {
   const tags = parseStructureTags(structureTagsJson);
   return tags[1] ?? fallback;
+}
+
+const OTHER_THEME = "その他";
+
+/** Theme / Sector 入力から `structure_tags` JSON を生成（[0]=テーマ、[1]=セクター）。 */
+export function structureTagsJsonFromThemeSector(theme: string, sector: string): string {
+  const t = theme.trim();
+  const s = sector.trim();
+  if (!t && !s) return "[]";
+  if (t && s) return JSON.stringify([t, s]);
+  if (t) return JSON.stringify([t]);
+  return JSON.stringify([OTHER_THEME, s]);
 }
 
 /** DB `holdings.sector` があればそれを、無ければ `structure_tags` の 2 番目（なければ fallback）。 */
@@ -29,19 +41,19 @@ export function holdingSectorKey(
   structureTagsJson: string,
   fallback = "Other",
 ): string {
-  const s = sectorColumn != null ? String(sectorColumn).trim() : "";
-  if (s.length > 0) return s;
-  return secondaryStructureTag(structureTagsJson, fallback);
+  const col = sectorColumn != null ? String(sectorColumn).trim() : "";
+  if (col.length > 0) return col;
+  return sectorFromStructureTags(structureTagsJson, fallback);
 }
 
-/** スナップショット等: 既に算出済みのセカンダリタグ文字列と `sector` 列の優先表示。 */
+/** スナップショット等: `sector` 列とタグ由来セクター文字列の表示用マージ。 */
 export function holdingSectorDisplay(
   sectorColumn: string | null | undefined,
-  secondaryFromStructureTags: string,
+  sectorFromTags: string,
 ): string {
-  const s = sectorColumn != null ? String(sectorColumn).trim() : "";
-  if (s.length > 0) return s;
-  return secondaryFromStructureTags;
+  const col = sectorColumn != null ? String(sectorColumn).trim() : "";
+  if (col.length > 0) return col;
+  return sectorFromTags;
 }
 
 const OTHER_TAG = "その他";
@@ -69,10 +81,10 @@ function finalizeSlices(byTag: Map<string, TagAgg>): StructureTagSlice[] {
 }
 
 /**
- * プライマリタグ（配列の先頭）ごとに評価額・銘柄数を合算し、ポートフォリオ全体に対する比率 % を返す。
- * タグ無しは「その他」に寄せる。
+ * 構造投資テーマ（`structure_tags` 先頭）ごとに評価額・銘柄数を合算。
+ * テーマ無しは「その他」に寄せる。
  */
-export function aggregateByPrimaryStructureTag(
+export function aggregateByTheme(
   rows: Array<{ structureTagsJson: string; marketValue: number }>,
 ): StructureTagSlice[] {
   const byTag = new Map<string, TagAgg>();
@@ -89,15 +101,16 @@ export function aggregateByPrimaryStructureTag(
 }
 
 /**
- * セカンダリタグ（配列の 2 番目）ごとに評価額・銘柄数を合算。未設定は `secondaryStructureTag` と同じく "Other"。
+ * `structure_tags` の 2 番目（セクター）ごとに評価額・銘柄数を合算。
+ * 未設定は `sectorFromStructureTags` と同じく "Other"。
  */
-export function aggregateBySecondaryStructureTag(
+export function aggregateBySector(
   rows: Array<{ structureTagsJson: string; marketValue: number }>,
 ): StructureTagSlice[] {
   const byTag = new Map<string, TagAgg>();
   for (const r of rows) {
     const mv = sanitizeMarketValueForAggregation(r.marketValue);
-    const key = secondaryStructureTag(r.structureTagsJson);
+    const key = sectorFromStructureTags(r.structureTagsJson);
     const cur = byTag.get(key) ?? { marketValue: 0, count: 0 };
     cur.marketValue += mv;
     cur.count += 1;
@@ -107,7 +120,7 @@ export function aggregateBySecondaryStructureTag(
 }
 
 /**
- * `holdings.sector` を優先し、空なら `structure_tags` の 2 番目でキー化して集計（ダッシュボード「セクター」パネル用）。
+ * `holdings.sector` を優先し、空なら `structure_tags` の 2 番目でキー化して集計（セクターバランス用）。
  */
 export function aggregateByHoldingSector(
   rows: Array<{ sector: string | null | undefined; structureTagsJson: string; marketValue: number }>,

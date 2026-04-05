@@ -34,7 +34,6 @@ type DashboardPayload = {
   userId: string;
   stocks: Stock[];
   signals: Signal[];
-  structureByTag: StructureTagSlice[];
   structureBySector: StructureTagSlice[];
   totalMarketValue: number;
   summary: DashboardSummary;
@@ -67,7 +66,6 @@ export function DashboardPage() {
         userId: json.userId!,
         stocks: json.stocks ?? [],
         signals: json.signals ?? [],
-        structureByTag: json.structureByTag ?? [],
         structureBySector: json.structureBySector ?? [],
         totalMarketValue: json.totalMarketValue ?? 0,
         summary: { ...EMPTY_SUMMARY, ...(json.summary ?? {}) },
@@ -108,7 +106,6 @@ export function DashboardPage() {
 
   const stocks = data?.stocks ?? [];
   const signals = data?.signals ?? [];
-  const structureByTag = data?.structureByTag ?? [];
   const structureBySector = data?.structureBySector ?? [];
   const totalMarketValue = data?.totalMarketValue ?? 0;
   const summary = data?.summary ?? EMPTY_SUMMARY;
@@ -201,7 +198,6 @@ export function DashboardPage() {
         </div>
 
         <StrategySection
-          structureByTag={structureByTag}
           structureBySector={structureBySector}
           satelliteStockCount={satelliteStockCount}
           totalMarketValue={totalMarketValue}

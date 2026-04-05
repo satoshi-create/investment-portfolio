@@ -86,7 +86,14 @@ export function SignalCard({ signal, userId, onResolved, onTrade }: Props) {
           {onTrade ? (
             <button
               type="button"
-              onClick={() => onTrade({ ticker: signal.ticker, name: signal.name || undefined })}
+              onClick={() =>
+                onTrade({
+                  ticker: signal.ticker,
+                  name: signal.name || undefined,
+                  theme: signal.tag,
+                  sector: signal.sector ?? signal.secondaryTag,
+                })
+              }
               className="text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg border border-cyan-500/40 text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 transition-colors"
             >
               Trade

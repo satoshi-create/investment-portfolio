@@ -17,6 +17,10 @@ export type ExecuteTradeActionInput = {
   feesJpy?: number;
   tradeDate: string;
   categoryForNewHolding?: "Core" | "Satellite";
+  /** `structure_tags` 先頭（テーマ） */
+  structureTheme?: string;
+  /** `structure_tags` 2 番目および `holdings.sector` */
+  structureSector?: string;
 };
 
 export type ExecuteTradeActionResult = {
@@ -54,6 +58,8 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
     feesJpy: input.feesJpy != null ? Number(input.feesJpy) : 0,
     tradeDate: input.tradeDate.trim(),
     categoryForNewHolding: category,
+    structureTheme: input.structureTheme?.trim() ?? "",
+    structureSector: input.structureSector?.trim() ?? "",
   };
 
   const db = getDb();
@@ -64,6 +70,7 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
 
   revalidatePath("/");
   revalidatePath("/logs");
+  revalidatePath("/themes", "layout");
   return {
     ok: true,
     message: side === "BUY" ? "買い注文を記録し、保有を更新しました。" : "売却を記録し、保有を更新しました。",

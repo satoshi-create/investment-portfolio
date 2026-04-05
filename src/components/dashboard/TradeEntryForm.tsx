@@ -9,6 +9,10 @@ import { classifyTickerInstrument, USD_JPY_RATE } from "@/src/lib/alpha-logic";
 export type TradeEntryInitial = {
   ticker: string;
   name?: string;
+  /** structure_tags の先頭（テーマ） */
+  theme?: string;
+  /** structure_tags の 2 番目および holdings.sector */
+  sector?: string;
 };
 
 type Props = {
@@ -40,6 +44,8 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Pr
   const [tradeDate, setTradeDate] = useState(todayYmd);
   const [accountName, setAccountName] = useState("特定");
   const [category, setCategory] = useState<"Core" | "Satellite">("Satellite");
+  const [structureTheme, setStructureTheme] = useState("");
+  const [structureSector, setStructureSector] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -47,9 +53,13 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Pr
     if (initial) {
       setTicker(initial.ticker);
       setName(initial.name ?? "");
+      setStructureTheme(initial.theme ?? "");
+      setStructureSector(initial.sector ?? "");
     } else {
       setTicker("");
       setName("");
+      setStructureTheme("");
+      setStructureSector("");
     }
     setTradeDate(todayYmd());
   }, [open, initial]);
@@ -81,6 +91,8 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Pr
         feesJpy: Number.isFinite(f) ? f : 0,
         tradeDate,
         categoryForNewHolding: category,
+        structureTheme: structureTheme.trim(),
+        structureSector: structureSector.trim(),
       });
       setMessage(res.message);
       if (res.ok) {
@@ -132,6 +144,29 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Pr
               onChange={(e) => setName(e.target.value)}
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
             />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+              Theme（構造投資テーマ）
+            </label>
+            <input
+              value={structureTheme}
+              onChange={(e) => setStructureTheme(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+              placeholder="例: グロース / 非石油文明"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Sector（セクター）</label>
+            <input
+              value={structureSector}
+              onChange={(e) => setStructureSector(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+              placeholder="例: ソフトウェア / エネルギー"
+            />
+            <p className="text-[9px] text-slate-600 mt-1">
+              保存時: structure_tags の [0]=Theme、[1]=Sector、かつ sector 列に Sector を保存します。
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

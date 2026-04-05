@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { Search } from "lucide-react";
 
 import type { Stock } from "@/src/types/investment";
@@ -62,7 +63,14 @@ export function InventoryTable({
                       {onTrade ? (
                         <button
                           type="button"
-                          onClick={() => onTrade({ ticker: stock.ticker, name: stock.name || undefined })}
+                          onClick={() =>
+                            onTrade({
+                              ticker: stock.ticker,
+                              name: stock.name || undefined,
+                              ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
+                              sector: stock.sector ?? stock.secondaryTag,
+                            })
+                          }
                           className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-cyan-400 border border-cyan-500/40 px-2 py-0.5 rounded-md hover:bg-cyan-500/10"
                         >
                           Trade
@@ -74,9 +82,14 @@ export function InventoryTable({
                         {stock.name}
                       </span>
                     ) : null}
-                    <span className="text-[10px] text-slate-500 font-medium uppercase tracking-tight">
-                      {stock.tag}
-                    </span>
+                    {stock.tag.trim().length > 0 ? (
+                      <Link
+                        href={`/themes/${encodeURIComponent(stock.tag)}`}
+                        className="inline-flex items-center w-fit text-[10px] font-bold uppercase tracking-tight text-cyan-400/90 hover:text-cyan-300 border border-cyan-500/35 rounded-md px-2 py-0.5 mt-0.5 hover:bg-cyan-500/10 transition-colors"
+                      >
+                        {stock.tag}
+                      </Link>
+                    ) : null}
                   </div>
                 </td>
                 <td
