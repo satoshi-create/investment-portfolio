@@ -119,6 +119,28 @@ export type PortfolioDailySnapshotRow = {
 };
 
 /** One row from `holding_daily_snapshots` (銘柄×日・Record snapshot 時). */
+/** ダッシュボード「取引履歴」（売却行・サーバーで現在価格・売却後騰落率を付与） */
+export type ClosedTradeDashboardRow = {
+  id: string;
+  tradeDate: string;
+  ticker: string;
+  name: string;
+  market: "JP" | "US";
+  accountName: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  costJpy: number;
+  proceedsJpy: number;
+  feesJpy: number;
+  realizedPnlJpy: number;
+  /** 表示用・騰落率計算用（円/単位）。米国株は終値×USD_JPY_RATE */
+  currentPriceJpy: number | null;
+  /** (現在円単価 − 譲渡÷数量) / (譲渡÷数量) × 100 */
+  postExitReturnPct: number | null;
+  /** 正: 🚨 痛恨 / 負: ✅ 英断 / 算出不可: — */
+  verdictLabel: string;
+};
+
 export type HoldingDailySnapshotRow = {
   id: string;
   userId: string;

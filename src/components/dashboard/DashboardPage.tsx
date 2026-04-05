@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState, useTransition } from "react";
 import { recordPortfolioSnapshotAction } from "@/app/actions/snapshot";
 import { generateSignalsAction } from "@/app/actions/signals";
 import type {
+  ClosedTradeDashboardRow,
   CoreSatelliteBreakdown,
   DashboardSummary,
   HoldingDailySnapshotRow,
@@ -13,6 +14,7 @@ import type {
   Stock,
   StructureTagSlice,
 } from "@/src/types/investment";
+import { ClosedTradesTable } from "@/src/components/dashboard/ClosedTradesTable";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { HoldingDailySnapshotsTable } from "@/src/components/dashboard/HoldingDailySnapshotsTable";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
@@ -45,6 +47,7 @@ type DashboardPayload = {
   portfolioSnapshots: PortfolioDailySnapshotRow[];
   holdingSnapshotsDate: string | null;
   holdingSnapshots: HoldingDailySnapshotRow[];
+  closedTrades: ClosedTradeDashboardRow[];
 };
 
 export function DashboardPage() {
@@ -84,6 +87,7 @@ export function DashboardPage() {
         portfolioSnapshots: json.portfolioSnapshots ?? [],
         holdingSnapshotsDate: json.holdingSnapshotsDate ?? null,
         holdingSnapshots: json.holdingSnapshots ?? [],
+        closedTrades: json.closedTrades ?? [],
       });
     } catch (e) {
       setData(null);
@@ -133,6 +137,7 @@ export function DashboardPage() {
   const portfolioSnapshots = data?.portfolioSnapshots ?? [];
   const holdingSnapshotsDate = data?.holdingSnapshotsDate ?? null;
   const holdingSnapshots = data?.holdingSnapshots ?? [];
+  const closedTrades = data?.closedTrades ?? [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
@@ -211,6 +216,7 @@ export function DashboardPage() {
         <HoldingsDetailTable stocks={stocks} />
         <PortfolioSnapshotsTable rows={portfolioSnapshots} />
         <HoldingDailySnapshotsTable snapshotDate={holdingSnapshotsDate} rows={holdingSnapshots} />
+        <ClosedTradesTable rows={closedTrades} />
       </div>
     </div>
   );

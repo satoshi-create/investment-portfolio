@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { fetchUnresolvedSignalsForUser, getDashboardData } from "@/src/lib/dashboard-data";
+import { fetchClosedTradesForDashboard } from "@/src/lib/trade-history";
 import { getDb, isDbConfigured } from "@/src/lib/db";
 import {
   fetchHoldingDailySnapshotsLatestForUser,
@@ -23,11 +24,12 @@ export async function GET(request: Request) {
 
   try {
     const db = getDb();
-    const [dash, signals, portfolioSnapshots, holdingSnapshotsBundle] = await Promise.all([
+    const [dash, signals, portfolioSnapshots, holdingSnapshotsBundle, closedTrades] = await Promise.all([
       getDashboardData(db, userId),
       fetchUnresolvedSignalsForUser(db, userId),
       fetchPortfolioDailySnapshotsForUser(db, userId),
       fetchHoldingDailySnapshotsLatestForUser(db, userId),
+      fetchClosedTradesForDashboard(db, userId),
     ]);
     return NextResponse.json({
       userId,
@@ -40,6 +42,7 @@ export async function GET(request: Request) {
       portfolioSnapshots,
       holdingSnapshotsDate: holdingSnapshotsBundle.snapshotDate,
       holdingSnapshots: holdingSnapshotsBundle.rows,
+      closedTrades,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
