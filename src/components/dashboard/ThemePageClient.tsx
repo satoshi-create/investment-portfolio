@@ -268,11 +268,15 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         <tbody key={field} className="divide-y divide-slate-800/50">
                           <tr className="bg-slate-950/90">
                             <td
-                              colSpan={4}
-                              className="px-6 py-2 text-[10px] font-bold uppercase tracking-wider text-cyan-500/90 border-b border-slate-800"
+                              className={`px-6 py-2 min-w-[10rem] max-w-[14rem] sticky left-0 z-[19] bg-slate-950/90 border-r border-slate-800/90 border-b border-slate-800 shadow-[2px_0_10px_rgba(0,0,0,0.35)] text-[10px] font-bold uppercase tracking-wider text-cyan-500/90`}
                             >
                               {field}
                             </td>
+                            <td
+                              colSpan={3}
+                              className="border-b border-slate-800 bg-slate-950/90 px-6 py-2"
+                              aria-hidden
+                            />
                           </tr>
                           {items.map((e) => (
                             <tr key={e.id} className="group hover:bg-slate-800/40 transition-all">
