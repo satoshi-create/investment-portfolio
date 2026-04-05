@@ -2,6 +2,7 @@ import React from "react";
 import { Layers } from "lucide-react";
 
 import type { HoldingDailySnapshotRow, TickerInstrumentKind } from "@/src/types/investment";
+import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -79,7 +80,9 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
           <table className="w-full text-left text-sm min-w-[1050px]">
             <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
-                <th className="px-4 py-3 whitespace-nowrap">銘柄 / コード</th>
+                <th className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyThFirst}`}>
+                  銘柄 / コード
+                </th>
                 <th className="px-4 py-3 whitespace-nowrap">市場</th>
                 <th className="px-4 py-3 whitespace-nowrap">業界</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">数量</th>
@@ -94,10 +97,10 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-800/35 transition-colors">
-                  <td className="px-4 py-2.5 whitespace-nowrap">
+                <tr key={r.id} className="group hover:bg-slate-800/35 transition-colors">
+                  <td className={`px-4 py-2.5 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyTdFirst}`}>
                     <div className="flex flex-col gap-0.5">
-                      <span className="font-medium text-slate-100 max-w-[180px] truncate" title={r.name}>
+                      <span className="font-medium text-slate-100 max-w-[11rem] truncate" title={r.name || r.ticker}>
                         {r.name || r.ticker}
                       </span>
                       <span className="text-[10px] font-mono text-slate-500">{r.ticker}</span>

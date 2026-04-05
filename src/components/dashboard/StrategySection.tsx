@@ -1,5 +1,5 @@
 import React from "react";
-import { LayoutGrid, Scale } from "lucide-react";
+import { LayoutGrid } from "lucide-react";
 
 import type { CoreSatelliteBreakdown, StructureTagSlice } from "@/src/types/investment";
 import { USD_JPY_RATE } from "@/src/lib/alpha-logic";
@@ -16,17 +16,16 @@ const TAG_BAR_COLORS = [
 
 type Props = {
   structureByTag: StructureTagSlice[];
-  coreSatellite: CoreSatelliteBreakdown;
+  /** コメントアウト中の Core/Satellite カード用（将来復帰時に使用） */
+  coreSatellite?: CoreSatelliteBreakdown;
   totalMarketValue: number;
 };
 
-export function StrategySection({ structureByTag, coreSatellite, totalMarketValue }: Props) {
+export function StrategySection({ structureByTag, totalMarketValue }: Props) {
   const hasStructure = structureByTag.length > 0;
-  const coreW = Math.max(0, Math.min(100, coreSatellite.coreWeightPercent));
-  const satW = Math.max(0, Math.min(100, coreSatellite.satelliteWeightPercent));
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
         <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2 tracking-widest">
           <LayoutGrid size={14} /> Structure (primary tag)
@@ -78,8 +77,20 @@ export function StrategySection({ structureByTag, coreSatellite, totalMarketValu
         ) : (
           <p className="text-xs text-slate-600">評価額データが無いか、タグが未設定です。</p>
         )}
+        <div className="mt-6 pt-4 border-t border-slate-800">
+          <StatBox
+            label="Σ Market value (JPY)"
+            value={
+              totalMarketValue > 0
+                ? `¥${totalMarketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                : "—"
+            }
+            subLabel={`米株は USD×${USD_JPY_RATE}。指数は valuation_factor で調整`}
+          />
+        </div>
       </div>
 
+      {/*
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl md:col-span-2 shadow-xl">
         <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2 tracking-widest">
           <Scale size={14} /> Core / Satellite vs 9:1
@@ -124,6 +135,7 @@ export function StrategySection({ structureByTag, coreSatellite, totalMarketValu
           />
         </div>
       </div>
+      */}
     </div>
   );
 }

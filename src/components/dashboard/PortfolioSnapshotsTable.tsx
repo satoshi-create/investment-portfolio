@@ -2,6 +2,7 @@ import React from "react";
 import { Table2 } from "lucide-react";
 
 import type { PortfolioDailySnapshotRow } from "@/src/types/investment";
+import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -59,7 +60,7 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
           <table className="w-full text-left text-sm min-w-[960px]">
             <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
-                <th className="px-4 py-3 whitespace-nowrap">日付 (UTC)</th>
+                <th className={`px-4 py-3 whitespace-nowrap min-w-[6.5rem] ${stickyThFirst}`}>日付 (UTC)</th>
                 <th className="px-4 py-3 whitespace-nowrap">記録時刻</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">USD/JPY</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">VOO</th>
@@ -73,8 +74,8 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-800/35 transition-colors">
-                  <td className="px-4 py-2.5 font-mono text-slate-300 text-xs whitespace-nowrap">
+                <tr key={r.id} className="group hover:bg-slate-800/35 transition-colors">
+                  <td className={`px-4 py-2.5 font-mono text-slate-300 text-xs whitespace-nowrap min-w-[6.5rem] ${stickyTdFirst}`}>
                     {r.snapshotDate}
                   </td>
                   <td className="px-4 py-2.5 text-[11px] text-slate-500 whitespace-nowrap">

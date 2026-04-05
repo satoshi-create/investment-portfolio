@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 
 import type { Stock, TickerInstrumentKind } from "@/src/types/investment";
+import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -98,14 +99,16 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
           Portfolio accounting
         </h3>
         <p className="text-[10px] text-slate-600 mt-1">
-          含み損益・損益率は平均取得単価と最新終値（VOO ベンチマーク履歴）から算出。米株の円換算は Core/Satellite と同じ定数レートを使用。
+          含み損益・損益率は平均取得単価と最新終値（VOO ベンチマーク履歴）から算出。米株の円換算はダッシュボードの USD/JPY 定数レートを使用。
         </p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm min-w-[1100px]">
           <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.08em]">
             <tr>
-              <th className="px-4 py-3 whitespace-nowrap">銘柄 / コード</th>
+              <th className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyThFirst}`}>
+                銘柄 / コード
+              </th>
               <th className="px-4 py-3 whitespace-nowrap">市場区分</th>
               <th className="px-4 py-3 whitespace-nowrap">業界</th>
               <th className="px-4 py-3 text-right whitespace-nowrap">数量</th>
@@ -120,10 +123,10 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
           </thead>
           <tbody className="divide-y divide-slate-800/50">
             {stocks.map((s) => (
-              <tr key={s.id} className="hover:bg-slate-800/40 transition-colors">
-                <td className="px-4 py-3 whitespace-nowrap">
+              <tr key={s.id} className="group hover:bg-slate-800/40 transition-colors">
+                <td className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyTdFirst}`}>
                   <div className="flex flex-col gap-0.5">
-                    <span className="font-medium text-slate-100 max-w-[200px] truncate" title={s.name}>
+                    <span className="font-medium text-slate-100 max-w-[11rem] truncate" title={s.name || s.ticker}>
                       {s.name || s.ticker}
                     </span>
                     <span className="text-[10px] font-mono text-slate-500">{s.ticker}</span>
@@ -171,8 +174,8 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
             ))}
           </tbody>
           <tfoot>
-            <tr className="bg-slate-900/95 border-t border-slate-700">
-              <td className="px-4 py-3 text-xs font-bold text-slate-300 whitespace-nowrap">
+            <tr className="group bg-slate-900/95 border-t border-slate-700">
+              <td className={`px-4 py-3 text-xs font-bold text-slate-300 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyTdFootFirst}`}>
                 Σ / 平均
                 <span className="block text-[10px] font-normal text-slate-500 font-mono">
                   {footer.count} 銘柄

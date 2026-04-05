@@ -2,6 +2,7 @@ import React from "react";
 import { History } from "lucide-react";
 
 import type { ClosedTradeDashboardRow } from "@/src/types/investment";
+import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -66,9 +67,9 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
           <table className="w-full text-left text-sm min-w-[1280px]">
             <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
-                <th className="px-3 py-3 whitespace-nowrap">約定日</th>
+                <th className={`px-3 py-3 whitespace-nowrap min-w-[7rem] max-w-[10rem] ${stickyThFirst}`}>銘柄名</th>
                 <th className="px-3 py-3 whitespace-nowrap">ティッカー</th>
-                <th className="px-3 py-3 whitespace-nowrap min-w-[140px]">銘柄名</th>
+                <th className="px-3 py-3 whitespace-nowrap">約定日</th>
                 <th className="px-3 py-3 whitespace-nowrap">市場</th>
                 <th className="px-3 py-3 whitespace-nowrap">口座</th>
                 <th className="px-3 py-3 whitespace-nowrap">売買</th>
@@ -84,14 +85,19 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-800/35 transition-colors">
-                  <td className="px-3 py-2.5 font-mono text-slate-300 text-xs whitespace-nowrap">
-                    {r.tradeDate}
+                <tr key={r.id} className="group hover:bg-slate-800/35 transition-colors">
+                  <td
+                    className={`px-3 py-2.5 text-slate-300 text-xs min-w-[7rem] max-w-[10rem] ${stickyTdFirst}`}
+                    title={r.name || undefined}
+                  >
+                    <span className="line-clamp-3 break-words">{r.name || "—"}</span>
                   </td>
                   <td className="px-3 py-2.5 font-mono text-slate-200 text-xs whitespace-nowrap">
                     {r.ticker}
                   </td>
-                  <td className="px-3 py-2.5 text-slate-300 text-xs">{r.name || "—"}</td>
+                  <td className="px-3 py-2.5 font-mono text-slate-300 text-xs whitespace-nowrap">
+                    {r.tradeDate}
+                  </td>
                   <td className="px-3 py-2.5 text-slate-400 text-xs whitespace-nowrap">
                     {marketLabel(r.market)}
                   </td>

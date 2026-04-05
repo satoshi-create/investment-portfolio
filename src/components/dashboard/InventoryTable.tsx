@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 
 import type { Stock } from "@/src/types/investment";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
+import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -40,7 +41,7 @@ export function InventoryTable({
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.1em]">
             <tr>
-              <th className="px-6 py-4">Asset</th>
+              <th className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyThFirst}`}>Asset</th>
               <th className="px-6 py-4 text-right">Alpha</th>
               <th className="px-6 py-4 text-center">5D Trend</th>
               <th className="px-6 py-4 text-right">Position</th>
@@ -48,12 +49,17 @@ export function InventoryTable({
           </thead>
           <tbody className="divide-y divide-slate-800/50">
             {stocks.map((stock) => (
-              <tr key={stock.id} className="hover:bg-slate-800/40 transition-all group">
-                <td className="px-6 py-4">
-                  <div className="flex flex-col">
+              <tr key={stock.id} className="group hover:bg-slate-800/40 transition-all">
+                <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
+                  <div className="flex flex-col gap-0.5">
                     <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors">
                       {stock.ticker}
                     </span>
+                    {stock.name ? (
+                      <span className="text-[10px] text-slate-400 leading-snug line-clamp-2" title={stock.name}>
+                        {stock.name}
+                      </span>
+                    ) : null}
                     <span className="text-[10px] text-slate-500 font-medium uppercase tracking-tight">
                       {stock.tag}
                     </span>
@@ -107,8 +113,8 @@ export function InventoryTable({
             ))}
           </tbody>
           <tfoot>
-            <tr className="bg-slate-900/90 border-t border-slate-700">
-              <td className="px-6 py-3 text-xs font-bold text-slate-300">
+            <tr className="group bg-slate-900/90 border-t border-slate-700">
+              <td className={`px-6 py-3 text-xs font-bold text-slate-300 min-w-[10rem] max-w-[11rem] ${stickyTdFootFirst}`}>
                 Total: {totalHoldings} {totalHoldings === 1 ? "item" : "items"}
               </td>
               <td className={`px-6 py-3 text-right text-xs font-mono font-bold ${avgAlphaClass}`}>
