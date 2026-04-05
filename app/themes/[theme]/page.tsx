@@ -1,3 +1,6 @@
+/**
+ * テーマ詳細（累積 Structural Alpha を含むチャート群）は `ThemePageClient` に集約。
+ */
 import { ThemePageClient } from "@/src/components/dashboard/ThemePageClient";
 
 type PageProps = {

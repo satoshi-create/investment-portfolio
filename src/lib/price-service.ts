@@ -10,6 +10,7 @@ import {
   dailyReturnPercent,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
+  type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
 import type { MarketIndicator } from "@/src/types/investment";
 
@@ -204,6 +205,107 @@ export async function fetchPriceHistory(
   } catch (e) {
     logSkip(logLabel, "fetchPriceHistory failed", e);
     return [];
+  }
+}
+
+function sharedSortedDatesForVooOverlap(stockBars: PriceBar[], vooBars: PriceBar[]): string[] {
+  const vooSet = new Set(vooBars.map((b) => b.date));
+  return [...new Set(stockBars.map((b) => b.date).filter((d) => vooSet.has(d)))].sort();
+}
+
+/**
+ * Yahoo から日次 Alpha % 系列（株 − VOO）を構築。`alpha_history` が無いウォッチリスト銘柄用。
+ */
+export async function fetchRecentDailyAlphaSeriesVsVoo(
+  ticker: string,
+  calendarDays: number,
+  providerSymbol?: string | null,
+): Promise<{ alphas: number[]; lastClose: number | null }> {
+  const safeDays = Math.max(15, Math.min(120, Math.floor(Number.isFinite(calendarDays) ? calendarDays : 45)));
+  try {
+    const [stockBars, benchBars] = await Promise.all([
+      fetchPriceHistory(ticker, safeDays, providerSymbol),
+      fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, safeDays, null),
+    ]);
+    if (stockBars.length < 2 || benchBars.length < 2) {
+      const last = stockBars.length > 0 ? stockBars[stockBars.length - 1]!.close : null;
+      return { alphas: [], lastClose: last };
+    }
+    const vooByDate = new Map(benchBars.map((b) => [b.date, b.close]));
+    const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
+    const shared = sharedSortedDatesForVooOverlap(stockBars, benchBars);
+    if (shared.length < 2) {
+      return { alphas: [], lastClose: stockBars[stockBars.length - 1]!.close };
+    }
+    const alphas: number[] = [];
+    for (let i = 1; i < shared.length; i++) {
+      const dPrev = shared[i - 1]!;
+      const dCur = shared[i]!;
+      const s0 = stockBy.get(dPrev);
+      const s1 = stockBy.get(dCur);
+      const b0 = vooByDate.get(dPrev);
+      const b1 = vooByDate.get(dCur);
+      if (s0 == null || s1 == null || b0 == null || b1 == null) continue;
+      const rStock = dailyReturnPercent(s0, s1);
+      const rBench = dailyReturnPercent(b0, b1);
+      const alpha = computeAlphaPercent(rStock, rBench);
+      if (alpha === null) continue;
+      alphas.push(roundAlphaMetric(alpha));
+    }
+    const lastClose =
+      stockBy.get(shared[shared.length - 1]!) ?? stockBars[stockBars.length - 1]!.close ?? null;
+    return { alphas, lastClose };
+  } catch (e) {
+    logSkip(ticker, "fetchRecentDailyAlphaSeriesVsVoo failed", e);
+    return { alphas: [], lastClose: null };
+  }
+}
+
+/**
+ * Yahoo から日次 Alpha（株 − VOO）を **観測日（各区間の終端日）付き**で返す。累積 Alpha の起点計算用。
+ */
+export async function fetchRecentDatedDailyAlphasVsVoo(
+  ticker: string,
+  calendarDays: number,
+  providerSymbol?: string | null,
+): Promise<{ rows: DatedAlphaRow[]; lastClose: number | null }> {
+  const safeDays = Math.max(15, Math.min(120, Math.floor(Number.isFinite(calendarDays) ? calendarDays : 45)));
+  try {
+    const [stockBars, benchBars] = await Promise.all([
+      fetchPriceHistory(ticker, safeDays, providerSymbol),
+      fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, safeDays, null),
+    ]);
+    if (stockBars.length < 2 || benchBars.length < 2) {
+      const last = stockBars.length > 0 ? stockBars[stockBars.length - 1]!.close : null;
+      return { rows: [], lastClose: last };
+    }
+    const vooByDate = new Map(benchBars.map((b) => [b.date, b.close]));
+    const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
+    const shared = sharedSortedDatesForVooOverlap(stockBars, benchBars);
+    if (shared.length < 2) {
+      return { rows: [], lastClose: stockBars[stockBars.length - 1]!.close };
+    }
+    const rows: DatedAlphaRow[] = [];
+    for (let i = 1; i < shared.length; i++) {
+      const dPrev = shared[i - 1]!;
+      const dCur = shared[i]!;
+      const s0 = stockBy.get(dPrev);
+      const s1 = stockBy.get(dCur);
+      const b0 = vooByDate.get(dPrev);
+      const b1 = vooByDate.get(dCur);
+      if (s0 == null || s1 == null || b0 == null || b1 == null) continue;
+      const rStock = dailyReturnPercent(s0, s1);
+      const rBench = dailyReturnPercent(b0, b1);
+      const alpha = computeAlphaPercent(rStock, rBench);
+      if (alpha === null) continue;
+      rows.push({ recordedAt: dCur, alphaValue: roundAlphaMetric(alpha) });
+    }
+    const lastClose =
+      stockBy.get(shared[shared.length - 1]!) ?? stockBars[stockBars.length - 1]!.close ?? null;
+    return { rows, lastClose };
+  } catch (e) {
+    logSkip(ticker, "fetchRecentDatedDailyAlphasVsVoo failed", e);
+    return { rows: [], lastClose: null };
   }
 }
 

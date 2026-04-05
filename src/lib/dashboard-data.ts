@@ -2,6 +2,7 @@ import type { Client } from "@libsql/client";
 
 import type {
   CoreSatelliteBreakdown,
+  CumulativeAlphaPoint,
   DashboardData,
   HoldingCategory,
   InvestmentThemeRecord,
@@ -9,15 +10,19 @@ import type {
   Stock,
   StructureTagSlice,
   ThemeDetailData,
+  ThemeEcosystemWatchItem,
   TickerInstrumentKind,
 } from "@/src/types/investment";
 import {
+  calculateCumulativeAlpha,
   classifyTickerInstrument,
   convertValueToJpy,
   dailyReturnPercent,
+  mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
+  type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
 import {
   aggregateByHoldingSector,
@@ -26,7 +31,11 @@ import {
   sectorFromStructureTags,
   themeFromStructureTags,
 } from "@/src/lib/structure-tags";
-import { fetchGlobalMarketIndicators, fetchLatestPrice } from "@/src/lib/price-service";
+import {
+  fetchGlobalMarketIndicators,
+  fetchLatestPrice,
+  fetchRecentDatedDailyAlphasVsVoo,
+} from "@/src/lib/price-service";
 
 const TARGET_CORE_PERCENT = 90;
 
@@ -224,6 +233,29 @@ function buildByTickerFromAlphaRows(rows: Iterable<Record<string, unknown>>): Ma
   return byTicker;
 }
 
+/** 同一日複数行は後勝ち。日付昇順の `DatedAlphaRow[]` をティッカー別に構築。 */
+function buildByTickerDatedAlphaRows(rows: Iterable<Record<string, unknown>>): Map<string, DatedAlphaRow[]> {
+  const byDay = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const tk = String(row["ticker"]);
+    const ra = row["recorded_at"];
+    if (ra == null) continue;
+    const ymd = String(ra).trim().slice(0, 10);
+    if (ymd.length !== 10) continue;
+    const alpha = Number(row["alpha_value"]);
+    if (!byDay.has(tk)) byDay.set(tk, new Map());
+    byDay.get(tk)!.set(ymd, alpha);
+  }
+  const out = new Map<string, DatedAlphaRow[]>();
+  for (const [tk, m] of byDay) {
+    const arr = [...m.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([ymd, alphaValue]) => ({ recordedAt: ymd, alphaValue }));
+    out.set(tk, arr);
+  }
+  return out;
+}
+
 function buildDraftsFromHoldingRows(rows: HoldingQueryRow[], byTicker: Map<string, AlphaPoint[]>): StockDraft[] {
   return rows.map((row) => {
     const id = String(row.id);
@@ -342,62 +374,252 @@ export async function fetchInvestmentThemeRecord(
   }
 }
 
-/**
- * 指定テーマ（structure_tags 先頭一致）の保有・Alpha・テーマメタを一括取得。`/themes/[theme]` 用。
- */
-export async function getThemeDetailData(db: Client, userId: string, themeName: string): Promise<ThemeDetailData> {
-  const [theme, benchmarkLatestPrice] = await Promise.all([
-    fetchInvestmentThemeRecord(db, userId, themeName),
-    resolveBenchmarkLatestClose(),
-  ]);
+async function enrichEcosystemMemberRow(
+  db: Client,
+  userId: string,
+  row: Record<string, unknown>,
+  portfolioTickerSet: Set<string>,
+  themeCreatedAt: string | null,
+): Promise<ThemeEcosystemWatchItem> {
+  const id = String(row["id"]);
+  const themeId = String(row["theme_id"]);
+  const ticker = String(row["ticker"]).trim();
+  const companyName = row["company_name"] != null ? String(row["company_name"]) : ticker;
+  const field = row["field"] != null ? String(row["field"]) : "";
+  const role = row["role"] != null ? String(row["role"]) : "";
+  const isMajorPlayer = Number(row["is_major_player"]) === 1;
+  const inPortfolio = portfolioTickerSet.has(ticker.toUpperCase());
+  const rawObs = row["observation_started_at"];
+  const observationStartedAt =
+    rawObs != null && String(rawObs).trim().length >= 10 ? String(rawObs).trim().slice(0, 10) : null;
 
-  const h = await db.execute({
-    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, provider_symbol, valuation_factor
-          FROM holdings
-          WHERE user_id = ? AND quantity > 0
-          ORDER BY ticker`,
-    args: [userId],
+  const histRs = await db.execute({
+    sql: `SELECT alpha_value, close_price, recorded_at FROM alpha_history
+          WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?
+          ORDER BY recorded_at ASC`,
+    args: [userId, ticker, SIGNAL_BENCHMARK_TICKER],
   });
 
-  const matching: HoldingQueryRow[] = (h.rows as unknown as HoldingQueryRow[]).filter((row) => {
+  const byDay = new Map<string, number>();
+  for (const r of histRs.rows) {
+    const ra = r["recorded_at"];
+    if (ra == null) continue;
+    const ymd = String(ra).trim().slice(0, 10);
+    if (ymd.length !== 10) continue;
+    const av = Number(r["alpha_value"]);
+    byDay.set(ymd, av);
+  }
+  let datedRows: DatedAlphaRow[] = [...byDay.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([recordedAt, alphaValue]) => ({ recordedAt, alphaValue }));
+
+  let lastClose: number | null = null;
+  const lastHist = histRs.rows[histRs.rows.length - 1];
+  if (lastHist?.close_price != null && Number.isFinite(Number(lastHist.close_price))) {
+    lastClose = Number(lastHist.close_price);
+  }
+
+  if (datedRows.length < 2) {
+    const live = await fetchRecentDatedDailyAlphasVsVoo(ticker, 120, null);
+    if (live.rows.length >= 2) {
+      datedRows = live.rows;
+      if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
+        lastClose = live.lastClose;
+      }
+    } else if (live.rows.length > 0 && datedRows.length === 0) {
+      datedRows = live.rows;
+      if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
+        lastClose = live.lastClose;
+      }
+    }
+  }
+
+  if (lastClose == null || !Number.isFinite(lastClose) || lastClose <= 0) {
+    const snap = await fetchLatestPrice(ticker, null);
+    if (snap != null && Number.isFinite(snap.close) && snap.close > 0) lastClose = snap.close;
+  }
+
+  const startDate =
+    observationStartedAt != null && observationStartedAt.length === 10
+      ? observationStartedAt
+      : themeCreatedAt != null && themeCreatedAt.trim().length > 0
+        ? themeCreatedAt.trim()
+        : datedRows[0] != null
+          ? datedRows[0]!.recordedAt.slice(0, 10)
+          : "1970-01-01";
+
+  const cumPoints = calculateCumulativeAlpha(datedRows, startDate);
+  const alphaHistory = cumPoints.map((p) => p.cumulative);
+  const latestAlpha = alphaHistory.length > 0 ? alphaHistory[alphaHistory.length - 1]! : null;
+  const alphaObservationStartDate = cumPoints[0]?.date ?? null;
+
+  return {
+    id,
+    themeId,
+    ticker,
+    companyName,
+    field,
+    role,
+    isMajorPlayer,
+    inPortfolio,
+    observationStartedAt,
+    alphaHistory,
+    currentPrice: lastClose,
+    latestAlpha,
+    alphaObservationStartDate,
+  };
+}
+
+async function fetchEnrichedThemeEcosystem(
+  db: Client,
+  userId: string,
+  themeId: string,
+  portfolioTickerSet: Set<string>,
+  themeCreatedAt: string | null,
+): Promise<ThemeEcosystemWatchItem[]> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT id, theme_id, ticker, company_name, field, role, is_major_player, observation_started_at
+            FROM theme_ecosystem_members
+            WHERE theme_id = ?
+            ORDER BY field ASC, ticker ASC`,
+      args: [themeId],
+    });
+    const rows = rs.rows as unknown as Record<string, unknown>[];
+    const out: ThemeEcosystemWatchItem[] = [];
+    for (let i = 0; i < rows.length; i += 2) {
+      const chunk = rows.slice(i, i + 2);
+      const part = await Promise.all(
+        chunk.map((row) => enrichEcosystemMemberRow(db, userId, row, portfolioTickerSet, themeCreatedAt)),
+      );
+      out.push(...part);
+      if (i + 2 < rows.length) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    }
+    return out;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("theme_ecosystem_members")) {
+      return [];
+    }
+    throw e;
+  }
+}
+
+/**
+ * 指定テーマ（structure_tags 先頭一致）の保有・Alpha・テーマメタ・エコシステムを一括取得。`/themes/[theme]` 用。
+ */
+export async function getThemeDetailData(db: Client, userId: string, themeName: string): Promise<ThemeDetailData> {
+  const [theme, benchmarkLatestPrice, h] = await Promise.all([
+    fetchInvestmentThemeRecord(db, userId, themeName),
+    resolveBenchmarkLatestClose(),
+    db.execute({
+      sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, provider_symbol, valuation_factor
+            FROM holdings
+            WHERE user_id = ? AND quantity > 0
+            ORDER BY ticker`,
+      args: [userId],
+    }),
+  ]);
+
+  const holdingRows = h.rows as unknown as HoldingQueryRow[];
+  const portfolioTickerSet = new Set(holdingRows.map((r) => String(r.ticker).trim().toUpperCase()));
+
+  const matching = holdingRows.filter((row) => {
     const tagsJson = row.structure_tags == null ? "[]" : String(row.structure_tags);
     return themeFromStructureTags(tagsJson) === themeName;
   });
 
-  if (matching.length === 0) {
-    return {
-      themeName,
-      theme,
-      stocks: [],
-      themeTotalMarketValue: 0,
-      themeAverageUnrealizedPnlPercent: 0,
-      themeAverageAlpha: 0,
-      benchmarkLatestPrice,
-    };
+  let stocks: Stock[] = [];
+  let themeTotalMarketValue = 0;
+  let themeAverageUnrealizedPnlPercent = 0;
+  let themeAverageAlpha = 0;
+  let cumulativeAlphaSeries: CumulativeAlphaPoint[] = [];
+  let structuralAlphaTotalPct: number | null = null;
+  let cumulativeAlphaAnchorDate: string | null =
+    theme?.createdAt != null && String(theme.createdAt).trim().length >= 10
+      ? String(theme.createdAt).trim().slice(0, 10)
+      : null;
+
+  if (matching.length > 0) {
+    const tickers = [...new Set(matching.map((r) => String(r.ticker)))];
+    const tPlaceholders = tickers.map(() => "?").join(",");
+    const a = await db.execute({
+      sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
+            WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
+            ORDER BY ticker ASC, recorded_at ASC`,
+      args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers],
+    });
+
+    const rows = a.rows as Record<string, unknown>[];
+    const byTicker = buildByTickerFromAlphaRows(rows);
+    const byTickerDated = buildByTickerDatedAlphaRows(rows);
+    const drafts = buildDraftsFromHoldingRows(matching, byTicker);
+    themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
+    stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
+    themeAverageUnrealizedPnlPercent = computeThemeAverageUnrealizedPnlPercent(stocks);
+    themeAverageAlpha = computePortfolioAverageAlpha(stocks);
+
+    const startAnchor =
+      theme?.createdAt != null && String(theme.createdAt).trim().length > 0
+        ? String(theme.createdAt)
+        : (() => {
+            let min = "";
+            for (const tk of tickers) {
+              const dr = byTickerDated.get(tk);
+              if (dr == null || dr.length === 0) continue;
+              const y = dr[0]!.recordedAt.slice(0, 10);
+              if (min.length === 0 || y < min) min = y;
+            }
+            return min.length > 0 ? min : "1970-01-01";
+          })();
+
+    const perTicker: { weight: number; series: { date: string; cumulative: number }[] }[] = [];
+    for (const s of stocks) {
+      const dated = byTickerDated.get(s.ticker) ?? [];
+      if (dated.length === 0) continue;
+      const series = calculateCumulativeAlpha(dated, startAnchor);
+      if (series.length > 0) {
+        perTicker.push({
+          weight: sanitizeMarketValueForAggregation(s.marketValue),
+          series,
+        });
+      }
+    }
+
+    cumulativeAlphaSeries = mergeWeightedCumulativeAlphaSeries(perTicker);
+    if (cumulativeAlphaSeries.length > 0) {
+      structuralAlphaTotalPct = cumulativeAlphaSeries[cumulativeAlphaSeries.length - 1]!.cumulative;
+    }
+    if (cumulativeAlphaAnchorDate == null && cumulativeAlphaSeries.length > 0) {
+      cumulativeAlphaAnchorDate = cumulativeAlphaSeries[0]!.date;
+    }
   }
 
-  const tickers = [...new Set(matching.map((r) => String(r.ticker)))];
-  const tPlaceholders = tickers.map(() => "?").join(",");
-  const a = await db.execute({
-    sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
-          WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
-          ORDER BY ticker ASC, recorded_at ASC`,
-    args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers],
-  });
-
-  const byTicker = buildByTickerFromAlphaRows(a.rows as Record<string, unknown>[]);
-  const drafts = buildDraftsFromHoldingRows(matching, byTicker);
-  const themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
-  const stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
+  const ecosystem =
+    theme?.id != null
+      ? await fetchEnrichedThemeEcosystem(
+          db,
+          userId,
+          theme.id,
+          portfolioTickerSet,
+          theme.createdAt != null ? String(theme.createdAt) : null,
+        )
+      : [];
 
   return {
     themeName,
     theme,
     stocks,
     themeTotalMarketValue,
-    themeAverageUnrealizedPnlPercent: computeThemeAverageUnrealizedPnlPercent(stocks),
-    themeAverageAlpha: computePortfolioAverageAlpha(stocks),
+    themeAverageUnrealizedPnlPercent,
+    themeAverageAlpha,
     benchmarkLatestPrice,
+    ecosystem,
+    cumulativeAlphaSeries,
+    structuralAlphaTotalPct,
+    cumulativeAlphaAnchorDate,
   };
 }
 

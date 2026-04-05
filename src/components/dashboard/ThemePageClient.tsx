@@ -1,13 +1,20 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Crosshair, TrendingUp } from "lucide-react";
+import { Crosshair, Layers, TrendingUp } from "lucide-react";
 
-import type { InvestmentThemeRecord, Stock, ThemeDetailData } from "@/src/types/investment";
+import type {
+  InvestmentThemeRecord,
+  Stock,
+  ThemeDetailData,
+  ThemeEcosystemWatchItem,
+} from "@/src/types/investment";
+import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
+import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const DEFAULT_USER_ID =
   typeof process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID === "string" &&
@@ -60,6 +67,20 @@ function ThemeMetaBlock({ theme, themeName }: { theme: InvestmentThemeRecord | n
 
 type ThemeDetailJson = ThemeDetailData & { userId?: string; error?: string };
 
+function groupEcosystemByField(items: ThemeEcosystemWatchItem[]): { field: string; items: ThemeEcosystemWatchItem[] }[] {
+  const order: string[] = [];
+  const map = new Map<string, ThemeEcosystemWatchItem[]>();
+  for (const e of items) {
+    const f = e.field.trim() || "その他";
+    if (!map.has(f)) {
+      map.set(f, []);
+      order.push(f);
+    }
+    map.get(f)!.push(e);
+  }
+  return order.map((field) => ({ field, items: map.get(field)! }));
+}
+
 export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [data, setData] = useState<ThemeDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +103,31 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         return;
       }
       const { userId: _u, error: _e, ...rest } = json;
-      setData(rest as ThemeDetailData);
+      setData({
+        ...rest,
+        ecosystem: Array.isArray(rest.ecosystem)
+          ? rest.ecosystem.map((item) => ({
+              ...item,
+              observationStartedAt:
+                typeof item.observationStartedAt === "string" && item.observationStartedAt.length >= 10
+                  ? item.observationStartedAt.slice(0, 10)
+                  : null,
+              alphaObservationStartDate:
+                typeof item.alphaObservationStartDate === "string" && item.alphaObservationStartDate.length >= 10
+                  ? item.alphaObservationStartDate.slice(0, 10)
+                  : null,
+            }))
+          : [],
+        cumulativeAlphaSeries: Array.isArray(rest.cumulativeAlphaSeries) ? rest.cumulativeAlphaSeries : [],
+        structuralAlphaTotalPct:
+          typeof rest.structuralAlphaTotalPct === "number" && Number.isFinite(rest.structuralAlphaTotalPct)
+            ? rest.structuralAlphaTotalPct
+            : null,
+        cumulativeAlphaAnchorDate:
+          typeof rest.cumulativeAlphaAnchorDate === "string" && rest.cumulativeAlphaAnchorDate.length > 0
+            ? rest.cumulativeAlphaAnchorDate
+            : null,
+      } as ThemeDetailData);
     } catch (e) {
       setData(null);
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -102,6 +147,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
 
   const stocks = data?.stocks ?? [];
   const theme = data?.theme ?? null;
+  const ecosystem = data?.ecosystem ?? [];
+  const ecosystemGroups = useMemo(() => groupEcosystemByField(ecosystem), [ecosystem]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
@@ -177,12 +224,177 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             </section>
 
             {stocks.length > 0 ? (
+              <InventoryTable
+                stocks={stocks}
+                totalHoldings={stocks.length}
+                averageAlpha={data.themeAverageAlpha}
+                onTrade={(init) => openTradeForm(init)}
+              />
+            ) : null}
+
+            {ecosystem.length > 0 ? (
+              <section aria-labelledby="theme-ecosystem-heading">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+                  <div className="p-5 border-b border-slate-800 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between bg-slate-900/50">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Layers size={16} className="text-amber-500/90 shrink-0 mt-0.5" />
+                      <div>
+                        <h2
+                          id="theme-ecosystem-heading"
+                          className="text-xs font-bold text-slate-400 uppercase tracking-widest"
+                        >
+                          Ecosystem map / Watchlist
+                        </h2>
+                        <p className="text-[10px] text-slate-600 mt-0.5">
+                          テーマ設置日起点の累積 Alpha（VOO 比）で観測。ポートフォリオ外の重要銘柄も含む（Notion 連携）
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] font-mono text-slate-600 shrink-0">
+                      計 {ecosystem.length} 銘柄
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.1em]">
+                        <tr>
+                          <th className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyThFirst}`}>Asset</th>
+                          <th className="px-6 py-4 text-right">Cum. α</th>
+                          <th className="px-6 py-4 text-center">Cumulative trend</th>
+                          <th className="px-6 py-4 text-right">Last</th>
+                        </tr>
+                      </thead>
+                      {ecosystemGroups.map(({ field, items }) => (
+                        <tbody key={field} className="divide-y divide-slate-800/50">
+                          <tr className="bg-slate-950/90">
+                            <td
+                              colSpan={4}
+                              className="px-6 py-2 text-[10px] font-bold uppercase tracking-wider text-cyan-500/90 border-b border-slate-800"
+                            >
+                              {field}
+                            </td>
+                          </tr>
+                          {items.map((e) => (
+                            <tr key={e.id} className="group hover:bg-slate-800/40 transition-all">
+                              <td className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyTdFirst}`}>
+                                <div className="flex flex-col gap-0.5">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors font-mono">
+                                      {e.ticker}
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                                      {e.isMajorPlayer ? (
+                                        <span className="text-[8px] font-bold uppercase tracking-wide text-amber-400/95 border border-amber-500/35 px-1.5 py-0.5 rounded">
+                                          Major
+                                        </span>
+                                      ) : null}
+                                      {e.inPortfolio ? (
+                                        <span className="text-[8px] font-bold uppercase tracking-wide text-emerald-400/95 border border-emerald-500/35 px-1.5 py-0.5 rounded">
+                                          In portfolio
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  {e.companyName ? (
+                                    <span className="text-[10px] text-slate-400 leading-snug line-clamp-2" title={e.companyName}>
+                                      {e.companyName}
+                                    </span>
+                                  ) : null}
+                                  {e.role ? (
+                                    <span className="text-[10px] text-slate-500 leading-snug line-clamp-2" title={e.role}>
+                                      {e.role}
+                                    </span>
+                                  ) : null}
+                                  {e.observationStartedAt ? (
+                                    <span className="text-[10px] font-mono text-slate-600 pt-0.5">
+                                      観測開始（投入）{" "}
+                                      <span className="text-slate-500">{e.observationStartedAt}</span>
+                                      {e.alphaObservationStartDate &&
+                                      e.alphaObservationStartDate !== e.observationStartedAt ? (
+                                        <span className="block text-[9px] text-slate-600 mt-0.5 font-normal">
+                                          系列起点 {e.alphaObservationStartDate}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  ) : e.alphaObservationStartDate ? (
+                                    <span className="text-[10px] font-mono text-slate-600 pt-0.5">
+                                      観測起点 <span className="text-slate-500">{e.alphaObservationStartDate}</span>
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td
+                                className={`px-6 py-4 text-right font-mono font-bold ${
+                                  e.latestAlpha != null && Number.isFinite(e.latestAlpha)
+                                    ? pctClass(e.latestAlpha)
+                                    : "text-slate-500"
+                                }`}
+                              >
+                                {e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? (
+                                  <>
+                                    {e.latestAlpha > 0 ? "+" : ""}
+                                    {e.latestAlpha.toFixed(2)}%
+                                  </>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td className="px-6 py-4">
+                                <EcosystemCumulativeSparkline history={e.alphaHistory} />
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className="font-mono text-slate-300 text-xs">
+                                    {e.currentPrice != null && e.currentPrice > 0
+                                      ? e.currentPrice < 500
+                                        ? `$${e.currentPrice.toFixed(2)}`
+                                        : `$${e.currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                                      : "—"}
+                                  </span>
+                                  {!e.inPortfolio ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openTradeForm({
+                                          ticker: e.ticker,
+                                          name: e.companyName || undefined,
+                                          theme: themeLabel,
+                                        })
+                                      }
+                                      className="text-[9px] font-bold uppercase tracking-wide text-cyan-400 border border-cyan-500/40 px-2 py-0.5 rounded-md hover:bg-cyan-500/10"
+                                    >
+                                      Trade
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      ))}
+                    </table>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {/* Structural Progress (Cumulative Alpha) — 一時非表示
+            {stocks.length > 0 && (data.cumulativeAlphaSeries?.length ?? 0) > 0 ? (
+              <StructuralProgressChart
+                series={data.cumulativeAlphaSeries}
+                anchorDateLabel={data.cumulativeAlphaAnchorDate}
+                totalPct={data.structuralAlphaTotalPct}
+              />
+            ) : null}
+            */}
+
+            {stocks.length > 0 ? (
               <section aria-labelledby="theme-charts-heading">
                 <h2
                   id="theme-charts-heading"
                   className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3"
                 >
-                  Momentum cluster（各銘柄 Alpha）
+                  Momentum cluster（保有銘柄 Alpha）
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {stocks.map((s) => (
@@ -230,15 +442,6 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             ) : (
               <p className="text-sm text-slate-500">このテーマに該当する保有がありません。</p>
             )}
-
-            {stocks.length > 0 ? (
-              <InventoryTable
-                stocks={stocks}
-                totalHoldings={stocks.length}
-                averageAlpha={data.themeAverageAlpha}
-                onTrade={(init) => openTradeForm(init)}
-              />
-            ) : null}
           </>
         ) : null}
 

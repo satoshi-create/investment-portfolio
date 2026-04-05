@@ -49,6 +49,23 @@ CREATE TABLE IF NOT EXISTS investment_themes (
 CREATE INDEX IF NOT EXISTS idx_investment_themes_user
   ON investment_themes(user_id, name);
 
+-- theme_ecosystem_members（テーマ・エコシステムのウォッチリスト／Notion 連携）
+CREATE TABLE IF NOT EXISTS theme_ecosystem_members (
+  id TEXT PRIMARY KEY,
+  theme_id TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  company_name TEXT,
+  field TEXT,
+  role TEXT,
+  is_major_player INTEGER NOT NULL DEFAULT 0,
+  observation_started_at TEXT,
+  FOREIGN KEY (theme_id) REFERENCES investment_themes(id) ON DELETE CASCADE,
+  UNIQUE (theme_id, ticker)
+);
+
+CREATE INDEX IF NOT EXISTS idx_theme_ecosystem_theme
+  ON theme_ecosystem_members(theme_id, field);
+
 -- alpha_history（user_id + ticker で履歴を継続。保有削除時は holding_id のみ NULL）
 CREATE TABLE IF NOT EXISTS alpha_history (
   id TEXT PRIMARY KEY,                       -- uuid

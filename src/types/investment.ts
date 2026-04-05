@@ -136,6 +136,34 @@ export type InvestmentThemeRecord = {
   createdAt: string;
 };
 
+/** テーマ・エコシステムのウォッチリスト 1 銘柄（保有問わず観測）。 */
+export type ThemeEcosystemWatchItem = {
+  id: string;
+  themeId: string;
+  ticker: string;
+  companyName: string;
+  field: string;
+  role: string;
+  isMajorPlayer: boolean;
+  /** ポートフォリオのどこかで quantity>0 保有しているか */
+  inPortfolio: boolean;
+  /** `theme_ecosystem_members.observation_started_at`（銘柄投入日・累積 Alpha の第一優先起点）。未設定時は null */
+  observationStartedAt: string | null;
+  /** テーマ `created_at` 起点の累積 Alpha %（日次超過の合計）。`alpha_history` 優先、不足時は Yahoo 日次から算出 */
+  alphaHistory: number[];
+  currentPrice: number | null;
+  /** `alphaHistory` の最終点（累積 Alpha %） */
+  latestAlpha: number | null;
+  /** 累積系列上の実際の起点営観測日（投入日に最も近いデータ上の日）。算出不可時は null */
+  alphaObservationStartDate: string | null;
+};
+
+/** テーマ起点正規化後の累積 Alpha（日次超過の合計、パーセントポイント）。 */
+export type CumulativeAlphaPoint = {
+  date: string;
+  cumulative: number;
+};
+
 /** `/themes/[theme]` 用: テーマメタ + 該当保有の Stock（ウェイトはテーマ内評価額ベース）。 */
 export type ThemeDetailData = {
   themeName: string;
@@ -147,6 +175,14 @@ export type ThemeDetailData = {
   /** テーマ内銘柄の最新日次 Alpha の単純平均 */
   themeAverageAlpha: number;
   benchmarkLatestPrice: number;
+  /** `theme_ecosystem_members` を拡張したウォッチリスト（テーブル未作成時は []） */
+  ecosystem: ThemeEcosystemWatchItem[];
+  /** `investment_themes.created_at` 起点のテーマ加重累積 Alpha 系列 */
+  cumulativeAlphaSeries: CumulativeAlphaPoint[];
+  /** 系列の最終累積値（%）。算出不可時は null */
+  structuralAlphaTotalPct: number | null;
+  /** 表示用の起点日（テーマ `created_at` の日付部。テーマ行が無い場合は系列先頭に合わせる） */
+  cumulativeAlphaAnchorDate: string | null;
 };
 
 /** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */

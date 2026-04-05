@@ -4,10 +4,12 @@
 import assert from "node:assert/strict";
 
 import {
+  calculateCumulativeAlpha,
   classifyTickerInstrument,
   computeAlphaPercent,
   convertValueToJpy,
   dailyReturnPercent,
+  mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
@@ -93,5 +95,40 @@ eq(
   }),
   0,
 );
+
+// Base-date cumulative: anchor is calendar-closest row (2024-01-10 for start 2024-01-09); prior rows omitted
+const cum = calculateCumulativeAlpha(
+  [
+    { recordedAt: "2024-01-02", alphaValue: 0.5 },
+    { recordedAt: "2024-01-10", alphaValue: 0.2 },
+    { recordedAt: "2024-01-11", alphaValue: 1 },
+    { recordedAt: "2024-01-12", alphaValue: -0.5 },
+  ],
+  "2024-01-09",
+);
+eq(cum.length, 3);
+eq(cum[0]!.date, "2024-01-10");
+eq(cum[0]!.cumulative, 0);
+eq(cum[1]!.cumulative, 1);
+eq(cum[2]!.cumulative, 0.5);
+
+const merged = mergeWeightedCumulativeAlphaSeries([
+  {
+    weight: 0.5,
+    series: [
+      { date: "2024-01-01", cumulative: 0 },
+      { date: "2024-01-02", cumulative: 2 },
+    ],
+  },
+  {
+    weight: 0.5,
+    series: [
+      { date: "2024-01-01", cumulative: 0 },
+      { date: "2024-01-02", cumulative: 4 },
+    ],
+  },
+]);
+eq(merged.length, 2);
+eq(merged[1]!.cumulative, 3);
 
 console.log("verify-alpha-logic: all assertions passed.");
