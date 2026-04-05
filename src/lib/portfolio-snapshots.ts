@@ -298,8 +298,12 @@ export async function recordPortfolioDailySnapshot(
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("no such table") || msg.toLowerCase().includes("holding_daily_snapshots")) {
-      /* マイグレーション未適用時はポートフォリオ行のみ成功とする */
+    const msgLower = msg.toLowerCase();
+    // UNIQUE / FK 等のエラーメッセージにもテーブル名が出るため、「テーブル不存在」のみ握りつぶす
+    const holdingTableMissing =
+      msgLower.includes("no such table") && msgLower.includes("holding_daily_snapshots");
+    if (holdingTableMissing) {
+      /* migrations/004 未適用時は portfolio 行のみ成功とする */
     } else {
       throw e;
     }
