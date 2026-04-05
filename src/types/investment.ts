@@ -126,6 +126,29 @@ export type DashboardData = {
   summary: DashboardSummary;
 };
 
+/** `investment_themes` 行（Notion 等から移行したテーマメタ）。 */
+export type InvestmentThemeRecord = {
+  id: string;
+  userId: string;
+  name: string;
+  description: string | null;
+  goal: string | null;
+  createdAt: string;
+};
+
+/** `/themes/[theme]` 用: テーマメタ + 該当保有の Stock（ウェイトはテーマ内評価額ベース）。 */
+export type ThemeDetailData = {
+  themeName: string;
+  theme: InvestmentThemeRecord | null;
+  stocks: Stock[];
+  themeTotalMarketValue: number;
+  /** テーマ内銘柄の含み損益率（取得単価あり銘柄の単純平均） */
+  themeAverageUnrealizedPnlPercent: number;
+  /** テーマ内銘柄の最新日次 Alpha の単純平均 */
+  themeAverageAlpha: number;
+  benchmarkLatestPrice: number;
+};
+
 /** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */
 export type PortfolioDailySnapshotRow = {
   id: string;

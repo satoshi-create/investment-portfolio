@@ -34,6 +34,21 @@ CREATE TABLE IF NOT EXISTS holdings (
 CREATE INDEX IF NOT EXISTS idx_holdings_user_id ON holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_holdings_ticker  ON holdings(ticker);
 
+-- investment_themes（構造投資テーマのメタ。structure_tags[0] と name を対応させる）
+CREATE TABLE IF NOT EXISTS investment_themes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  goal TEXT,
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  UNIQUE (user_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_investment_themes_user
+  ON investment_themes(user_id, name);
+
 -- alpha_history（user_id + ticker で履歴を継続。保有削除時は holding_id のみ NULL）
 CREATE TABLE IF NOT EXISTS alpha_history (
   id TEXT PRIMARY KEY,                       -- uuid

@@ -4,9 +4,11 @@ import type {
   CoreSatelliteBreakdown,
   DashboardData,
   HoldingCategory,
+  InvestmentThemeRecord,
   Signal,
   Stock,
   StructureTagSlice,
+  ThemeDetailData,
   TickerInstrumentKind,
 } from "@/src/types/investment";
 import {
@@ -193,6 +195,212 @@ function computeFinancialTotals(
   };
 }
 
+type HoldingQueryRow = {
+  id: unknown;
+  ticker: unknown;
+  name: unknown;
+  quantity: unknown;
+  avg_acquisition_price: unknown;
+  structure_tags: unknown;
+  sector: unknown;
+  category: unknown;
+  provider_symbol: unknown;
+  valuation_factor: unknown;
+};
+
+type StockDraft = Omit<Stock, "weight"> & { structureTagsJson: string };
+
+function buildByTickerFromAlphaRows(rows: Iterable<Record<string, unknown>>): Map<string, AlphaPoint[]> {
+  const byTicker = new Map<string, AlphaPoint[]>();
+  for (const row of rows) {
+    const tk = String(row["ticker"]);
+    if (!byTicker.has(tk)) byTicker.set(tk, []);
+    const cp = row["close_price"];
+    byTicker.get(tk)!.push({
+      alpha: Number(row["alpha_value"]),
+      close: cp != null && Number.isFinite(Number(cp)) ? Number(cp) : null,
+    });
+  }
+  return byTicker;
+}
+
+function buildDraftsFromHoldingRows(rows: HoldingQueryRow[], byTicker: Map<string, AlphaPoint[]>): StockDraft[] {
+  return rows.map((row) => {
+    const id = String(row.id);
+    const ticker = String(row.ticker);
+    const series = byTicker.get(ticker) ?? [];
+    const alphaHistory = series.map((p) => p.alpha);
+    const currentPrice = latestCloseFromSeries(series);
+    const qty = Number(row.quantity);
+    const valuationFactor =
+      row.valuation_factor != null && Number.isFinite(Number(row.valuation_factor))
+        ? Number(row.valuation_factor)
+        : 1;
+    const providerSymbol =
+      row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null;
+    const marketValue = normalizedHoldingValueJpy({
+      ticker,
+      quantity: qty,
+      currentPrice,
+      valuationFactor,
+    });
+    const rawStructureTags = row.structure_tags;
+    const tagsJson = rawStructureTags == null ? "[]" : String(rawStructureTags);
+    const sector = parseSector(row.sector);
+    const instrumentKind = classifyTickerInstrument(ticker);
+    const avgAcquisitionPrice = parseAvgAcquisitionPrice(row.avg_acquisition_price);
+    const { local: unrealizedPnlLocal, percent: unrealizedPnlPercent } = computeUnrealizedPnlLocal(
+      currentPrice,
+      avgAcquisitionPrice,
+      qty,
+      valuationFactor,
+    );
+    const unrealizedPnlJpy = convertValueToJpy(unrealizedPnlLocal, quoteCurrencyForInstrument(instrumentKind));
+    const two = lastTwoClosesFromSeries(series);
+    const dayChangeRaw = two != null ? dailyReturnPercent(two.prevClose, two.latestClose) : null;
+    const dayChangePercent =
+      dayChangeRaw != null && Number.isFinite(dayChangeRaw) ? roundAlphaMetric(dayChangeRaw) : null;
+
+    return {
+      id,
+      ticker,
+      name: row.name != null ? String(row.name) : "",
+      tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
+      alphaHistory,
+      quantity: qty,
+      category: asCategory(String(row.category)),
+      avgAcquisitionPrice,
+      unrealizedPnlLocal,
+      unrealizedPnlJpy,
+      unrealizedPnlPercent,
+      dayChangePercent,
+      instrumentKind,
+      secondaryTag: sectorFromStructureTags(tagsJson),
+      sector,
+      currentPrice,
+      marketValue,
+      valuationFactor,
+      providerSymbol,
+      structureTagsJson: tagsJson,
+    };
+  });
+}
+
+function finalizeStocksFromDrafts(drafts: StockDraft[], totalMarketValue: number): Stock[] {
+  return drafts.map((d) => {
+    const mv = sanitizeMarketValueForAggregation(d.marketValue);
+    const { structureTagsJson: _s, ...rest } = d;
+    return {
+      ...rest,
+      marketValue: mv,
+      weight: totalMarketValue > 0 ? Math.round((mv / totalMarketValue) * 10000) / 100 : 0,
+    };
+  });
+}
+
+function computeThemeAverageUnrealizedPnlPercent(stocks: Stock[]): number {
+  const withBasis = stocks.filter(
+    (s) => s.avgAcquisitionPrice != null && s.avgAcquisitionPrice > 0 && s.quantity > 0,
+  );
+  if (withBasis.length === 0) return 0;
+  const sum = withBasis.reduce((a, s) => a + s.unrealizedPnlPercent, 0);
+  return roundAlphaMetric(sum / withBasis.length);
+}
+
+/**
+ * `investment_themes` からテーマ行を取得（テーブル未作成時は null）。
+ */
+export async function fetchInvestmentThemeRecord(
+  db: Client,
+  userId: string,
+  themeName: string,
+): Promise<InvestmentThemeRecord | null> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT id, user_id, name, description, goal, created_at
+            FROM investment_themes
+            WHERE user_id = ? AND name = ?
+            LIMIT 1`,
+      args: [userId, themeName],
+    });
+    if (rs.rows.length === 0) return null;
+    const row = rs.rows[0]!;
+    return {
+      id: String(row.id),
+      userId: String(row.user_id),
+      name: String(row.name),
+      description: row.description != null ? String(row.description) : null,
+      goal: row.goal != null ? String(row.goal) : null,
+      createdAt: String(row.created_at),
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("investment_themes")) {
+      return null;
+    }
+    throw e;
+  }
+}
+
+/**
+ * 指定テーマ（structure_tags 先頭一致）の保有・Alpha・テーマメタを一括取得。`/themes/[theme]` 用。
+ */
+export async function getThemeDetailData(db: Client, userId: string, themeName: string): Promise<ThemeDetailData> {
+  const [theme, benchmarkLatestPrice] = await Promise.all([
+    fetchInvestmentThemeRecord(db, userId, themeName),
+    resolveBenchmarkLatestClose(),
+  ]);
+
+  const h = await db.execute({
+    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, provider_symbol, valuation_factor
+          FROM holdings
+          WHERE user_id = ? AND quantity > 0
+          ORDER BY ticker`,
+    args: [userId],
+  });
+
+  const matching: HoldingQueryRow[] = (h.rows as unknown as HoldingQueryRow[]).filter((row) => {
+    const tagsJson = row.structure_tags == null ? "[]" : String(row.structure_tags);
+    return themeFromStructureTags(tagsJson) === themeName;
+  });
+
+  if (matching.length === 0) {
+    return {
+      themeName,
+      theme,
+      stocks: [],
+      themeTotalMarketValue: 0,
+      themeAverageUnrealizedPnlPercent: 0,
+      themeAverageAlpha: 0,
+      benchmarkLatestPrice,
+    };
+  }
+
+  const tickers = [...new Set(matching.map((r) => String(r.ticker)))];
+  const tPlaceholders = tickers.map(() => "?").join(",");
+  const a = await db.execute({
+    sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
+          WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
+          ORDER BY ticker ASC, recorded_at ASC`,
+    args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers],
+  });
+
+  const byTicker = buildByTickerFromAlphaRows(a.rows as Record<string, unknown>[]);
+  const drafts = buildDraftsFromHoldingRows(matching, byTicker);
+  const themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
+  const stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
+
+  return {
+    themeName,
+    theme,
+    stocks,
+    themeTotalMarketValue,
+    themeAverageUnrealizedPnlPercent: computeThemeAverageUnrealizedPnlPercent(stocks),
+    themeAverageAlpha: computePortfolioAverageAlpha(stocks),
+    benchmarkLatestPrice,
+  };
+}
+
 /**
  * ダッシュボード用: 保有の Alpha 履歴・最新終値・円ベース評価額・ウェイト・構造別 / Core-Satellite 集計。
  * `holdings.quantity` と `avg_acquisition_price` は DB の現行値をそのまま使用（取引実行アクション更新後も再取得で反映）。
@@ -245,109 +453,15 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     fetchGlobalMarketIndicators(),
   ]);
 
-  const byTicker = new Map<string, AlphaPoint[]>();
-  for (const row of a.rows) {
-    const tk = String(row.ticker);
-    if (!byTicker.has(tk)) byTicker.set(tk, []);
-    byTicker.get(tk)!.push({
-      alpha: Number(row.alpha_value),
-      close: row.close_price != null && Number.isFinite(Number(row.close_price)) ? Number(row.close_price) : null,
-    });
-  }
-
-  type Draft = Omit<Stock, "weight"> & { structureTagsJson: string };
-
-  const drafts: Draft[] = h.rows.map((row) => {
-    const id = String(row.id);
-    const ticker = String(row.ticker);
-    const series = byTicker.get(ticker) ?? [];
-    const alphaHistory = series.map((p) => p.alpha);
-    const currentPrice = latestCloseFromSeries(series);
-    const qty = Number(row.quantity);
-    const valuationFactor =
-      row.valuation_factor != null && Number.isFinite(Number(row.valuation_factor))
-        ? Number(row.valuation_factor)
-        : 1;
-    const providerSymbol =
-      row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null;
-    const marketValue = normalizedHoldingValueJpy({
-      ticker,
-      quantity: qty,
-      currentPrice,
-      valuationFactor,
-    });
-    const rawStructureTags = row.structure_tags;
-    const tagsJson = rawStructureTags == null ? "[]" : String(rawStructureTags);
-    const sector = parseSector(row.sector);
-    const instrumentKind = classifyTickerInstrument(ticker);
-    const avgAcquisitionPrice = parseAvgAcquisitionPrice(row.avg_acquisition_price);
-    const { local: unrealizedPnlLocal, percent: unrealizedPnlPercent } = computeUnrealizedPnlLocal(
-      currentPrice,
-      avgAcquisitionPrice,
-      qty,
-      valuationFactor,
-    );
-    const unrealizedPnlJpy = convertValueToJpy(unrealizedPnlLocal, quoteCurrencyForInstrument(instrumentKind));
-    const two = lastTwoClosesFromSeries(series);
-    const dayChangeRaw =
-      two != null ? dailyReturnPercent(two.prevClose, two.latestClose) : null;
-    const dayChangePercent =
-      dayChangeRaw != null && Number.isFinite(dayChangeRaw) ? roundAlphaMetric(dayChangeRaw) : null;
-
-    return {
-      id,
-      ticker,
-      name: row.name != null ? String(row.name) : "",
-      tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
-      alphaHistory,
-      quantity: qty,
-      category: asCategory(String(row.category)),
-      avgAcquisitionPrice,
-      unrealizedPnlLocal,
-      unrealizedPnlJpy,
-      unrealizedPnlPercent,
-      dayChangePercent,
-      instrumentKind,
-      secondaryTag: sectorFromStructureTags(tagsJson),
-      sector,
-      currentPrice,
-      marketValue,
-      valuationFactor,
-      providerSymbol,
-      structureTagsJson: tagsJson,
-    };
-  });
+  const byTicker = buildByTickerFromAlphaRows(a.rows as Record<string, unknown>[]);
+  const drafts = buildDraftsFromHoldingRows(h.rows as unknown as HoldingQueryRow[], byTicker);
 
   const totalMarketValue = drafts.reduce(
     (s, d) => s + sanitizeMarketValueForAggregation(d.marketValue),
     0,
   );
 
-  const stocks: Stock[] = drafts.map((d) => {
-    const mv = sanitizeMarketValueForAggregation(d.marketValue);
-    return {
-      id: d.id,
-      ticker: d.ticker,
-      name: d.name,
-      tag: d.tag,
-      alphaHistory: d.alphaHistory,
-      quantity: d.quantity,
-      category: d.category,
-      avgAcquisitionPrice: d.avgAcquisitionPrice,
-      unrealizedPnlLocal: d.unrealizedPnlLocal,
-      unrealizedPnlJpy: d.unrealizedPnlJpy,
-      unrealizedPnlPercent: d.unrealizedPnlPercent,
-      dayChangePercent: d.dayChangePercent,
-      instrumentKind: d.instrumentKind,
-      secondaryTag: d.secondaryTag,
-      sector: d.sector,
-      currentPrice: d.currentPrice,
-      marketValue: mv,
-      valuationFactor: d.valuationFactor,
-      providerSymbol: d.providerSymbol,
-      weight: totalMarketValue > 0 ? Math.round((mv / totalMarketValue) * 10000) / 100 : 0,
-    };
-  });
+  const stocks = finalizeStocksFromDrafts(drafts, totalMarketValue);
 
   const aggRows = drafts.map((d) => ({ structureTagsJson: d.structureTagsJson, marketValue: d.marketValue }));
   const structureByTheme = aggregateByTheme(aggRows);
