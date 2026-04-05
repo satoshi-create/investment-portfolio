@@ -141,6 +141,7 @@ async function resolveBenchmarkLatestClose(): Promise<number> {
 
 /**
  * ダッシュボード用: 保有の Alpha 履歴・最新終値・円ベース評価額・ウェイト・構造別 / Core-Satellite 集計。
+ * `holdings.quantity` と `avg_acquisition_price` は DB の現行値をそのまま使用（取引実行アクション更新後も再取得で反映）。
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
   const h = await db.execute({

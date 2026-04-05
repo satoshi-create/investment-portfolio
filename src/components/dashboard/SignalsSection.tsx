@@ -3,14 +3,16 @@ import { Zap } from "lucide-react";
 
 import type { Signal } from "@/src/types/investment";
 import { SignalCard } from "@/src/components/dashboard/SignalCard";
+import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 
 type Props = {
   signals: Signal[];
   userId: string;
   onSignalResolved?: () => void;
+  onTrade?: (initial: TradeEntryInitial) => void;
 };
 
-export function SignalsSection({ signals, userId, onSignalResolved }: Props) {
+export function SignalsSection({ signals, userId, onSignalResolved, onTrade }: Props) {
   return (
     <div className="space-y-4">
       <h2 className="text-xs font-bold text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2">
@@ -30,6 +32,7 @@ export function SignalsSection({ signals, userId, onSignalResolved }: Props) {
               signal={signal}
               userId={userId}
               onResolved={onSignalResolved}
+              onTrade={onTrade}
             />
           ))
         )}

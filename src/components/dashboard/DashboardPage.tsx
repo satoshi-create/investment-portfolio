@@ -22,6 +22,7 @@ import { PortfolioSnapshotsTable } from "@/src/components/dashboard/PortfolioSna
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
+import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { Camera, RefreshCw } from "lucide-react";
 
 const DEFAULT_USER_ID =
@@ -57,6 +58,8 @@ export function DashboardPage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [snapshotPending, startSnapshotTransition] = useTransition();
+  const [tradeFormOpen, setTradeFormOpen] = useState(false);
+  const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(null);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -139,6 +142,11 @@ export function DashboardPage() {
   const holdingSnapshots = data?.holdingSnapshots ?? [];
   const closedTrades = data?.closedTrades ?? [];
 
+  const openTradeForm = useCallback((initial: TradeEntryInitial | null) => {
+    setTradeInitial(initial);
+    setTradeFormOpen(true);
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -171,6 +179,14 @@ export function DashboardPage() {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => openTradeForm(null)}
+              disabled={!!error || loading}
+              className="text-[10px] font-bold text-cyan-300 border border-cyan-500/35 px-3 py-2 rounded-lg hover:bg-cyan-500/10 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              取引入力
+            </button>
             <button
               type="button"
               onClick={() => void loadDashboard()}
@@ -207,16 +223,32 @@ export function DashboardPage() {
           coreSatellite={coreSatellite}
           totalMarketValue={totalMarketValue}
         />
-        <SignalsSection signals={signals} userId={DEFAULT_USER_ID} onSignalResolved={() => void loadDashboard()} />
+        <SignalsSection
+          signals={signals}
+          userId={DEFAULT_USER_ID}
+          onSignalResolved={() => void loadDashboard()}
+          onTrade={(init) => openTradeForm(init)}
+        />
         <InventoryTable
           stocks={stocks}
           totalHoldings={summary.totalHoldings}
           averageAlpha={summary.portfolioAverageAlpha}
+          onTrade={(init) => openTradeForm(init)}
         />
         <HoldingsDetailTable stocks={stocks} />
         <PortfolioSnapshotsTable rows={portfolioSnapshots} />
         <HoldingDailySnapshotsTable snapshotDate={holdingSnapshotsDate} rows={holdingSnapshots} />
         <ClosedTradesTable rows={closedTrades} />
+        <TradeEntryForm
+          userId={DEFAULT_USER_ID}
+          open={tradeFormOpen}
+          initial={tradeInitial}
+          onClose={() => {
+            setTradeFormOpen(false);
+            setTradeInitial(null);
+          }}
+          onSuccess={() => void loadDashboard()}
+        />
       </div>
     </div>
   );

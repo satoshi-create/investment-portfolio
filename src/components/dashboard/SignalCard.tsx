@@ -4,6 +4,7 @@ import React, { useTransition } from "react";
 import { AlertTriangle, Zap } from "lucide-react";
 
 import { resolveSignalAction } from "@/app/actions/signals";
+import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import type { Signal } from "@/src/types/investment";
 
 function formatDetectedAt(iso: string): string {
@@ -21,9 +22,10 @@ type Props = {
   signal: Signal;
   userId: string;
   onResolved?: () => void;
+  onTrade?: (initial: TradeEntryInitial) => void;
 };
 
-export function SignalCard({ signal, userId, onResolved }: Props) {
+export function SignalCard({ signal, userId, onResolved, onTrade }: Props) {
   const [pending, startTransition] = useTransition();
 
   const onCheck = () => {
@@ -80,14 +82,25 @@ export function SignalCard({ signal, userId, onResolved }: Props) {
           {signal.currentAlpha > 0 ? "+" : ""}
           {signal.currentAlpha}%
         </p>
-        <button
-          type="button"
-          onClick={onCheck}
-          disabled={pending}
-          className="text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg border border-slate-600 text-slate-200 bg-slate-800/80 hover:bg-slate-700 hover:border-slate-500 transition-colors disabled:opacity-50 disabled:pointer-events-none"
-        >
-          {pending ? "…" : "確認"}
-        </button>
+        <div className="flex flex-wrap gap-2 justify-end">
+          {onTrade ? (
+            <button
+              type="button"
+              onClick={() => onTrade({ ticker: signal.ticker, name: signal.name || undefined })}
+              className="text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg border border-cyan-500/40 text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 transition-colors"
+            >
+              Trade
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onCheck}
+            disabled={pending}
+            className="text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg border border-slate-600 text-slate-200 bg-slate-800/80 hover:bg-slate-700 hover:border-slate-500 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {pending ? "…" : "確認"}
+          </button>
+        </div>
       </div>
     </div>
   );

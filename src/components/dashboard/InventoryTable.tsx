@@ -2,6 +2,7 @@ import React from "react";
 import { Search } from "lucide-react";
 
 import type { Stock } from "@/src/types/investment";
+import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
@@ -15,10 +16,12 @@ export function InventoryTable({
   stocks,
   totalHoldings,
   averageAlpha,
+  onTrade,
 }: {
   stocks: Stock[];
   totalHoldings: number;
   averageAlpha: number;
+  onTrade?: (initial: TradeEntryInitial) => void;
 }) {
   const avgAlphaClass =
     averageAlpha > 0 ? "text-emerald-400" : averageAlpha < 0 ? "text-rose-400" : "text-slate-400";
@@ -52,9 +55,20 @@ export function InventoryTable({
               <tr key={stock.id} className="group hover:bg-slate-800/40 transition-all">
                 <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
                   <div className="flex flex-col gap-0.5">
-                    <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors">
-                      {stock.ticker}
-                    </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors">
+                        {stock.ticker}
+                      </span>
+                      {onTrade ? (
+                        <button
+                          type="button"
+                          onClick={() => onTrade({ ticker: stock.ticker, name: stock.name || undefined })}
+                          className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-cyan-400 border border-cyan-500/40 px-2 py-0.5 rounded-md hover:bg-cyan-500/10"
+                        >
+                          Trade
+                        </button>
+                      ) : null}
+                    </div>
                     {stock.name ? (
                       <span className="text-[10px] text-slate-400 leading-snug line-clamp-2" title={stock.name}>
                         {stock.name}
