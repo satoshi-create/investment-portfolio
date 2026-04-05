@@ -23,10 +23,18 @@ export async function generateSignalsAction(userId?: string): Promise<GenerateSi
   }
   const uid = userId && userId.length > 0 ? userId : defaultProfileUserId();
   try {
-    const { inserted } = await generateSignalsForUser(uid, getDb());
+    const { inserted, reconcile } = await generateSignalsForUser(uid, getDb());
+    const backfillNote =
+      reconcile.rowsBackfilled > 0
+        ? ` Alpha history: +${reconcile.rowsBackfilled} row(s)${reconcile.backfilledTickers.length ? ` (${reconcile.backfilledTickers.join(", ")})` : ""}.`
+        : "";
+    const base =
+      inserted === 0
+        ? "No new signals (rules already satisfied or deduped)."
+        : `Inserted ${inserted} signal(s).`;
     return {
       ok: true,
-      message: inserted === 0 ? "No new signals (rules already satisfied or deduped)." : `Inserted ${inserted} signal(s).`,
+      message: `${base}${backfillNote}`,
       inserted,
     };
   } catch (e) {

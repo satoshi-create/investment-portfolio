@@ -1,25 +1,17 @@
 import type { Client } from "@libsql/client";
 
+import {
+  reconcileAlphaHistoryForUser,
+  type ReconcileAlphaHistoryResult,
+} from "@/src/lib/alpha-history-reconcile";
 import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
 import { getDb } from "@/src/lib/db";
+import { fetchHoldingsWithProviderForUser } from "@/src/lib/holdings-queries";
 import type { HoldingPriceInput } from "@/src/lib/price-service";
 import type { Holding } from "@/src/types/investment";
 
 export { SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
-
-/** Holdings row for `userId` including `provider_symbol` (for Yahoo / alpha sync). */
-export async function fetchHoldingsWithProviderForUser(db: Client, userId: string): Promise<Holding[]> {
-  const rs = await db.execute({
-    sql: `SELECT id, ticker, provider_symbol FROM holdings WHERE user_id = ? ORDER BY ticker`,
-    args: [userId],
-  });
-  return rs.rows.map((row) => ({
-    id: String(row.id),
-    ticker: String(row.ticker),
-    providerSymbol:
-      row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
-  }));
-}
+export { fetchHoldingsWithProviderForUser } from "@/src/lib/holdings-queries";
 
 /** Bridge DB holdings → `fetchLatestAlphaSnapshotsForHoldings` / `fetchLatestAlphaSnapshot`. */
 export function holdingsToPriceInputs(holdings: Holding[]): HoldingPriceInput[] {
@@ -35,6 +27,7 @@ export type GenerateSignalsDetail = { holdingId: string; type: "BUY" | "WARN" };
 export type GenerateSignalsResult = {
   inserted: number;
   details: GenerateSignalsDetail[];
+  reconcile: ReconcileAlphaHistoryResult;
 };
 
 async function signalExistsForDay(
@@ -76,6 +69,8 @@ export async function generateSignalsForUser(
   userId: string,
   db: Client = getDb(),
 ): Promise<GenerateSignalsResult> {
+  const reconcile = await reconcileAlphaHistoryForUser(userId, db);
+
   const holdings = await fetchHoldingsWithProviderForUser(db, userId);
 
   const details: GenerateSignalsDetail[] = [];
@@ -128,5 +123,5 @@ export async function generateSignalsForUser(
     }
   }
 
-  return { inserted, details };
+  return { inserted, details, reconcile };
 }

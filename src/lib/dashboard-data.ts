@@ -196,12 +196,13 @@ function computeFinancialTotals(
 /**
  * ダッシュボード用: 保有の Alpha 履歴・最新終値・円ベース評価額・ウェイト・構造別 / Core-Satellite 集計。
  * `holdings.quantity` と `avg_acquisition_price` は DB の現行値をそのまま使用（取引実行アクション更新後も再取得で反映）。
+ * 数量 0 の銘柄（売却済み）は一覧・集計から除外する。
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
   const h = await db.execute({
     sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, provider_symbol, valuation_factor
           FROM holdings
-          WHERE user_id = ?
+          WHERE user_id = ? AND quantity > 0
           ORDER BY ticker`,
     args: [userId],
   });
@@ -231,6 +232,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   const tPlaceholders = tickers.map(() => "?").join(",");
   const [a, benchmarkLatestPrice, totalRealizedPnlJpy] = await Promise.all([
     db.execute({
+      // Match by user + benchmark + ticker only; `holding_id` may be NULL (orphaned rows still chart).
       sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
             WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
             ORDER BY ticker ASC, recorded_at ASC`,

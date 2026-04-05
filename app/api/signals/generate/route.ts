@@ -35,8 +35,8 @@ async function runGenerate(request: Request) {
   }
 
   try {
-    const result = await generateSignalsForUser(userId, getDb());
-    return NextResponse.json({ userId, ...result });
+    const { inserted, details, reconcile } = await generateSignalsForUser(userId, getDb());
+    return NextResponse.json({ userId, inserted, details, reconcile });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

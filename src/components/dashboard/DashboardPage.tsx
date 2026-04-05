@@ -45,6 +45,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [refreshPending, startRefreshTransition] = useTransition();
   const [snapshotPending, startSnapshotTransition] = useTransition();
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
   const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(null);
@@ -87,9 +88,17 @@ export function DashboardPage() {
     startTransition(async () => {
       const result = await generateSignalsAction(DEFAULT_USER_ID);
       setActionMessage(result.message);
-      if (result.ok) {
-        await loadDashboard();
-      }
+      await loadDashboard();
+    });
+  };
+
+  /** Re-link / backfill alpha_history (via server action → generate pipeline), then reload dashboard data. */
+  const onRefresh = () => {
+    setActionMessage(null);
+    startRefreshTransition(async () => {
+      const result = await generateSignalsAction(DEFAULT_USER_ID);
+      setActionMessage(result.message);
+      await loadDashboard();
     });
   };
 
@@ -168,11 +177,11 @@ export function DashboardPage() {
             </button>
             <button
               type="button"
-              onClick={() => void loadDashboard()}
-              disabled={loading}
+              onClick={onRefresh}
+              disabled={refreshPending || !!error || loading}
               className="text-[10px] font-bold text-slate-300 border border-slate-600 px-3 py-2 rounded-lg hover:bg-slate-800 transition-all flex items-center gap-2 disabled:opacity-50"
             >
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              <RefreshCw size={14} className={refreshPending || loading ? "animate-spin" : ""} />
               Refresh
             </button>
             <button

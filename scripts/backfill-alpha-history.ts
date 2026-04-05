@@ -8,7 +8,8 @@ import { config } from "dotenv";
 import { computeAlphaPercent, dailyReturnPercent, SIGNAL_BENCHMARK_TICKER } from "../src/lib/alpha-logic";
 import { upsertAlphaHistoryRow } from "../src/lib/db-operations";
 import { getDb, isDbConfigured } from "../src/lib/db";
-import { fetchHoldingsWithProviderForUser, generateSignalsForUser } from "../src/lib/generate-signals";
+import { generateSignalsForUser } from "../src/lib/generate-signals";
+import { fetchHoldingsWithProviderForUser } from "../src/lib/holdings-queries";
 import type { PriceBar } from "../src/lib/price-service";
 import { fetchPriceHistory } from "../src/lib/price-service";
 import type { Holding } from "../src/types/investment";
@@ -120,7 +121,11 @@ async function main() {
 
   console.log("Running generateSignalsForUser for smoke test…");
   const sig = await generateSignalsForUser(userId, db);
-  console.log(`Signals: inserted=${sig.inserted}`, sig.details.length ? sig.details : "");
+  console.log(
+    `Signals: inserted=${sig.inserted}`,
+    sig.details.length ? sig.details : "",
+    `reconcile rows=${sig.reconcile.rowsBackfilled}`,
+  );
 }
 
 main().catch((e) => {
