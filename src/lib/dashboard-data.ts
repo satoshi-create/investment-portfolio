@@ -206,8 +206,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     args: [userId],
   });
 
-  const holdingIds = h.rows.map((r) => String(r.id));
-  if (holdingIds.length === 0) {
+  if (h.rows.length === 0) {
     const [benchmarkLatestPrice, totalRealizedPnlJpy] = await Promise.all([
       resolveBenchmarkLatestClose(),
       fetchTotalRealizedPnlJpy(db, userId),
@@ -228,23 +227,24 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     };
   }
 
-  const placeholders = holdingIds.map(() => "?").join(",");
+  const tickers = [...new Set(h.rows.map((r) => String(r.ticker)))];
+  const tPlaceholders = tickers.map(() => "?").join(",");
   const [a, benchmarkLatestPrice, totalRealizedPnlJpy] = await Promise.all([
     db.execute({
-      sql: `SELECT holding_id, alpha_value, recorded_at, close_price FROM alpha_history
-            WHERE benchmark_ticker = ? AND holding_id IN (${placeholders})
-            ORDER BY recorded_at ASC`,
-      args: [SIGNAL_BENCHMARK_TICKER, ...holdingIds],
+      sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
+            WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
+            ORDER BY ticker ASC, recorded_at ASC`,
+      args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers],
     }),
     resolveBenchmarkLatestClose(),
     fetchTotalRealizedPnlJpy(db, userId),
   ]);
 
-  const byHolding = new Map<string, AlphaPoint[]>();
+  const byTicker = new Map<string, AlphaPoint[]>();
   for (const row of a.rows) {
-    const hid = String(row.holding_id);
-    if (!byHolding.has(hid)) byHolding.set(hid, []);
-    byHolding.get(hid)!.push({
+    const tk = String(row.ticker);
+    if (!byTicker.has(tk)) byTicker.set(tk, []);
+    byTicker.get(tk)!.push({
       alpha: Number(row.alpha_value),
       close: row.close_price != null && Number.isFinite(Number(row.close_price)) ? Number(row.close_price) : null,
     });
@@ -255,7 +255,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   const drafts: Draft[] = h.rows.map((row) => {
     const id = String(row.id);
     const ticker = String(row.ticker);
-    const series = byHolding.get(id) ?? [];
+    const series = byTicker.get(ticker) ?? [];
     const alphaHistory = series.map((p) => p.alpha);
     const currentPrice = latestCloseFromSeries(series);
     const qty = Number(row.quantity);

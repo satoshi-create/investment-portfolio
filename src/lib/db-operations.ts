@@ -3,7 +3,10 @@ import type { Client } from "@libsql/client";
 import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
 
 export type UpsertAlphaHistoryRow = {
-  holdingId: string;
+  userId: string;
+  ticker: string;
+  /** 現在の保有に紐づける場合に指定。省略時は NULL のまま更新されうる */
+  holdingId?: string | null;
   /** YYYY-MM-DD */
   recordedAtYmd: string;
   benchmarkTicker?: string;
@@ -18,8 +21,8 @@ function assertYmd(dateYmd: string): void {
 }
 
 /**
- * Idempotent write to `alpha_history` on (holding_id, benchmark_ticker, recorded_at).
- * Re-running with the same key updates `alpha_value` and `close_price`.
+ * Idempotent write to `alpha_history` on (user_id, ticker, benchmark_ticker, recorded_at).
+ * Re-running with the same key updates `alpha_value`, `close_price`, and `holding_id`.
  */
 export async function upsertAlphaHistoryRow(db: Client, row: UpsertAlphaHistoryRow): Promise<void> {
   const benchmark = row.benchmarkTicker ?? SIGNAL_BENCHMARK_TICKER;
@@ -27,13 +30,15 @@ export async function upsertAlphaHistoryRow(db: Client, row: UpsertAlphaHistoryR
 
   const id = crypto.randomUUID();
   const alpha = roundAlphaMetric(row.alphaValue);
+  const hid = row.holdingId != null && row.holdingId.length > 0 ? row.holdingId : null;
   await db.execute({
-    sql: `INSERT INTO alpha_history (id, holding_id, benchmark_ticker, recorded_at, close_price, alpha_value)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT(holding_id, benchmark_ticker, recorded_at) DO UPDATE SET
+    sql: `INSERT INTO alpha_history (id, user_id, ticker, holding_id, benchmark_ticker, recorded_at, close_price, alpha_value)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(user_id, ticker, benchmark_ticker, recorded_at) DO UPDATE SET
             alpha_value = excluded.alpha_value,
-            close_price = excluded.close_price`,
-    args: [id, row.holdingId, benchmark, row.recordedAtYmd, row.closePrice, alpha],
+            close_price = excluded.close_price,
+            holding_id = excluded.holding_id`,
+    args: [id, row.userId, row.ticker, hid, benchmark, row.recordedAtYmd, row.closePrice, alpha],
   });
 }
 

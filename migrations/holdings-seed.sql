@@ -1,5 +1,8 @@
 -- 対象プロファイルに合わせて変更すること
 -- .exit しないでそのまま実行可
+--
+-- alpha_history は user_id + ticker で保持される（migrations/008）。保有だけ消しても履歴は残るため、
+-- ここでは holdings のみ DELETE すればよい（alpha_history を消す必要はない）。
 
 PRAGMA foreign_keys = ON;
 

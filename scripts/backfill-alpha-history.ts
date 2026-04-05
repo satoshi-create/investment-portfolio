@@ -25,6 +25,7 @@ function sharedSortedDates(stockBars: PriceBar[], vooBars: PriceBar[]): string[]
 
 async function backfillOneHolding(
   db: Awaited<ReturnType<typeof getDb>>,
+  userId: string,
   holding: Holding,
   vooBars: PriceBar[],
   days: number,
@@ -51,6 +52,8 @@ async function backfillOneHolding(
     if (alpha === null) continue;
 
     await upsertAlphaHistoryRow(db, {
+      userId,
+      ticker: holding.ticker,
       holdingId: holding.id,
       recordedAtYmd: dCur,
       closePrice: s1,
@@ -104,7 +107,7 @@ async function main() {
     const label = `${h.ticker}${h.providerSymbol ? ` [${h.providerSymbol}]` : ""}`;
     process.stdout.write(`Processing ${label} (${i + 1}/${total})… `);
     try {
-      const n = await backfillOneHolding(db, h, vooBars, backfillDays);
+      const n = await backfillOneHolding(db, userId, h, vooBars, backfillDays);
       grandTotalRows += n;
       console.log(`Done (${n} row(s) upserted)`);
     } catch (e) {

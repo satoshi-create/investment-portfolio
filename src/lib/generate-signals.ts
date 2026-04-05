@@ -85,10 +85,10 @@ export async function generateSignalsForUser(
     const holdingId = h.id;
     const alphaRs = await db.execute({
       sql: `SELECT recorded_at, alpha_value FROM alpha_history
-            WHERE holding_id = ? AND benchmark_ticker = ?
+            WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?
             ORDER BY recorded_at DESC
             LIMIT 3`,
-      args: [holdingId, SIGNAL_BENCHMARK_TICKER],
+      args: [userId, h.ticker, SIGNAL_BENCHMARK_TICKER],
     });
 
     if (alphaRs.rows.length === 0) continue;

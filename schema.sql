@@ -34,23 +34,29 @@ CREATE TABLE IF NOT EXISTS holdings (
 CREATE INDEX IF NOT EXISTS idx_holdings_user_id ON holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_holdings_ticker  ON holdings(ticker);
 
--- alpha_history
+-- alpha_history（user_id + ticker で履歴を継続。保有削除時は holding_id のみ NULL）
 CREATE TABLE IF NOT EXISTS alpha_history (
   id TEXT PRIMARY KEY,                       -- uuid
-  holding_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  holding_id TEXT,                           -- 任意。保有削除時 ON DELETE SET NULL
   benchmark_ticker TEXT NOT NULL,
   recorded_at TEXT NOT NULL,                 -- date → ISO文字列(YYYY-MM-DD)で保持
   close_price REAL,
   alpha_value REAL NOT NULL,                 -- "Ticker % - Bench %"
 
-  FOREIGN KEY (holding_id) REFERENCES holdings(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  FOREIGN KEY (holding_id) REFERENCES holdings(id) ON DELETE SET NULL,
   FOREIGN KEY (benchmark_ticker) REFERENCES benchmarks(ticker) ON DELETE RESTRICT,
 
-  UNIQUE (holding_id, benchmark_ticker, recorded_at)
+  UNIQUE (user_id, ticker, benchmark_ticker, recorded_at)
 );
 
-CREATE INDEX IF NOT EXISTS idx_alpha_history_holding_id   ON alpha_history(holding_id);
-CREATE INDEX IF NOT EXISTS idx_alpha_history_recorded_at  ON alpha_history(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_alpha_history_user_id ON alpha_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_alpha_history_ticker ON alpha_history(ticker);
+CREATE INDEX IF NOT EXISTS idx_alpha_history_user_ticker ON alpha_history(user_id, ticker);
+CREATE INDEX IF NOT EXISTS idx_alpha_history_holding_id ON alpha_history(holding_id);
+CREATE INDEX IF NOT EXISTS idx_alpha_history_recorded_at ON alpha_history(recorded_at);
 CREATE INDEX IF NOT EXISTS idx_alpha_history_benchmark_at ON alpha_history(benchmark_ticker, recorded_at);
 
 -- signals
