@@ -16,6 +16,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
   benchmarkLatestPrice: 0,
   totalHoldings: 0,
+  marketIndicators: [],
   totalCostBasisJpy: 0,
   totalRealizedPnlJpy: 0,
   totalProfitJpy: 0,

@@ -24,6 +24,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
   benchmarkLatestPrice: 0,
   totalHoldings: 0,
+  marketIndicators: [],
   totalCostBasisJpy: 0,
   totalRealizedPnlJpy: 0,
   totalProfitJpy: 0,
@@ -134,6 +135,7 @@ export function DashboardPage() {
         <DashboardHeader
           totalAlpha={summary.portfolioAverageAlpha}
           benchmarkPrice={summary.benchmarkLatestPrice}
+          marketIndicators={summary.marketIndicators ?? []}
         />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-3">

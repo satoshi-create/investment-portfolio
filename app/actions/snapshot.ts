@@ -40,12 +40,13 @@ export async function recordPortfolioSnapshotAction(userId?: string): Promise<Re
     if (
       msg.includes("no such table") ||
       msg.toLowerCase().includes("portfolio_daily_snapshots") ||
-      msg.toLowerCase().includes("holding_daily_snapshots")
+      msg.toLowerCase().includes("holding_daily_snapshots") ||
+      msg.toLowerCase().includes("market_glance_snapshots")
     ) {
       return {
         ok: false,
         message:
-          "Table missing: apply migrations/003_portfolio_daily_snapshots.sql and 004_holding_daily_snapshots.sql on Turso.",
+          "Table missing: apply migrations/003–004 and 009_market_glance_snapshots.sql (portfolio, holding, market glance) on Turso.",
       };
     }
     return { ok: false, message: `Snapshot failed: ${msg}` };

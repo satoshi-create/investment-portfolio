@@ -88,6 +88,13 @@ export interface SignalPerformanceLog {
   status: "Active" | "Avoided" | "Success" | "Failed";
 }
 
+/** マクロ・市場指標 1 行（Yahoo 日足の直近終値と前日比 %）。 */
+export type MarketIndicator = {
+  label: string;
+  value: number;
+  changePct: number;
+};
+
 /** ダッシュボードヘッダー / 一覧フッター用の集計（`getDashboardData` が生成）。 */
 export type DashboardSummary = {
   /** 各保有の最新 Alpha（日次）の単純平均 */
@@ -96,6 +103,8 @@ export type DashboardSummary = {
   benchmarkLatestPrice: number;
   /** 保有銘柄数 */
   totalHoldings: number;
+  /** 世界主要インデックス等（`getDashboardData` が Yahoo から一括取得） */
+  marketIndicators: MarketIndicator[];
   /** 現在保有の取得価格合計（円）：各銘柄の marketValue − unrealizedPnlJpy の合計 */
   totalCostBasisJpy: number;
   /** `trade_history.realized_pnl_jpy` の累計（円） */
@@ -132,6 +141,8 @@ export type PortfolioDailySnapshotRow = {
   portfolioReturnVsPrevPct: number | null;
   benchmarkReturnVsPrevPct: number | null;
   alphaVsPrevPct: number | null;
+  /** 同日 `market_glance_snapshots.payload_json` をパースした値（未記録時は undefined） */
+  marketIndicators?: MarketIndicator[];
 };
 
 /** One row from `holding_daily_snapshots` (銘柄×日・Record snapshot 時). */

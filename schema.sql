@@ -131,6 +131,20 @@ CREATE INDEX IF NOT EXISTS idx_holding_snapshots_user_date
 CREATE INDEX IF NOT EXISTS idx_holding_snapshots_holding
   ON holding_daily_snapshots(holding_id, snapshot_date DESC);
 
+-- market_glance_snapshots（Record snapshot 時点の市場指標 JSON・ポートフォリオ日次と別テーブル）
+CREATE TABLE IF NOT EXISTS market_glance_snapshots (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  snapshot_date TEXT NOT NULL,
+  recorded_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  UNIQUE (user_id, snapshot_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_glance_user_date
+  ON market_glance_snapshots(user_id, snapshot_date DESC);
+
 -- trade_history（完了済み売買・取引履歴）
 CREATE TABLE IF NOT EXISTS trade_history (
   id TEXT PRIMARY KEY,

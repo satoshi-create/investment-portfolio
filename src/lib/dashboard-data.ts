@@ -24,7 +24,7 @@ import {
   sectorFromStructureTags,
   themeFromStructureTags,
 } from "@/src/lib/structure-tags";
-import { fetchLatestPrice } from "@/src/lib/price-service";
+import { fetchGlobalMarketIndicators, fetchLatestPrice } from "@/src/lib/price-service";
 
 const TARGET_CORE_PERCENT = 90;
 
@@ -208,9 +208,10 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   });
 
   if (h.rows.length === 0) {
-    const [benchmarkLatestPrice, totalRealizedPnlJpy] = await Promise.all([
+    const [benchmarkLatestPrice, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
       resolveBenchmarkLatestClose(),
       fetchTotalRealizedPnlJpy(db, userId),
+      fetchGlobalMarketIndicators(),
     ]);
     const financial = computeFinancialTotals([], totalRealizedPnlJpy);
     return {
@@ -223,6 +224,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
         portfolioAverageAlpha: 0,
         benchmarkLatestPrice,
         totalHoldings: 0,
+        marketIndicators,
         ...financial,
       },
     };
@@ -230,7 +232,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
   const tickers = [...new Set(h.rows.map((r) => String(r.ticker)))];
   const tPlaceholders = tickers.map(() => "?").join(",");
-  const [a, benchmarkLatestPrice, totalRealizedPnlJpy] = await Promise.all([
+  const [a, benchmarkLatestPrice, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
     db.execute({
       // Match by user + benchmark + ticker only; `holding_id` may be NULL (orphaned rows still chart).
       sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
@@ -240,6 +242,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     }),
     resolveBenchmarkLatestClose(),
     fetchTotalRealizedPnlJpy(db, userId),
+    fetchGlobalMarketIndicators(),
   ]);
 
   const byTicker = new Map<string, AlphaPoint[]>();
@@ -359,6 +362,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     portfolioAverageAlpha: computePortfolioAverageAlpha(stocks),
     benchmarkLatestPrice,
     totalHoldings: stocks.length,
+    marketIndicators,
     ...financial,
   };
 

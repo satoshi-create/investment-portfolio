@@ -5,6 +5,7 @@ import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { getDashboardData } from "@/src/lib/dashboard-data";
 import type {
   HoldingDailySnapshotRow,
+  MarketIndicator,
   PortfolioDailySnapshotRow,
   Stock,
   TickerInstrumentKind,
@@ -24,6 +25,51 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Parse `market_glance_snapshots.payload_json` → validated indicators (empty array OK). */
+function parseMarketGlancePayload(raw: unknown): MarketIndicator[] | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== "string" || raw.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return undefined;
+    const out: MarketIndicator[] = [];
+    for (const item of parsed) {
+      if (item == null || typeof item !== "object") continue;
+      const o = item as Record<string, unknown>;
+      const label = typeof o.label === "string" ? o.label : "";
+      const value = typeof o.value === "number" ? o.value : Number(o.value);
+      const changePct = typeof o.changePct === "number" ? o.changePct : Number(o.changePct);
+      if (!label) continue;
+      if (!Number.isFinite(value) || !Number.isFinite(changePct)) continue;
+      out.push({ label, value, changePct });
+    }
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
+function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): PortfolioDailySnapshotRow {
+  const base: PortfolioDailySnapshotRow = {
+    id: String(row.id),
+    userId: String(row.user_id),
+    snapshotDate: String(row.snapshot_date),
+    recordedAt: String(row.recorded_at),
+    fxUsdJpy: Number(row.fx_usd_jpy),
+    benchmarkTicker: String(row.benchmark_ticker),
+    benchmarkClose: numOrNull(row.benchmark_close),
+    totalMarketValueJpy: Number(row.total_market_value_jpy),
+    totalUnrealizedPnlJpy: numOrNull(row.total_unrealized_pnl_jpy),
+    portfolioAvgAlpha: numOrNull(row.portfolio_avg_alpha),
+    portfolioReturnVsPrevPct: numOrNull(row.portfolio_return_vs_prev_pct),
+    benchmarkReturnVsPrevPct: numOrNull(row.benchmark_return_vs_prev_pct),
+    alphaVsPrevPct: numOrNull(row.alpha_vs_prev_pct),
+  };
+  const mi = parseMarketGlancePayload(marketPayload);
+  if (mi !== undefined) base.marketIndicators = mi;
+  return base;
+}
+
 /** Recent patrol rows for dashboard (newest first). Returns [] if table missing. */
 export async function fetchPortfolioDailySnapshotsForUser(
   db: Client,
@@ -33,33 +79,44 @@ export async function fetchPortfolioDailySnapshotsForUser(
   const cap = Math.min(365, Math.max(1, Math.floor(limit)));
   try {
     const rs = await db.execute({
-      sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
-                   total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
-                   portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
-            FROM portfolio_daily_snapshots
-            WHERE user_id = ?
-            ORDER BY snapshot_date DESC
+      sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
+                   p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.portfolio_avg_alpha,
+                   p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
+                   m.payload_json AS market_glance_payload_json
+            FROM portfolio_daily_snapshots p
+            LEFT JOIN market_glance_snapshots m
+              ON m.user_id = p.user_id AND m.snapshot_date = p.snapshot_date
+            WHERE p.user_id = ?
+            ORDER BY p.snapshot_date DESC
             LIMIT ?`,
       args: [userId, cap],
     });
-    return rs.rows.map((row) => ({
-      id: String(row.id),
-      userId: String(row.user_id),
-      snapshotDate: String(row.snapshot_date),
-      recordedAt: String(row.recorded_at),
-      fxUsdJpy: Number(row.fx_usd_jpy),
-      benchmarkTicker: String(row.benchmark_ticker),
-      benchmarkClose: numOrNull(row.benchmark_close),
-      totalMarketValueJpy: Number(row.total_market_value_jpy),
-      totalUnrealizedPnlJpy: numOrNull(row.total_unrealized_pnl_jpy),
-      portfolioAvgAlpha: numOrNull(row.portfolio_avg_alpha),
-      portfolioReturnVsPrevPct: numOrNull(row.portfolio_return_vs_prev_pct),
-      benchmarkReturnVsPrevPct: numOrNull(row.benchmark_return_vs_prev_pct),
-      alphaVsPrevPct: numOrNull(row.alpha_vs_prev_pct),
-    }));
+    return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("no such table") || msg.toLowerCase().includes("portfolio_daily_snapshots")) {
+    const msgLower = msg.toLowerCase();
+    if (msgLower.includes("no such table") && msgLower.includes("market_glance_snapshots")) {
+      try {
+        const rs = await db.execute({
+          sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                       total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
+                       portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+                FROM portfolio_daily_snapshots
+                WHERE user_id = ?
+                ORDER BY snapshot_date DESC
+                LIMIT ?`,
+          args: [userId, cap],
+        });
+        return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
+      } catch (e2) {
+        const m2 = e2 instanceof Error ? e2.message : String(e2);
+        if (m2.includes("no such table") || m2.toLowerCase().includes("portfolio_daily_snapshots")) {
+          return [];
+        }
+        throw e2;
+      }
+    }
+    if (msg.includes("no such table") || msgLower.includes("portfolio_daily_snapshots")) {
       return [];
     }
     throw e;
@@ -253,39 +310,62 @@ export async function recordPortfolioDailySnapshot(
   const replacedExistingRow = existing.rows.length > 0;
 
   const id = crypto.randomUUID();
-  await db.execute({
-    sql: `INSERT INTO portfolio_daily_snapshots (
-            id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
-            total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
-            portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
-            id = excluded.id,
-            recorded_at = excluded.recorded_at,
-            fx_usd_jpy = excluded.fx_usd_jpy,
-            benchmark_close = excluded.benchmark_close,
-            total_market_value_jpy = excluded.total_market_value_jpy,
-            total_unrealized_pnl_jpy = excluded.total_unrealized_pnl_jpy,
-            portfolio_avg_alpha = excluded.portfolio_avg_alpha,
-            portfolio_return_vs_prev_pct = excluded.portfolio_return_vs_prev_pct,
-            benchmark_return_vs_prev_pct = excluded.benchmark_return_vs_prev_pct,
-            alpha_vs_prev_pct = excluded.alpha_vs_prev_pct`,
-    args: [
-      id,
-      userId,
-      snapshotDate,
-      recordedAt,
-      USD_JPY_RATE,
-      SIGNAL_BENCHMARK_TICKER,
-      benchmarkClose,
-      totalMv,
-      totalPnlJpy,
-      avgAlpha,
-      portfolioReturnVsPrev,
-      benchmarkReturnVsPrev,
-      alphaVsPrev,
-    ],
-  });
+  const payloadJson = JSON.stringify(dash.summary.marketIndicators ?? []);
+
+  const tx = await db.transaction("write");
+  try {
+    await tx.execute({
+      sql: `INSERT INTO portfolio_daily_snapshots (
+              id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+              total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
+              portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
+              id = excluded.id,
+              recorded_at = excluded.recorded_at,
+              fx_usd_jpy = excluded.fx_usd_jpy,
+              benchmark_close = excluded.benchmark_close,
+              total_market_value_jpy = excluded.total_market_value_jpy,
+              total_unrealized_pnl_jpy = excluded.total_unrealized_pnl_jpy,
+              portfolio_avg_alpha = excluded.portfolio_avg_alpha,
+              portfolio_return_vs_prev_pct = excluded.portfolio_return_vs_prev_pct,
+              benchmark_return_vs_prev_pct = excluded.benchmark_return_vs_prev_pct,
+              alpha_vs_prev_pct = excluded.alpha_vs_prev_pct`,
+      args: [
+        id,
+        userId,
+        snapshotDate,
+        recordedAt,
+        USD_JPY_RATE,
+        SIGNAL_BENCHMARK_TICKER,
+        benchmarkClose,
+        totalMv,
+        totalPnlJpy,
+        avgAlpha,
+        portfolioReturnVsPrev,
+        benchmarkReturnVsPrev,
+        alphaVsPrev,
+      ],
+    });
+
+    const mgId = crypto.randomUUID();
+    await tx.execute({
+      sql: `INSERT INTO market_glance_snapshots (id, user_id, snapshot_date, recorded_at, payload_json)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
+              id = excluded.id,
+              recorded_at = excluded.recorded_at,
+              payload_json = excluded.payload_json`,
+      args: [mgId, userId, snapshotDate, recordedAt, payloadJson],
+    });
+
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  } finally {
+    tx.close();
+  }
 
   try {
     await upsertHoldingDailySnapshotsFromStocks(

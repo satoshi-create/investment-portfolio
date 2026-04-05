@@ -67,4 +67,15 @@ CREATE INDEX idx_alpha_history_benchmark_at ON alpha_history(benchmark_ticker, r
 CREATE INDEX idx_signals_holding_id ON signals(holding_id);
 CREATE INDEX idx_signals_detected_at ON signals(detected_at);
 CREATE INDEX idx_signals_unresolved ON signals(is_resolved, detected_at);
+CREATE TABLE IF NOT EXISTS market_glance_snapshots (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  snapshot_date TEXT NOT NULL,
+  recorded_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  UNIQUE (user_id, snapshot_date)
+);
+CREATE INDEX idx_market_glance_user_date
+  ON market_glance_snapshots(user_id, snapshot_date DESC);
 COMMIT;

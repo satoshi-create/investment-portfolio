@@ -8,8 +8,10 @@ import {
   classifyTickerInstrument,
   computeAlphaPercent,
   dailyReturnPercent,
+  roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
 } from "@/src/lib/alpha-logic";
+import type { MarketIndicator } from "@/src/types/investment";
 
 const yahooFinance = new YahooFinance();
 
@@ -333,4 +335,54 @@ export async function fetchLatestAlphaSnapshotsForHoldings(
     }),
   );
   return results.filter((r): r is LatestAlphaPriceRow => r != null);
+}
+
+/** Yahoo シンボル直近 2 営業日の終値と前日比 %（取得失敗時は null）。 */
+async function fetchYahooCloseAndDayChangePct(yahooSymbol: string): Promise<{ close: number; changePct: number } | null> {
+  try {
+    const bars = await fetchChartCloses(yahooSymbol, 21);
+    if (bars.length < 2) {
+      logSkip(yahooSymbol, "fewer than 2 bars for day change");
+      return null;
+    }
+    const prev = bars[bars.length - 2]!;
+    const last = bars[bars.length - 1]!;
+    const raw = dailyReturnPercent(prev.close, last.close);
+    const changePct = raw != null && Number.isFinite(raw) ? roundAlphaMetric(raw) : 0;
+    return { close: last.close, changePct };
+  } catch (e) {
+    logSkip(yahooSymbol, "fetchYahooCloseAndDayChangePct failed", e);
+    return null;
+  }
+}
+
+const GLOBAL_MARKET_BAR_DEFS: readonly { label: string; symbol: string }[] = [
+  { label: "USD/JPY", symbol: "JPY=X" },
+  { label: "Crude (USO)", symbol: "USO" },
+  { label: "S&P 500", symbol: "^GSPC" },
+  { label: "NASDAQ 100", symbol: "^NDX" },
+  { label: "SOX", symbol: "^SOX" },
+  { label: "VIX", symbol: "^VIX" },
+  { label: "Nikkei 225", symbol: "^N225" },
+  { label: "10Y Yield", symbol: "^TNX" },
+  { label: "DJIA", symbol: "^DJI" },
+];
+
+/**
+ * ダッシュボード用マーケットグレンス（並列 Yahoo）。失敗した指標は `value: -1`（UI は —）。
+ */
+export async function fetchGlobalMarketIndicators(): Promise<MarketIndicator[]> {
+  const settled = await Promise.allSettled(
+    GLOBAL_MARKET_BAR_DEFS.map(async ({ label, symbol }) => {
+      const snap = await fetchYahooCloseAndDayChangePct(symbol);
+      if (snap == null) return { label, value: -1, changePct: 0 } satisfies MarketIndicator;
+      return { label, value: snap.close, changePct: snap.changePct };
+    }),
+  );
+  return settled.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    const { label } = GLOBAL_MARKET_BAR_DEFS[i]!;
+    logSkip(label, "indicator fetch rejected", r.reason);
+    return { label, value: -1, changePct: 0 };
+  });
 }
