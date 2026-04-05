@@ -7,12 +7,14 @@ import { generateSignalsAction } from "@/app/actions/signals";
 import type {
   CoreSatelliteBreakdown,
   DashboardSummary,
+  HoldingDailySnapshotRow,
   PortfolioDailySnapshotRow,
   Signal,
   Stock,
   StructureTagSlice,
 } from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
+import { HoldingDailySnapshotsTable } from "@/src/components/dashboard/HoldingDailySnapshotsTable";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
 import { PortfolioSnapshotsTable } from "@/src/components/dashboard/PortfolioSnapshotsTable";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
@@ -41,6 +43,8 @@ type DashboardPayload = {
   totalMarketValue: number;
   summary: DashboardSummary;
   portfolioSnapshots: PortfolioDailySnapshotRow[];
+  holdingSnapshotsDate: string | null;
+  holdingSnapshots: HoldingDailySnapshotRow[];
 };
 
 export function DashboardPage() {
@@ -78,6 +82,8 @@ export function DashboardPage() {
         totalMarketValue: json.totalMarketValue ?? 0,
         summary: json.summary ?? EMPTY_SUMMARY,
         portfolioSnapshots: json.portfolioSnapshots ?? [],
+        holdingSnapshotsDate: json.holdingSnapshotsDate ?? null,
+        holdingSnapshots: json.holdingSnapshots ?? [],
       });
     } catch (e) {
       setData(null);
@@ -125,6 +131,8 @@ export function DashboardPage() {
   const totalMarketValue = data?.totalMarketValue ?? 0;
   const summary = data?.summary ?? EMPTY_SUMMARY;
   const portfolioSnapshots = data?.portfolioSnapshots ?? [];
+  const holdingSnapshotsDate = data?.holdingSnapshotsDate ?? null;
+  const holdingSnapshots = data?.holdingSnapshots ?? [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
@@ -181,7 +189,7 @@ export function DashboardPage() {
               onClick={onRecordSnapshot}
               disabled={snapshotPending || !!error || loading}
               className="text-[10px] font-bold text-cyan-400 border border-cyan-500/35 px-3 py-2 rounded-lg hover:bg-cyan-500/10 transition-all flex items-center gap-2 disabled:opacity-50"
-              title="Saves portfolio_daily_snapshots (UTC date). Re-run same day overwrites the row."
+              title="Writes portfolio_daily_snapshots + holding_daily_snapshots (UTC date). Same day overwrites."
             >
               <Camera size={14} className={snapshotPending ? "animate-pulse" : ""} />
               Record snapshot
@@ -202,6 +210,7 @@ export function DashboardPage() {
         />
         <HoldingsDetailTable stocks={stocks} />
         <PortfolioSnapshotsTable rows={portfolioSnapshots} />
+        <HoldingDailySnapshotsTable snapshotDate={holdingSnapshotsDate} rows={holdingSnapshots} />
       </div>
     </div>
   );

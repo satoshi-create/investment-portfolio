@@ -117,3 +117,28 @@ export type PortfolioDailySnapshotRow = {
   benchmarkReturnVsPrevPct: number | null;
   alphaVsPrevPct: number | null;
 };
+
+/** One row from `holding_daily_snapshots` (銘柄×日・Record snapshot 時). */
+export type HoldingDailySnapshotRow = {
+  id: string;
+  userId: string;
+  holdingId: string;
+  snapshotDate: string;
+  recordedAt: string;
+  ticker: string;
+  name: string;
+  instrumentKind: TickerInstrumentKind;
+  category: HoldingCategory;
+  secondaryTag: string;
+  quantity: number;
+  valuationFactor: number;
+  avgAcquisitionPrice: number | null;
+  closePrice: number | null;
+  marketValueJpy: number;
+  unrealizedPnlJpy: number | null;
+  unrealizedPnlPct: number | null;
+  dayChangePct: number | null;
+  benchmarkTicker: string;
+  benchmarkClose: number | null;
+  fxUsdJpy: number;
+};

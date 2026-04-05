@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { fetchUnresolvedSignalsForUser, getDashboardData } from "@/src/lib/dashboard-data";
 import { getDb, isDbConfigured } from "@/src/lib/db";
-import { fetchPortfolioDailySnapshotsForUser } from "@/src/lib/portfolio-snapshots";
+import {
+  fetchHoldingDailySnapshotsLatestForUser,
+  fetchPortfolioDailySnapshotsForUser,
+} from "@/src/lib/portfolio-snapshots";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +23,11 @@ export async function GET(request: Request) {
 
   try {
     const db = getDb();
-    const [dash, signals, portfolioSnapshots] = await Promise.all([
+    const [dash, signals, portfolioSnapshots, holdingSnapshotsBundle] = await Promise.all([
       getDashboardData(db, userId),
       fetchUnresolvedSignalsForUser(db, userId),
       fetchPortfolioDailySnapshotsForUser(db, userId),
+      fetchHoldingDailySnapshotsLatestForUser(db, userId),
     ]);
     return NextResponse.json({
       userId,
@@ -34,6 +38,8 @@ export async function GET(request: Request) {
       totalMarketValue: dash.totalMarketValue,
       summary: dash.summary,
       portfolioSnapshots,
+      holdingSnapshotsDate: holdingSnapshotsBundle.snapshotDate,
+      holdingSnapshots: holdingSnapshotsBundle.rows,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

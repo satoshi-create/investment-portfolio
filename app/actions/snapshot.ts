@@ -35,11 +35,15 @@ export async function recordPortfolioSnapshotAction(userId?: string): Promise<Re
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Snapshot failed.";
-    if (msg.includes("no such table") || msg.toLowerCase().includes("portfolio_daily_snapshots")) {
+    if (
+      msg.includes("no such table") ||
+      msg.toLowerCase().includes("portfolio_daily_snapshots") ||
+      msg.toLowerCase().includes("holding_daily_snapshots")
+    ) {
       return {
         ok: false,
         message:
-          "Table missing: apply migrations/003_portfolio_daily_snapshots.sql on your Turso database.",
+          "Table missing: apply migrations/003_portfolio_daily_snapshots.sql and 004_holding_daily_snapshots.sql on Turso.",
       };
     }
     return { ok: false, message: `Snapshot failed: ${msg}` };

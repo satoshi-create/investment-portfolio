@@ -2,7 +2,12 @@ import type { Client } from "@libsql/client";
 
 import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER, USD_JPY_RATE } from "@/src/lib/alpha-logic";
 import { getDashboardData } from "@/src/lib/dashboard-data";
-import type { PortfolioDailySnapshotRow } from "@/src/types/investment";
+import type {
+  HoldingDailySnapshotRow,
+  PortfolioDailySnapshotRow,
+  Stock,
+  TickerInstrumentKind,
+} from "@/src/types/investment";
 
 export type RecordPortfolioSnapshotResult = {
   snapshotDate: string;
@@ -57,6 +62,131 @@ export async function fetchPortfolioDailySnapshotsForUser(
       return [];
     }
     throw e;
+  }
+}
+
+function parseInstrumentKind(raw: string): TickerInstrumentKind {
+  return raw === "JP_INVESTMENT_TRUST" ? "JP_INVESTMENT_TRUST" : "US_EQUITY";
+}
+
+/** Latest `snapshot_date` rows for user (one patrol “slice”). */
+export async function fetchHoldingDailySnapshotsLatestForUser(
+  db: Client,
+  userId: string,
+): Promise<{ snapshotDate: string | null; rows: HoldingDailySnapshotRow[] }> {
+  try {
+    const maxRs = await db.execute({
+      sql: `SELECT MAX(snapshot_date) AS d FROM holding_daily_snapshots WHERE user_id = ?`,
+      args: [userId],
+    });
+    const d = maxRs.rows[0]?.d;
+    if (d == null || String(d).length === 0) {
+      return { snapshotDate: null, rows: [] };
+    }
+    const snapshotDate = String(d);
+    const rs = await db.execute({
+      sql: `SELECT id, user_id, holding_id, snapshot_date, recorded_at, ticker, name, instrument_kind,
+                   category, secondary_tag, quantity, valuation_factor, avg_acquisition_price, close_price,
+                   market_value_jpy, unrealized_pnl_jpy, unrealized_pnl_pct, day_change_pct,
+                   benchmark_ticker, benchmark_close, fx_usd_jpy
+            FROM holding_daily_snapshots
+            WHERE user_id = ? AND snapshot_date = ?
+            ORDER BY ticker ASC`,
+      args: [userId, snapshotDate],
+    });
+    const rows: HoldingDailySnapshotRow[] = rs.rows.map((row) => ({
+      id: String(row.id),
+      userId: String(row.user_id),
+      holdingId: String(row.holding_id),
+      snapshotDate: String(row.snapshot_date),
+      recordedAt: String(row.recorded_at),
+      ticker: String(row.ticker),
+      name: row.name != null ? String(row.name) : "",
+      instrumentKind: parseInstrumentKind(String(row.instrument_kind)),
+      category: String(row.category) === "Core" ? "Core" : "Satellite",
+      secondaryTag: row.secondary_tag != null ? String(row.secondary_tag) : "",
+      quantity: Number(row.quantity),
+      valuationFactor: Number(row.valuation_factor),
+      avgAcquisitionPrice: numOrNull(row.avg_acquisition_price),
+      closePrice: numOrNull(row.close_price),
+      marketValueJpy: Number(row.market_value_jpy),
+      unrealizedPnlJpy: numOrNull(row.unrealized_pnl_jpy),
+      unrealizedPnlPct: numOrNull(row.unrealized_pnl_pct),
+      dayChangePct: numOrNull(row.day_change_pct),
+      benchmarkTicker: String(row.benchmark_ticker),
+      benchmarkClose: numOrNull(row.benchmark_close),
+      fxUsdJpy: Number(row.fx_usd_jpy),
+    }));
+    return { snapshotDate, rows };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("holding_daily_snapshots")) {
+      return { snapshotDate: null, rows: [] };
+    }
+    throw e;
+  }
+}
+
+async function upsertHoldingDailySnapshotsFromStocks(
+  db: Client,
+  userId: string,
+  snapshotDate: string,
+  recordedAt: string,
+  benchmarkClose: number | null,
+  stocks: Stock[],
+): Promise<void> {
+  for (const st of stocks) {
+    const rowId = crypto.randomUUID();
+    await db.execute({
+      sql: `INSERT INTO holding_daily_snapshots (
+              id, user_id, holding_id, snapshot_date, recorded_at, ticker, name, instrument_kind,
+              category, secondary_tag, quantity, valuation_factor, avg_acquisition_price, close_price,
+              market_value_jpy, unrealized_pnl_jpy, unrealized_pnl_pct, day_change_pct,
+              benchmark_ticker, benchmark_close, fx_usd_jpy
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(holding_id, snapshot_date) DO UPDATE SET
+              id = excluded.id,
+              recorded_at = excluded.recorded_at,
+              ticker = excluded.ticker,
+              name = excluded.name,
+              instrument_kind = excluded.instrument_kind,
+              category = excluded.category,
+              secondary_tag = excluded.secondary_tag,
+              quantity = excluded.quantity,
+              valuation_factor = excluded.valuation_factor,
+              avg_acquisition_price = excluded.avg_acquisition_price,
+              close_price = excluded.close_price,
+              market_value_jpy = excluded.market_value_jpy,
+              unrealized_pnl_jpy = excluded.unrealized_pnl_jpy,
+              unrealized_pnl_pct = excluded.unrealized_pnl_pct,
+              day_change_pct = excluded.day_change_pct,
+              benchmark_ticker = excluded.benchmark_ticker,
+              benchmark_close = excluded.benchmark_close,
+              fx_usd_jpy = excluded.fx_usd_jpy`,
+      args: [
+        rowId,
+        userId,
+        st.id,
+        snapshotDate,
+        recordedAt,
+        st.ticker,
+        st.name || "",
+        st.instrumentKind,
+        st.category,
+        st.secondaryTag,
+        st.quantity,
+        st.valuationFactor,
+        st.avgAcquisitionPrice,
+        st.currentPrice,
+        st.marketValue,
+        st.unrealizedPnlJpy,
+        st.unrealizedPnlPercent,
+        st.dayChangePercent,
+        SIGNAL_BENCHMARK_TICKER,
+        benchmarkClose,
+        USD_JPY_RATE,
+      ],
+    });
   }
 }
 
@@ -154,6 +284,24 @@ export async function recordPortfolioDailySnapshot(
       alphaVsPrev,
     ],
   });
+
+  try {
+    await upsertHoldingDailySnapshotsFromStocks(
+      db,
+      userId,
+      snapshotDate,
+      recordedAt,
+      benchmarkClose,
+      dash.stocks,
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("holding_daily_snapshots")) {
+      /* マイグレーション未適用時はポートフォリオ行のみ成功とする */
+    } else {
+      throw e;
+    }
+  }
 
   return {
     snapshotDate,
