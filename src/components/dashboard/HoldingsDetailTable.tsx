@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 
 import type { Stock, TickerInstrumentKind } from "@/src/types/investment";
+import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
@@ -110,7 +111,7 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                 銘柄 / コード
               </th>
               <th className="px-4 py-3 whitespace-nowrap">市場区分</th>
-              <th className="px-4 py-3 whitespace-nowrap">業界</th>
+              <th className="px-4 py-3 whitespace-nowrap">セクター</th>
               <th className="px-4 py-3 text-right whitespace-nowrap">数量</th>
               <th className="px-4 py-3 text-right whitespace-nowrap">平均取得単価</th>
               <th className="px-4 py-3 text-right whitespace-nowrap">現在価格</th>
@@ -135,8 +136,15 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                 <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">
                   {marketLabel(s.instrumentKind)}
                 </td>
-                <td className="px-4 py-3 text-slate-400 text-xs max-w-[140px] truncate" title={s.secondaryTag}>
-                  {s.secondaryTag}
+                <td
+                  className="px-4 py-3 text-slate-400 text-xs max-w-[140px] truncate"
+                  title={
+                    s.sector != null && s.sector.trim().length > 0 && s.sector.trim() !== s.secondaryTag
+                      ? `DB: ${s.sector.trim()} / タグ2: ${s.secondaryTag}`
+                      : holdingSectorDisplay(s.sector, s.secondaryTag)
+                  }
+                >
+                  {holdingSectorDisplay(s.sector, s.secondaryTag)}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-slate-300 whitespace-nowrap">{s.quantity}</td>
                 <td className="px-4 py-3 text-right font-mono text-slate-300 whitespace-nowrap">

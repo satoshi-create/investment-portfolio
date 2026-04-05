@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 
 import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER, USD_JPY_RATE } from "@/src/lib/alpha-logic";
+import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { getDashboardData } from "@/src/lib/dashboard-data";
 import type {
   HoldingDailySnapshotRow,
@@ -137,6 +138,7 @@ async function upsertHoldingDailySnapshotsFromStocks(
 ): Promise<void> {
   for (const st of stocks) {
     const rowId = crypto.randomUUID();
+    const secondaryForSnapshot = holdingSectorDisplay(st.sector, st.secondaryTag);
     await db.execute({
       sql: `INSERT INTO holding_daily_snapshots (
               id, user_id, holding_id, snapshot_date, recorded_at, ticker, name, instrument_kind,
@@ -173,7 +175,7 @@ async function upsertHoldingDailySnapshotsFromStocks(
         st.name || "",
         st.instrumentKind,
         st.category,
-        st.secondaryTag,
+        secondaryForSnapshot,
         st.quantity,
         st.valuationFactor,
         st.avgAcquisitionPrice,

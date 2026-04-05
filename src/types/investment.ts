@@ -12,11 +12,13 @@ export interface Holding {
 
 export type HoldingCategory = "Core" | "Satellite";
 
-/** プライマリ構造タグ別の評価額シェア（サーバー集計、円ベース）。 */
+/** プライマリ／セクター（セカンダリ）タグ別の評価額シェア（サーバー集計、円ベース）。 */
 export interface StructureTagSlice {
   tag: string;
   marketValue: number;
   weightPercent: number;
+  /** 当該タグに属する銘柄数 */
+  count: number;
 }
 
 /** Core / Satellite の実測 vs 目標 9:1。 */
@@ -50,8 +52,10 @@ export interface Stock {
   /** 直近 2 件の終値から算出した前日比 %（算出不可は null） */
   dayChangePercent: number | null;
   instrumentKind: TickerInstrumentKind;
-  /** `structure_tags` の 2 番目を業界代理で使用（無ければ Other） */
+  /** `structure_tags` の 2 番目（無ければ Other）。`sector` 列が空のときのフォールバック表示にも使う */
   secondaryTag: string;
+  /** DB `holdings.sector`（明示セクター）。未設定は null（表示・集計は secondaryTag で代替） */
+  sector: string | null;
   /** `alpha_history` 最新行の終値（無ければ null） */
   currentPrice: number | null;
   /**
@@ -104,6 +108,8 @@ export type DashboardSummary = {
 export type DashboardData = {
   stocks: Stock[];
   structureByTag: StructureTagSlice[];
+  /** `holdings.sector` 優先、空なら structure_tags の 2 番目で集計した評価額・銘柄数 */
+  structureBySector: StructureTagSlice[];
   coreSatellite: CoreSatelliteBreakdown;
   totalMarketValue: number;
   summary: DashboardSummary;

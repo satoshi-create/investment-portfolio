@@ -1,11 +1,11 @@
-import React from "react";
-import { LayoutGrid } from "lucide-react";
+import React, { useMemo } from "react";
+import { GitBranch, LayoutGrid, Radar } from "lucide-react";
 
-import type { CoreSatelliteBreakdown, StructureTagSlice } from "@/src/types/investment";
+import type { StructureTagSlice } from "@/src/types/investment";
 import { USD_JPY_RATE } from "@/src/lib/alpha-logic";
 import { StatBox } from "@/src/components/dashboard/StatBox";
 
-const TAG_BAR_COLORS = [
+const THEME_BAR_COLORS = [
   "bg-indigo-500",
   "bg-emerald-500",
   "bg-cyan-500",
@@ -13,6 +13,127 @@ const TAG_BAR_COLORS = [
   "bg-rose-500",
   "bg-violet-500",
 ];
+
+const SATELLITE_TARGET_MIN = 6;
+const SATELLITE_TARGET_MAX = 10;
+
+type SectorPole = "tech_growth" | "energy_cyclical" | "defensive" | "other";
+
+/** バー左→右: テック／成長 → その他 → ディフェンシブ → エネルギー／シクリカル（相反が目で追いやすい順） */
+function sectorPole(tag: string): SectorPole {
+  const u = tag.toLowerCase();
+  if (
+    /ソフト|software|fang|グロース|growth|ev|半導体|semi|chip|ai|cloud|saas|tech|ネット|digital/i.test(tag) ||
+    /software|fang|growth|semi|cloud|saas|tech|digital|chip|nvidia/i.test(u)
+  ) {
+    return "tech_growth";
+  }
+  if (
+    /エネルギー|エネルギ|energy|再エネ|renew|鉱|素材|material|industrial|銀行|金融(?!テック)/i.test(tag) ||
+    /energy|renew|material|mining|oil|gas/i.test(u)
+  ) {
+    return "energy_cyclical";
+  }
+  if (
+    /実体|小売|retail|消費|staple|ヘルス|health|医薬|pharma|utility|配当|dividend|インフラ|コア/i.test(tag) ||
+    /retail|staple|health|pharma|utility|dividend/i.test(u)
+  ) {
+    return "defensive";
+  }
+  return "other";
+}
+
+const POLE_SORT: Record<SectorPole, number> = {
+  tech_growth: 0,
+  other: 1,
+  defensive: 2,
+  energy_cyclical: 3,
+};
+
+function poleHintJa(pole: SectorPole): string {
+  switch (pole) {
+    case "tech_growth":
+      return "成長・テック寄り";
+    case "energy_cyclical":
+      return "エネルギー・シクリカル寄り";
+    case "defensive":
+      return "ディフェンシブ寄り";
+    default:
+      return "中立／その他";
+  }
+}
+
+function sortSectorsForBalanceBar(slices: StructureTagSlice[]): StructureTagSlice[] {
+  return [...slices].sort((a, b) => {
+    const pa = sectorPole(a.tag);
+    const pb = sectorPole(b.tag);
+    const oa = POLE_SORT[pa];
+    const ob = POLE_SORT[pb];
+    if (oa !== ob) return oa - ob;
+    return b.marketValue - a.marketValue;
+  });
+}
+
+/** POLE_SORT 順に並べた配列の前半を Growth、後半を Cyclical として合算シェア % を返す */
+function growthCyclicalFromSortedSectors(sorted: StructureTagSlice[]): {
+  growthSlices: StructureTagSlice[];
+  cyclicalSlices: StructureTagSlice[];
+  growthPct: number;
+  cyclicalPct: number;
+} {
+  const n = sorted.length;
+  if (n === 0) {
+    return { growthSlices: [], cyclicalSlices: [], growthPct: 0, cyclicalPct: 0 };
+  }
+  if (n === 1) {
+    const g = sorted[0]!.weightPercent;
+    return { growthSlices: sorted, cyclicalSlices: [], growthPct: g, cyclicalPct: 0 };
+  }
+  const mid = Math.floor(n / 2);
+  const growthSlices = sorted.slice(0, mid);
+  const cyclicalSlices = sorted.slice(mid);
+  const growthPct = growthSlices.reduce((s, x) => s + x.weightPercent, 0);
+  const cyclicalPct = cyclicalSlices.reduce((s, x) => s + x.weightPercent, 0);
+  return { growthSlices, cyclicalSlices, growthPct, cyclicalPct };
+}
+
+type GrowthCyclicalBalance = "balanced" | "leaning_growth" | "leaning_cyclical";
+
+function growthCyclicalBalanceStatus(growthPct: number): GrowthCyclicalBalance {
+  if (growthPct >= 55 && growthPct <= 65) return "balanced";
+  if (growthPct > 65) return "leaning_growth";
+  return "leaning_cyclical";
+}
+
+function balanceBadgePresentation(status: GrowthCyclicalBalance): { label: string; className: string } {
+  switch (status) {
+    case "balanced":
+      return {
+        label: "Balanced",
+        className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+      };
+    case "leaning_growth":
+      return {
+        label: "Leaning Growth",
+        className: "border-sky-500/40 bg-sky-500/10 text-sky-300",
+      };
+    default:
+      return {
+        label: "Leaning Cyclical",
+        className: "border-amber-500/45 bg-amber-500/10 text-amber-200",
+      };
+  }
+}
+
+/** バー左（Growth）→右（Cyclical）へ連続的な色相（青系→オレンジ・赤系） */
+function sectorHeatColor(index: number, total: number): string {
+  if (total <= 1) return "hsl(205 85% 48%)";
+  const t = index / (total - 1);
+  const h = 205 - t * 168;
+  const s = 72 + t * 18;
+  const l = 50 - t * 12;
+  return `hsl(${h} ${s}% ${l}%)`;
+}
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -35,10 +156,21 @@ function profitColor(value: number): string {
   return "text-slate-400";
 }
 
+function satelliteGaugeClass(count: number): string {
+  if (count >= SATELLITE_TARGET_MIN && count <= SATELLITE_TARGET_MAX) {
+    return "border-emerald-500/50 bg-emerald-500/5";
+  }
+  if (count < SATELLITE_TARGET_MIN) {
+    return "border-amber-500/50 bg-amber-500/5";
+  }
+  return "border-rose-500/40 bg-rose-500/5";
+}
+
 type Props = {
   structureByTag: StructureTagSlice[];
-  /** コメントアウト中の Core/Satellite カード用（将来復帰時に使用） */
-  coreSatellite?: CoreSatelliteBreakdown;
+  structureBySector: StructureTagSlice[];
+  /** Satellite かつ評価額 > 0 の銘柄数（個別株モニタ用） */
+  satelliteStockCount: number;
   totalMarketValue: number;
   totalProfitJpy: number;
   totalReturnPct: number;
@@ -47,136 +179,258 @@ type Props = {
 
 export function StrategySection({
   structureByTag,
+  structureBySector,
+  satelliteStockCount,
   totalMarketValue,
   totalProfitJpy,
   totalReturnPct,
   totalCostBasisJpy,
 }: Props) {
-  const hasStructure = structureByTag.length > 0;
+  const hasThemes = structureByTag.length > 0;
+  const hasSectors = structureBySector.length > 0;
+  const sortedSectors = useMemo(() => sortSectorsForBalanceBar(structureBySector), [structureBySector]);
+  const gcBalance = useMemo(() => growthCyclicalFromSortedSectors(sortedSectors), [sortedSectors]);
+  const gcStatus = useMemo(() => growthCyclicalBalanceStatus(gcBalance.growthPct), [gcBalance.growthPct]);
+  const gcBadge = useMemo(() => balanceBadgePresentation(gcStatus), [gcStatus]);
+  const gRound = Math.round(gcBalance.growthPct);
+  const cRound = Math.round(gcBalance.cyclicalPct);
 
   return (
-    <div className="grid grid-cols-1 gap-4">
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-        <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2 tracking-widest">
-          <LayoutGrid size={14} /> Structure (primary tag)
-        </h3>
-        <p className="text-[10px] text-slate-600 mb-4 leading-relaxed">
-          各銘柄の先頭タグで集計。積み上げバーは円換算後の評価額合計に対するシェアです。米国株（英字ティッカー）は
-          1 USD = {USD_JPY_RATE} 円、数字のみの投信は円のまま。指数連動は DB の valuation_factor
-          で評価額を合わせてください。
+    <div className="space-y-4">
+      {/* Satellite 個別株モニター */}
+      <div
+        className={`rounded-2xl border px-4 py-3 md:px-5 md:py-3.5 ${satelliteGaugeClass(satelliteStockCount)}`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              Satellite 個別株（監視レンジ）
+            </p>
+            <p className="text-sm font-bold text-slate-200 mt-0.5">
+              <span className="font-mono text-lg text-white">{satelliteStockCount}</span>
+              <span className="text-slate-500 font-normal text-xs">
+                {" "}
+                銘柄 / 目安 {SATELLITE_TARGET_MIN}〜{SATELLITE_TARGET_MAX}
+              </span>
+            </p>
+          </div>
+          <p className="text-[10px] text-slate-500 max-w-md leading-relaxed">
+            {satelliteStockCount < SATELLITE_TARGET_MIN && "目安未満: サテライトの分散やテーマ補完の余地があります。"}
+            {satelliteStockCount > SATELLITE_TARGET_MAX && "目安超過: 個別株の追跡負荷・集中度に注意。"}
+            {satelliteStockCount >= SATELLITE_TARGET_MIN &&
+              satelliteStockCount <= SATELLITE_TARGET_MAX &&
+              "レンジ内: 個別株の枚数監視としては適正ゾーンです（内容の質は別途確認）。"}
+          </p>
+        </div>
+        <div className="mt-3 h-2 w-full rounded-full bg-slate-800 overflow-hidden flex border border-slate-700/80">
+          {Array.from({ length: 12 }).map((_, i) => {
+            const n = i + 1;
+            const inTarget = n >= SATELLITE_TARGET_MIN && n <= SATELLITE_TARGET_MAX;
+            const filled = n <= satelliteStockCount;
+            return (
+              <div
+                key={n}
+                className={`h-full flex-1 border-r border-slate-900/50 last:border-r-0 ${
+                  filled
+                    ? inTarget
+                      ? "bg-emerald-500/90"
+                      : "bg-slate-500/80"
+                    : inTarget
+                      ? "bg-emerald-950/80"
+                      : "bg-slate-900/80"
+                }`}
+                title={`${n} 銘柄`}
+              />
+            );
+          })}
+        </div>
+        <p className="text-[9px] text-slate-600 mt-1.5 font-mono">
+          12 スロットのうち塗りつぶし数 = 評価額のある Satellite 銘柄数。中央の緑帯は目安 {SATELLITE_TARGET_MIN}〜
+          {SATELLITE_TARGET_MAX} 銘柄ゾーン。
         </p>
-        {hasStructure ? (
-          <>
-            <div className="h-5 w-full bg-slate-800 rounded-full overflow-hidden flex border border-slate-700">
-              {structureByTag.map((slice, i) => (
-                <div
-                  key={slice.tag}
-                  className={`h-full shrink-0 ${TAG_BAR_COLORS[i % TAG_BAR_COLORS.length]!} transition-all`}
-                  style={{ width: `${slice.weightPercent}%` }}
-                  title={`${slice.tag}: ${slice.weightPercent}%`}
-                />
-              ))}
-            </div>
-            <ul className="mt-4 space-y-2">
-              {structureByTag.map((slice, i) => (
-                <li
-                  key={slice.tag}
-                  className="flex justify-between items-center text-[10px] font-bold uppercase tracking-tighter"
-                >
-                  <span
-                    className={`flex items-center gap-2 ${
-                      i === 0
-                        ? "text-indigo-400"
-                        : i === 1
-                          ? "text-emerald-400"
-                          : i === 2
-                            ? "text-cyan-400"
-                            : "text-slate-400"
-                    }`}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Panel A: Primary themes */}
+        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+          <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2 tracking-widest">
+            <LayoutGrid size={14} /> Structural investment themes (primary)
+          </h3>
+          <p className="text-[10px] text-slate-600 mb-4 leading-relaxed">
+            構造変化テーマ（先頭タグ）別の評価額シェアと銘柄数。米株は 1 USD = {USD_JPY_RATE} 円換算。
+          </p>
+          {hasThemes ? (
+            <>
+              <div className="h-5 w-full bg-slate-800 rounded-full overflow-hidden flex border border-slate-700">
+                {structureByTag.map((slice, i) => (
+                  <div
+                    key={slice.tag}
+                    className={`h-full shrink-0 ${THEME_BAR_COLORS[i % THEME_BAR_COLORS.length]!} transition-all`}
+                    style={{ width: `${slice.weightPercent}%` }}
+                    title={`${slice.tag}: ${slice.weightPercent}% · ${slice.count} 銘柄`}
+                  />
+                ))}
+              </div>
+              <ul className="mt-4 space-y-2">
+                {structureByTag.map((slice, i) => (
+                  <li
+                    key={slice.tag}
+                    className="flex justify-between items-center gap-2 text-[10px] font-bold uppercase tracking-tighter"
                   >
                     <span
-                      className={`inline-block h-2 w-2 rounded-full ${TAG_BAR_COLORS[i % TAG_BAR_COLORS.length]}`}
-                    />
-                    {slice.tag}
-                  </span>
-                  <span className="text-slate-300 font-mono">{slice.weightPercent}%</span>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p className="text-xs text-slate-600">評価額データが無いか、タグが未設定です。</p>
-        )}
-        <div className="mt-6 pt-4 border-t border-slate-800">
-          <div className="flex flex-row flex-wrap justify-start items-end gap-x-8 gap-y-5">
-            <StatBox
-              label="Σ Market value (JPY)"
-              value={
-                totalMarketValue > 0
-                  ? `¥${totalMarketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                  : "—"
-              }
-              subLabel={`米株は USD×${USD_JPY_RATE}。指数は valuation_factor で調整`}
-            />
-  
-            <StatBox
-              label="Cost basis"
-              value={
-                Number.isFinite(totalCostBasisJpy) && totalCostBasisJpy >= 0
-                  ? jpyFmt.format(totalCostBasisJpy)
-                  : "—"
-              }
-              valueColor="text-slate-200"
-              subLabel="Total invested (holdings)"
-            />
-                 <StatBox
-              label="Total profit"
-              value={signedJpy(totalProfitJpy)}
-              valueColor={profitColor(totalProfitJpy)}
-              subLabel={
-                Number.isFinite(totalReturnPct)
-                  ? `${totalReturnPct > 0 ? "+" : ""}${totalReturnPct.toFixed(2)}% total return`
-                  : "—"
-              }
-            />
+                      className={`flex items-center gap-2 min-w-0 ${
+                        i === 0
+                          ? "text-indigo-400"
+                          : i === 1
+                            ? "text-emerald-400"
+                            : i === 2
+                              ? "text-cyan-400"
+                              : "text-slate-400"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-2 w-2 shrink-0 rounded-full ${THEME_BAR_COLORS[i % THEME_BAR_COLORS.length]}`}
+                      />
+                      <span className="truncate">{slice.tag}</span>
+                    </span>
+                    <span className="text-slate-300 font-mono shrink-0 text-right">
+                      <span className="text-slate-500 font-normal normal-case mr-2">{slice.count} 銘柄</span>
+                      {slice.weightPercent}%
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-xs text-slate-600">評価額データが無いか、タグが未設定です。</p>
+          )}
+        </div>
+
+        {/* Panel B: Sector balance */}
+        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+          <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+            <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 tracking-widest">
+              <Radar size={14} /> Sector diversification & balance (secondary)
+            </h3>
+            {hasSectors ? (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <span
+                  className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${gcBadge.className}`}
+                >
+                  {gcBadge.label}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400 tabular-nums">
+                  Current {gRound} : {cRound}
+                  <span className="text-slate-600 font-sans font-normal normal-case ml-1">(Growth : Cyclical)</span>
+                </span>
+              </div>
+            ) : null}
           </div>
-     
+          <p className="text-[10px] text-slate-600 mb-3 leading-relaxed">
+            セクター（DB の sector 優先・なければタグ 2 番目）別シェア。バー左→右は POLE_SORT 順（
+            <span className="text-sky-400/90">Growth 側</span>
+            {" → "}
+            <span className="text-orange-400/90">Cyclical 側</span>
+            ）。左半分スライスの合計を Growth、右半分を Cyclical として 6:4 ターゲット（Growth 60%）と比較します。
+          </p>
+          <div className="flex items-center gap-2 mb-2 text-[9px] text-slate-600 uppercase font-bold tracking-tighter">
+            <GitBranch size={12} className="text-sky-500/90 shrink-0" />
+            <span className="text-sky-400/80">Growth</span>
+            <span className="flex-1 border-t border-dashed border-slate-700" />
+            <span className="text-orange-400/80">Cyclical</span>
+          </div>
+          {hasSectors ? (
+            <>
+              <div className="relative pt-5">
+                <span
+                  className="pointer-events-none absolute left-[60%] top-0 z-30 -translate-x-1/2 text-[8px] font-bold uppercase tracking-widest text-amber-300/95 whitespace-nowrap"
+                  aria-hidden
+                >
+                  Target 6:4
+                </span>
+                <div className="relative h-5 w-full rounded-full overflow-hidden flex border border-slate-700 bg-slate-800/90">
+                  {sortedSectors.map((slice, segIndex) => {
+                    const pole = sectorPole(slice.tag);
+                    const heat = sectorHeatColor(segIndex, sortedSectors.length);
+                    return (
+                      <div
+                        key={slice.tag}
+                        className="h-full shrink-0 transition-all"
+                        style={{
+                          width: `${slice.weightPercent}%`,
+                          backgroundColor: heat,
+                        }}
+                        title={`${slice.tag}: ${slice.weightPercent}% · ${slice.count} 銘柄 · ${poleHintJa(pole)}`}
+                      />
+                    );
+                  })}
+                  <div
+                    className="pointer-events-none absolute inset-y-0 left-[60%] z-20 w-px -translate-x-1/2 bg-amber-400/95 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
+                    aria-hidden
+                  />
+                </div>
+              </div>
+              <ul className="mt-4 space-y-2">
+                {sortedSectors.map((slice, segIndex) => {
+                  const pole = sectorPole(slice.tag);
+                  const heat = sectorHeatColor(segIndex, sortedSectors.length);
+                  const halfLabel =
+                    segIndex < Math.floor(sortedSectors.length / 2) || sortedSectors.length === 1
+                      ? "Growth 側"
+                      : "Cyclical 側";
+                  return (
+                    <li
+                      key={slice.tag}
+                      className="flex justify-between items-start gap-2 text-[10px] font-bold uppercase tracking-tighter"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-block h-2 w-2 shrink-0 rounded-full border border-white/10"
+                            style={{ backgroundColor: heat }}
+                          />
+                          <span className="text-slate-300 truncate">{slice.tag}</span>
+                        </div>
+                        <p className="text-[9px] text-slate-600 font-normal normal-case mt-0.5 pl-4">
+                          {poleHintJa(pole)} · {halfLabel}
+                        </p>
+                      </div>
+                      <span className="text-slate-300 font-mono shrink-0 text-right">
+                        <span className="text-slate-500 font-normal normal-case mr-2">{slice.count} 銘柄</span>
+                        {slice.weightPercent}%
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          ) : (
+            <p className="text-xs text-slate-600">セクターデータがありません。</p>
+          )}
         </div>
       </div>
 
-      {/*
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl md:col-span-2 shadow-xl">
-        <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2 tracking-widest">
-          <Scale size={14} /> Core / Satellite vs 9:1
-        </h3>
-        <p className="text-[10px] text-slate-600 mb-4">
-          目標: コア {coreSatellite.targetCorePercent}% / サテライト {100 - coreSatellite.targetCorePercent}
-          %。比率は円換算後の評価額合計（米株 × {USD_JPY_RATE}）。
-        </p>
-        <div className="h-6 w-full bg-slate-800 rounded-full overflow-hidden flex border border-slate-700 mb-2">
-          <div
-            className="h-full bg-sky-500 transition-all flex items-center justify-center"
-            style={{ width: `${coreW}%` }}
-          />
-          <div
-            className="h-full bg-orange-500/90 transition-all flex items-center justify-center"
-            style={{ width: `${satW}%` }}
-          />
-        </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-[10px] font-bold uppercase tracking-tighter mb-6">
-          <span className="text-sky-400">● Core {coreSatellite.coreWeightPercent}%</span>
-          <span className="text-orange-400">● Satellite {coreSatellite.satelliteWeightPercent}%</span>
-        </div>
-        <div className="flex flex-wrap gap-8 items-start border-t border-slate-800 pt-4">
+      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+        <div className="flex flex-row flex-wrap justify-start items-end gap-x-8 gap-y-5">
           <StatBox
-            label="Core gap vs target"
-            value={`${coreSatellite.coreGapVsTarget > 0 ? "+" : ""}${coreSatellite.coreGapVsTarget} pp`}
+            label="Total profit"
+            value={signedJpy(totalProfitJpy)}
+            valueColor={profitColor(totalProfitJpy)}
             subLabel={
-              coreSatellite.coreGapVsTarget >= 0
-                ? "コア比率は目標以上"
-                : "コア比率が目標を下回っています"
+              Number.isFinite(totalReturnPct)
+                ? `${totalReturnPct > 0 ? "+" : ""}${totalReturnPct.toFixed(2)}% total return`
+                : "—"
             }
-            valueColor={coreSatellite.coreGapVsTarget >= 0 ? "text-emerald-400" : "text-amber-400"}
+          />
+          <StatBox
+            label="Cost basis"
+            value={
+              Number.isFinite(totalCostBasisJpy) && totalCostBasisJpy >= 0
+                ? jpyFmt.format(totalCostBasisJpy)
+                : "—"
+            }
+            valueColor="text-slate-200"
+            subLabel="Total invested (holdings)"
           />
           <StatBox
             label="Σ Market value (JPY)"
@@ -189,7 +443,6 @@ export function StrategySection({
           />
         </div>
       </div>
-      */}
     </div>
   );
 }

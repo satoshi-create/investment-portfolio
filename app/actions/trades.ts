@@ -63,6 +63,7 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
   }
 
   revalidatePath("/");
+  revalidatePath("/logs");
   return {
     ok: true,
     message: side === "BUY" ? "買い注文を記録し、保有を更新しました。" : "売却を記録し、保有を更新しました。",

@@ -4,26 +4,15 @@ import React, { useCallback, useEffect, useState, useTransition } from "react";
 
 import { recordPortfolioSnapshotAction } from "@/app/actions/snapshot";
 import { generateSignalsAction } from "@/app/actions/signals";
-import type {
-  ClosedTradeDashboardRow,
-  CoreSatelliteBreakdown,
-  DashboardSummary,
-  HoldingDailySnapshotRow,
-  PortfolioDailySnapshotRow,
-  Signal,
-  Stock,
-  StructureTagSlice,
-} from "@/src/types/investment";
-import { ClosedTradesTable } from "@/src/components/dashboard/ClosedTradesTable";
+import type { DashboardSummary, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
-import { HoldingDailySnapshotsTable } from "@/src/components/dashboard/HoldingDailySnapshotsTable";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
-import { PortfolioSnapshotsTable } from "@/src/components/dashboard/PortfolioSnapshotsTable";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
-import { Camera, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { Camera, RefreshCw, ScrollText } from "lucide-react";
 
 const DEFAULT_USER_ID =
   typeof process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID === "string" &&
@@ -46,13 +35,9 @@ type DashboardPayload = {
   stocks: Stock[];
   signals: Signal[];
   structureByTag: StructureTagSlice[];
-  coreSatellite: CoreSatelliteBreakdown;
+  structureBySector: StructureTagSlice[];
   totalMarketValue: number;
   summary: DashboardSummary;
-  portfolioSnapshots: PortfolioDailySnapshotRow[];
-  holdingSnapshotsDate: string | null;
-  holdingSnapshots: HoldingDailySnapshotRow[];
-  closedTrades: ClosedTradeDashboardRow[];
 };
 
 export function DashboardPage() {
@@ -83,18 +68,9 @@ export function DashboardPage() {
         stocks: json.stocks ?? [],
         signals: json.signals ?? [],
         structureByTag: json.structureByTag ?? [],
-        coreSatellite: json.coreSatellite ?? {
-          coreWeightPercent: 0,
-          satelliteWeightPercent: 0,
-          targetCorePercent: 90,
-          coreGapVsTarget: 0,
-        },
+        structureBySector: json.structureBySector ?? [],
         totalMarketValue: json.totalMarketValue ?? 0,
         summary: { ...EMPTY_SUMMARY, ...(json.summary ?? {}) },
-        portfolioSnapshots: json.portfolioSnapshots ?? [],
-        holdingSnapshotsDate: json.holdingSnapshotsDate ?? null,
-        holdingSnapshots: json.holdingSnapshots ?? [],
-        closedTrades: json.closedTrades ?? [],
       });
     } catch (e) {
       setData(null);
@@ -133,18 +109,13 @@ export function DashboardPage() {
   const stocks = data?.stocks ?? [];
   const signals = data?.signals ?? [];
   const structureByTag = data?.structureByTag ?? [];
-  const coreSatellite = data?.coreSatellite ?? {
-    coreWeightPercent: 0,
-    satelliteWeightPercent: 0,
-    targetCorePercent: 90,
-    coreGapVsTarget: 0,
-  };
+  const structureBySector = data?.structureBySector ?? [];
   const totalMarketValue = data?.totalMarketValue ?? 0;
   const summary = data?.summary ?? EMPTY_SUMMARY;
-  const portfolioSnapshots = data?.portfolioSnapshots ?? [];
-  const holdingSnapshotsDate = data?.holdingSnapshotsDate ?? null;
-  const holdingSnapshots = data?.holdingSnapshots ?? [];
-  const closedTrades = data?.closedTrades ?? [];
+
+  const satelliteStockCount = stocks.filter(
+    (s) => s.category === "Satellite" && s.quantity > 0 && s.marketValue > 0,
+  ).length;
 
   const openTradeForm = useCallback((initial: TradeEntryInitial | null) => {
     setTradeInitial(initial);
@@ -183,6 +154,13 @@ export function DashboardPage() {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href="/logs"
+              className="text-[10px] font-bold text-slate-400 border border-slate-600 px-3 py-2 rounded-lg hover:bg-slate-800 transition-all flex items-center gap-2"
+            >
+              <ScrollText size={14} />
+              ログ
+            </Link>
             <button
               type="button"
               onClick={() => openTradeForm(null)}
@@ -224,7 +202,8 @@ export function DashboardPage() {
 
         <StrategySection
           structureByTag={structureByTag}
-          coreSatellite={coreSatellite}
+          structureBySector={structureBySector}
+          satelliteStockCount={satelliteStockCount}
           totalMarketValue={totalMarketValue}
           totalProfitJpy={summary.totalProfitJpy}
           totalReturnPct={summary.totalReturnPct}
@@ -243,9 +222,6 @@ export function DashboardPage() {
           onTrade={(init) => openTradeForm(init)}
         />
         <HoldingsDetailTable stocks={stocks} />
-        <PortfolioSnapshotsTable rows={portfolioSnapshots} />
-        <HoldingDailySnapshotsTable snapshotDate={holdingSnapshotsDate} rows={holdingSnapshots} />
-        <ClosedTradesTable rows={closedTrades} />
         <TradeEntryForm
           userId={DEFAULT_USER_ID}
           open={tradeFormOpen}

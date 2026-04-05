@@ -120,9 +120,9 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
       newAvg = unit;
       await tx.execute({
         sql: `INSERT INTO holdings (
-                id, user_id, ticker, name, quantity, avg_acquisition_price, structure_tags, category,
+                id, user_id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category,
                 provider_symbol, valuation_factor, created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, '[]', ?, NULL, 1, datetime('now'))`,
+              ) VALUES (?, ?, ?, ?, ?, ?, '[]', NULL, ?, NULL, 1, datetime('now'))`,
         args: [holdingId, p.userId, ticker, displayName, newQty, newAvg, p.categoryForNewHolding],
       });
     } else {

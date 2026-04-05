@@ -26,6 +26,7 @@ export async function recordPortfolioSnapshotAction(userId?: string): Promise<Re
     const db = getDb();
     const out = await recordPortfolioDailySnapshot(db, uid);
     revalidatePath("/");
+    revalidatePath("/logs");
     const suffix = out.replacedExistingRow ? " (updated today’s row)" : "";
     return {
       ok: true,

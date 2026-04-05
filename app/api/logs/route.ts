@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
-import { fetchUnresolvedSignalsForUser, getDashboardData } from "@/src/lib/dashboard-data";
+import { fetchClosedTradesForDashboard } from "@/src/lib/trade-history";
 import { getDb, isDbConfigured } from "@/src/lib/db";
+import {
+  fetchHoldingDailySnapshotsLatestForUser,
+  fetchPortfolioDailySnapshotsForUser,
+} from "@/src/lib/portfolio-snapshots";
 
 export const dynamic = "force-dynamic";
 
@@ -19,19 +23,17 @@ export async function GET(request: Request) {
 
   try {
     const db = getDb();
-    const [dash, signals] = await Promise.all([
-      getDashboardData(db, userId),
-      fetchUnresolvedSignalsForUser(db, userId),
+    const [portfolioSnapshots, holdingSnapshotsBundle, closedTrades] = await Promise.all([
+      fetchPortfolioDailySnapshotsForUser(db, userId),
+      fetchHoldingDailySnapshotsLatestForUser(db, userId),
+      fetchClosedTradesForDashboard(db, userId),
     ]);
     return NextResponse.json({
       userId,
-      stocks: dash.stocks,
-      signals,
-      structureByTag: dash.structureByTag,
-      structureBySector: dash.structureBySector,
-      coreSatellite: dash.coreSatellite,
-      totalMarketValue: dash.totalMarketValue,
-      summary: dash.summary,
+      portfolioSnapshots,
+      holdingSnapshotsDate: holdingSnapshotsBundle.snapshotDate,
+      holdingSnapshots: holdingSnapshotsBundle.rows,
+      closedTrades,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

@@ -18,6 +18,7 @@ import {
   SIGNAL_BENCHMARK_TICKER,
 } from "@/src/lib/alpha-logic";
 import {
+  aggregateByHoldingSector,
   aggregateByPrimaryStructureTag,
   primaryStructureTag,
   sanitizeMarketValueForAggregation,
@@ -57,6 +58,12 @@ function parseAvgAcquisitionPrice(raw: unknown): number | null {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
   return n;
+}
+
+function parseSector(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return s.length > 0 ? s : null;
 }
 
 function quoteCurrencyForInstrument(kind: TickerInstrumentKind): "JPY" | "USD" {
@@ -192,7 +199,7 @@ function computeFinancialTotals(
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
   const h = await db.execute({
-    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, category, provider_symbol, valuation_factor
+    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, provider_symbol, valuation_factor
           FROM holdings
           WHERE user_id = ?
           ORDER BY ticker`,
@@ -209,6 +216,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     return {
       stocks: [],
       structureByTag: [],
+      structureBySector: [],
       coreSatellite: computeCoreSatellite([]),
       totalMarketValue: 0,
       summary: {
@@ -264,6 +272,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       valuationFactor,
     });
     const tagsJson = String(row.structure_tags);
+    const sector = parseSector(row.sector);
     const instrumentKind = classifyTickerInstrument(ticker);
     const avgAcquisitionPrice = parseAvgAcquisitionPrice(row.avg_acquisition_price);
     const { local: unrealizedPnlLocal, percent: unrealizedPnlPercent } = computeUnrealizedPnlLocal(
@@ -294,6 +303,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       dayChangePercent,
       instrumentKind,
       secondaryTag: secondaryStructureTag(tagsJson),
+      sector,
       currentPrice,
       marketValue,
       valuationFactor,
@@ -324,6 +334,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       dayChangePercent: d.dayChangePercent,
       instrumentKind: d.instrumentKind,
       secondaryTag: d.secondaryTag,
+      sector: d.sector,
       currentPrice: d.currentPrice,
       marketValue: mv,
       valuationFactor: d.valuationFactor,
@@ -332,8 +343,10 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     };
   });
 
-  const structureByTag = aggregateByPrimaryStructureTag(
-    drafts.map((d) => ({ structureTagsJson: d.structureTagsJson, marketValue: d.marketValue })),
+  const aggRows = drafts.map((d) => ({ structureTagsJson: d.structureTagsJson, marketValue: d.marketValue }));
+  const structureByTag = aggregateByPrimaryStructureTag(aggRows);
+  const structureBySector = aggregateByHoldingSector(
+    drafts.map((d) => ({ sector: d.sector, structureTagsJson: d.structureTagsJson, marketValue: d.marketValue })),
   );
 
   const coreSatellite = computeCoreSatellite(stocks);
@@ -346,7 +359,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     ...financial,
   };
 
-  return { stocks, structureByTag, coreSatellite, totalMarketValue, summary };
+  return { stocks, structureByTag, structureBySector, coreSatellite, totalMarketValue, summary };
 }
 
 export async function fetchStocksForUser(db: Client, userId: string): Promise<Stock[]> {
@@ -358,7 +371,7 @@ export async function fetchStocksForUser(db: Client, userId: string): Promise<St
 export async function fetchUnresolvedSignalsForUser(db: Client, userId: string): Promise<Signal[]> {
   const rs = await db.execute({
     sql: `SELECT s.id AS signal_id, s.signal_type, s.alpha_at_signal, s.detected_at,
-                 h.ticker, h.name, h.structure_tags, h.provider_symbol, h.category
+                 h.ticker, h.name, h.structure_tags, h.sector, h.provider_symbol, h.category
           FROM signals s
           JOIN holdings h ON h.id = s.holding_id
           WHERE h.user_id = ? AND s.is_resolved = 0
@@ -391,6 +404,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       dayChangePercent: null,
       instrumentKind,
       secondaryTag: secondaryStructureTag(stags),
+      sector: parseSector(row.sector),
       currentPrice: null,
       marketValue: 0,
       valuationFactor: 1,
