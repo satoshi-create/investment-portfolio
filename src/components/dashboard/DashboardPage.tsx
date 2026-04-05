@@ -35,6 +35,10 @@ const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
   benchmarkLatestPrice: 0,
   totalHoldings: 0,
+  totalCostBasisJpy: 0,
+  totalRealizedPnlJpy: 0,
+  totalProfitJpy: 0,
+  totalReturnPct: 0,
 };
 
 type DashboardPayload = {
@@ -86,7 +90,7 @@ export function DashboardPage() {
           coreGapVsTarget: 0,
         },
         totalMarketValue: json.totalMarketValue ?? 0,
-        summary: json.summary ?? EMPTY_SUMMARY,
+        summary: { ...EMPTY_SUMMARY, ...(json.summary ?? {}) },
         portfolioSnapshots: json.portfolioSnapshots ?? [],
         holdingSnapshotsDate: json.holdingSnapshotsDate ?? null,
         holdingSnapshots: json.holdingSnapshots ?? [],
@@ -222,6 +226,9 @@ export function DashboardPage() {
           structureByTag={structureByTag}
           coreSatellite={coreSatellite}
           totalMarketValue={totalMarketValue}
+          totalProfitJpy={summary.totalProfitJpy}
+          totalReturnPct={summary.totalReturnPct}
+          totalCostBasisJpy={summary.totalCostBasisJpy}
         />
         <SignalsSection
           signals={signals}

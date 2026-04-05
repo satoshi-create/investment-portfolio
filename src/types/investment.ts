@@ -91,6 +91,14 @@ export type DashboardSummary = {
   benchmarkLatestPrice: number;
   /** 保有銘柄数 */
   totalHoldings: number;
+  /** 現在保有の取得価格合計（円）：各銘柄の marketValue − unrealizedPnlJpy の合計 */
+  totalCostBasisJpy: number;
+  /** `trade_history.realized_pnl_jpy` の累計（円） */
+  totalRealizedPnlJpy: number;
+  /** 含み損益 + 確定損益（円） */
+  totalProfitJpy: number;
+  /** totalProfitJpy / totalCostBasisJpy × 100（コスト 0 のときは 0） */
+  totalReturnPct: number;
 };
 
 export type DashboardData = {

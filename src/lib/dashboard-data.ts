@@ -139,6 +139,53 @@ async function resolveBenchmarkLatestClose(): Promise<number> {
   return 0;
 }
 
+/** `trade_history` の累計確定損益（円）。テーブル未作成時は 0。 */
+async function fetchTotalRealizedPnlJpy(db: Client, userId: string): Promise<number> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT COALESCE(SUM(realized_pnl_jpy), 0) AS s FROM trade_history WHERE user_id = ?`,
+      args: [userId],
+    });
+    const v = rs.rows[0]?.s;
+    return v != null && Number.isFinite(Number(v)) ? Number(v) : 0;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("trade_history")) {
+      return 0;
+    }
+    throw e;
+  }
+}
+
+function computeFinancialTotals(
+  stocks: Stock[],
+  totalRealizedPnlJpy: number,
+): Pick<
+  DashboardData["summary"],
+  "totalCostBasisJpy" | "totalRealizedPnlJpy" | "totalProfitJpy" | "totalReturnPct"
+> {
+  let totalUnrealizedPnlJpy = 0;
+  let totalCostBasisJpy = 0;
+  for (const s of stocks) {
+    const mv = sanitizeMarketValueForAggregation(s.marketValue);
+    const uj = Number.isFinite(s.unrealizedPnlJpy) ? s.unrealizedPnlJpy : 0;
+    totalUnrealizedPnlJpy += uj;
+    totalCostBasisJpy += mv - uj;
+  }
+  const realized = Number.isFinite(totalRealizedPnlJpy) ? totalRealizedPnlJpy : 0;
+  const totalProfitJpy = totalUnrealizedPnlJpy + realized;
+  const totalReturnPct =
+    totalCostBasisJpy > 0 && Number.isFinite(totalProfitJpy)
+      ? roundAlphaMetric((totalProfitJpy / totalCostBasisJpy) * 100)
+      : 0;
+  return {
+    totalCostBasisJpy,
+    totalRealizedPnlJpy: realized,
+    totalProfitJpy,
+    totalReturnPct,
+  };
+}
+
 /**
  * ダッシュボード用: 保有の Alpha 履歴・最新終値・円ベース評価額・ウェイト・構造別 / Core-Satellite 集計。
  * `holdings.quantity` と `avg_acquisition_price` は DB の現行値をそのまま使用（取引実行アクション更新後も再取得で反映）。
@@ -154,7 +201,11 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
   const holdingIds = h.rows.map((r) => String(r.id));
   if (holdingIds.length === 0) {
-    const benchmarkLatestPrice = await resolveBenchmarkLatestClose();
+    const [benchmarkLatestPrice, totalRealizedPnlJpy] = await Promise.all([
+      resolveBenchmarkLatestClose(),
+      fetchTotalRealizedPnlJpy(db, userId),
+    ]);
+    const financial = computeFinancialTotals([], totalRealizedPnlJpy);
     return {
       stocks: [],
       structureByTag: [],
@@ -164,12 +215,13 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
         portfolioAverageAlpha: 0,
         benchmarkLatestPrice,
         totalHoldings: 0,
+        ...financial,
       },
     };
   }
 
   const placeholders = holdingIds.map(() => "?").join(",");
-  const [a, benchmarkLatestPrice] = await Promise.all([
+  const [a, benchmarkLatestPrice, totalRealizedPnlJpy] = await Promise.all([
     db.execute({
       sql: `SELECT holding_id, alpha_value, recorded_at, close_price FROM alpha_history
             WHERE benchmark_ticker = ? AND holding_id IN (${placeholders})
@@ -177,6 +229,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       args: [SIGNAL_BENCHMARK_TICKER, ...holdingIds],
     }),
     resolveBenchmarkLatestClose(),
+    fetchTotalRealizedPnlJpy(db, userId),
   ]);
 
   const byHolding = new Map<string, AlphaPoint[]>();
@@ -285,10 +338,12 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
   const coreSatellite = computeCoreSatellite(stocks);
 
+  const financial = computeFinancialTotals(stocks, totalRealizedPnlJpy);
   const summary = {
     portfolioAverageAlpha: computePortfolioAverageAlpha(stocks),
     benchmarkLatestPrice,
     totalHoldings: stocks.length,
+    ...financial,
   };
 
   return { stocks, structureByTag, coreSatellite, totalMarketValue, summary };

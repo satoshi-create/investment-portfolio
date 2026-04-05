@@ -14,14 +14,44 @@ const TAG_BAR_COLORS = [
   "bg-violet-500",
 ];
 
+const jpyFmt = new Intl.NumberFormat("ja-JP", {
+  style: "currency",
+  currency: "JPY",
+  maximumFractionDigits: 0,
+});
+
+function signedJpy(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const core = jpyFmt.format(Math.abs(value));
+  if (value > 0) return `+${core}`;
+  if (value < 0) return `−${core}`;
+  return core;
+}
+
+function profitColor(value: number): string {
+  if (!Number.isFinite(value)) return "text-slate-500";
+  if (value > 0) return "text-emerald-400";
+  if (value < 0) return "text-rose-400";
+  return "text-slate-400";
+}
+
 type Props = {
   structureByTag: StructureTagSlice[];
   /** コメントアウト中の Core/Satellite カード用（将来復帰時に使用） */
   coreSatellite?: CoreSatelliteBreakdown;
   totalMarketValue: number;
+  totalProfitJpy: number;
+  totalReturnPct: number;
+  totalCostBasisJpy: number;
 };
 
-export function StrategySection({ structureByTag, totalMarketValue }: Props) {
+export function StrategySection({
+  structureByTag,
+  totalMarketValue,
+  totalProfitJpy,
+  totalReturnPct,
+  totalCostBasisJpy,
+}: Props) {
   const hasStructure = structureByTag.length > 0;
 
   return (
@@ -78,15 +108,39 @@ export function StrategySection({ structureByTag, totalMarketValue }: Props) {
           <p className="text-xs text-slate-600">評価額データが無いか、タグが未設定です。</p>
         )}
         <div className="mt-6 pt-4 border-t border-slate-800">
-          <StatBox
-            label="Σ Market value (JPY)"
-            value={
-              totalMarketValue > 0
-                ? `¥${totalMarketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                : "—"
-            }
-            subLabel={`米株は USD×${USD_JPY_RATE}。指数は valuation_factor で調整`}
-          />
+          <div className="flex flex-row flex-wrap justify-start items-end gap-x-8 gap-y-5">
+            <StatBox
+              label="Σ Market value (JPY)"
+              value={
+                totalMarketValue > 0
+                  ? `¥${totalMarketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                  : "—"
+              }
+              subLabel={`米株は USD×${USD_JPY_RATE}。指数は valuation_factor で調整`}
+            />
+  
+            <StatBox
+              label="Cost basis"
+              value={
+                Number.isFinite(totalCostBasisJpy) && totalCostBasisJpy >= 0
+                  ? jpyFmt.format(totalCostBasisJpy)
+                  : "—"
+              }
+              valueColor="text-slate-200"
+              subLabel="Total invested (holdings)"
+            />
+                 <StatBox
+              label="Total profit"
+              value={signedJpy(totalProfitJpy)}
+              valueColor={profitColor(totalProfitJpy)}
+              subLabel={
+                Number.isFinite(totalReturnPct)
+                  ? `${totalReturnPct > 0 ? "+" : ""}${totalReturnPct.toFixed(2)}% total return`
+                  : "—"
+              }
+            />
+          </div>
+     
         </div>
       </div>
 

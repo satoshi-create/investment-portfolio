@@ -1,8 +1,8 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { History } from "lucide-react";
 
 import type { ClosedTradeDashboardRow } from "@/src/types/investment";
-import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
+import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -43,7 +43,45 @@ function pnlClass(v: number): string {
   return "text-slate-400";
 }
 
+function computeClosedTradesFooter(rows: ClosedTradeDashboardRow[]) {
+  let sumQty = 0;
+  let sumCostJpy = 0;
+  let sumProceedsJpy = 0;
+  let sumFeesJpy = 0;
+  let sumRealizedPnlJpy = 0;
+  const postExitPcts: number[] = [];
+
+  for (const r of rows) {
+    if (Number.isFinite(r.quantity) && r.quantity > 0) sumQty += r.quantity;
+    if (Number.isFinite(r.costJpy)) sumCostJpy += r.costJpy;
+    if (Number.isFinite(r.proceedsJpy)) sumProceedsJpy += r.proceedsJpy;
+    if (Number.isFinite(r.feesJpy)) sumFeesJpy += r.feesJpy;
+    if (Number.isFinite(r.realizedPnlJpy)) sumRealizedPnlJpy += r.realizedPnlJpy;
+    if (r.postExitReturnPct != null && Number.isFinite(r.postExitReturnPct)) {
+      postExitPcts.push(r.postExitReturnPct);
+    }
+  }
+
+  const avgPostExitPct =
+    postExitPcts.length > 0
+      ? Math.round((postExitPcts.reduce((a, b) => a + b, 0) / postExitPcts.length) * 100) / 100
+      : null;
+
+  return {
+    count: rows.length,
+    sumQty,
+    sumCostJpy,
+    sumProceedsJpy,
+    sumFeesJpy,
+    sumRealizedPnlJpy,
+    avgPostExitPct,
+    postExitCount: postExitPcts.length,
+  };
+}
+
 export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] }) {
+  const footer = useMemo(() => computeClosedTradesFooter(rows), [rows]);
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
       <div className="p-5 border-b border-slate-800 bg-slate-900/50 flex items-center gap-2">
@@ -140,6 +178,57 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="group bg-slate-900/95 border-t border-slate-700">
+                <td
+                  className={`px-3 py-3 text-xs font-bold text-slate-300 min-w-[7rem] max-w-[10rem] ${stickyTdFootFirst}`}
+                >
+                  Σ / 平均
+                  <span className="block text-[10px] font-normal text-slate-500 font-mono">
+                    {footer.count} 件
+                  </span>
+                </td>
+                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td
+                  className="px-3 py-3 text-right font-mono text-sm font-bold text-slate-200 whitespace-nowrap"
+                  title="日本株・米株で単位が異なるため参考値です。"
+                >
+                  {footer.sumQty > 0 ? fmtQty(footer.sumQty) : "—"}
+                </td>
+                <td className="px-3 py-3 text-right font-mono text-sm font-bold text-slate-100 whitespace-nowrap">
+                  {footer.count > 0 ? jpyFmt.format(footer.sumCostJpy) : "—"}
+                </td>
+                <td className="px-3 py-3 text-right font-mono text-sm font-bold text-slate-100 whitespace-nowrap">
+                  {footer.count > 0 ? jpyFmt.format(footer.sumProceedsJpy) : "—"}
+                </td>
+                <td className="px-3 py-3 text-right font-mono text-xs font-bold text-slate-400 whitespace-nowrap">
+                  {footer.count > 0 ? jpyFmt.format(footer.sumFeesJpy) : "—"}
+                </td>
+                <td
+                  className={`px-3 py-3 text-right font-mono text-sm font-bold whitespace-nowrap ${pnlClass(footer.sumRealizedPnlJpy)}`}
+                >
+                  {footer.count > 0 ? jpyFmt.format(footer.sumRealizedPnlJpy) : "—"}
+                </td>
+                <td className="px-3 py-3 text-right text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td
+                  className={`px-3 py-3 text-right font-mono text-xs font-bold whitespace-nowrap ${pctClass(footer.avgPostExitPct)}`}
+                  title={`売却後騰落率が算出できた ${footer.postExitCount} 件の算術平均`}
+                >
+                  {footer.avgPostExitPct != null ? (
+                    <span>
+                      Avg {fmtPct(footer.avgPostExitPct)}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}
