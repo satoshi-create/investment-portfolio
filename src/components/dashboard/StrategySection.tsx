@@ -141,10 +141,10 @@ function signedJpy(value: number): string {
 }
 
 function profitColor(value: number): string {
-  if (!Number.isFinite(value)) return "text-slate-500";
+  if (!Number.isFinite(value)) return "text-muted-foreground";
   if (value > 0) return "text-emerald-400";
   if (value < 0) return "text-rose-400";
-  return "text-slate-400";
+  return "text-muted-foreground";
 }
 
 function satelliteGaugeClass(count: number): string {
@@ -191,18 +191,18 @@ export function StrategySection({
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               Satellite 個別株（監視レンジ）
             </p>
-            <p className="text-sm font-bold text-slate-200 mt-0.5">
+            <p className="text-sm font-bold text-foreground mt-0.5">
               <span className="font-mono text-lg text-white">{satelliteStockCount}</span>
-              <span className="text-slate-500 font-normal text-xs">
+              <span className="text-muted-foreground font-normal text-xs">
                 {" "}
                 銘柄 / 目安 {SATELLITE_TARGET_MIN}〜{SATELLITE_TARGET_MAX}
               </span>
             </p>
           </div>
-          <p className="text-[10px] text-slate-500 max-w-md leading-relaxed">
+          <p className="text-[10px] text-muted-foreground max-w-md leading-relaxed">
             {satelliteStockCount < SATELLITE_TARGET_MIN && "目安未満: サテライトの分散やテーマ補完の余地があります。"}
             {satelliteStockCount > SATELLITE_TARGET_MAX && "目安超過: 個別株の追跡負荷・集中度に注意。"}
             {satelliteStockCount >= SATELLITE_TARGET_MIN &&
@@ -210,7 +210,7 @@ export function StrategySection({
               "レンジ内: 個別株の枚数監視としては適正ゾーンです（内容の質は別途確認）。"}
           </p>
         </div>
-        <div className="mt-3 h-2 w-full rounded-full bg-slate-800 overflow-hidden flex border border-slate-700/80">
+        <div className="mt-3 h-2 w-full rounded-full bg-muted overflow-hidden flex border border-border">
           {Array.from({ length: 12 }).map((_, i) => {
             const n = i + 1;
             const inTarget = n >= SATELLITE_TARGET_MIN && n <= SATELLITE_TARGET_MAX;
@@ -218,29 +218,29 @@ export function StrategySection({
             return (
               <div
                 key={n}
-                className={`h-full flex-1 border-r border-slate-900/50 last:border-r-0 ${
+                className={`h-full flex-1 border-r border-border/60 last:border-r-0 ${
                   filled
                     ? inTarget
                       ? "bg-emerald-500/90"
-                      : "bg-slate-500/80"
+                      : "bg-muted-foreground/60"
                     : inTarget
                       ? "bg-emerald-950/80"
-                      : "bg-slate-900/80"
+                      : "bg-card/90"
                 }`}
                 title={`${n} 銘柄`}
               />
             );
           })}
         </div>
-        <p className="text-[9px] text-slate-600 mt-1.5 font-mono">
+        <p className="text-[9px] text-muted-foreground mt-1.5 font-mono">
           12 スロットのうち塗りつぶし数 = 評価額のある Satellite 銘柄数。中央の緑帯は目安 {SATELLITE_TARGET_MIN}〜
           {SATELLITE_TARGET_MAX} 銘柄ゾーン。
         </p>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+      <div className="bg-card border border-border p-6 rounded-2xl shadow-xl">
           <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-            <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 tracking-widest">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-2 tracking-widest">
               <Radar size={14} /> Sector Balance
             </h3>
             {hasSectors ? (
@@ -250,24 +250,24 @@ export function StrategySection({
                 >
                   {gcBadge.label}
                 </span>
-                <span className="text-[10px] font-mono text-slate-400 tabular-nums">
+                <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
                   Current {gRound} : {cRound}
-                  <span className="text-slate-600 font-sans font-normal normal-case ml-1">(Growth : Cyclical)</span>
+                  <span className="text-muted-foreground/80 font-sans font-normal normal-case ml-1">(Growth : Cyclical)</span>
                 </span>
               </div>
             ) : null}
           </div>
-          <p className="text-[10px] text-slate-600 mb-3 leading-relaxed">
+          <p className="text-[10px] text-muted-foreground mb-3 leading-relaxed">
             セクター（DB の sector 優先・なければタグ 2 番目）別シェア。バー左→右は POLE_SORT 順（
             <span className="text-sky-400/90">Growth 側</span>
             {" → "}
             <span className="text-orange-400/90">Cyclical 側</span>
             ）。左半分スライスの合計を Growth、右半分を Cyclical として 6:4 ターゲット（Growth 60%）と比較します。
           </p>
-          <div className="flex items-center gap-2 mb-2 text-[9px] text-slate-600 uppercase font-bold tracking-tighter">
+          <div className="flex items-center gap-2 mb-2 text-[9px] text-muted-foreground uppercase font-bold tracking-tighter">
             <GitBranch size={12} className="text-sky-500/90 shrink-0" />
             <span className="text-sky-400/80">Growth</span>
-            <span className="flex-1 border-t border-dashed border-slate-700" />
+            <span className="flex-1 border-t border-dashed border-border" />
             <span className="text-orange-400/80">Cyclical</span>
           </div>
           {hasSectors ? (
@@ -279,7 +279,7 @@ export function StrategySection({
                 >
                   Target 6:4
                 </span>
-                <div className="relative h-5 w-full rounded-full overflow-hidden flex border border-slate-700 bg-slate-800/90">
+                <div className="relative h-5 w-full rounded-full overflow-hidden flex border border-border bg-muted">
                   {sortedSectors.map((slice, segIndex) => {
                     const pole = sectorPole(slice.tag);
                     const heat = sectorHeatColor(segIndex, sortedSectors.length);
@@ -320,14 +320,14 @@ export function StrategySection({
                             className="inline-block h-2 w-2 shrink-0 rounded-full border border-white/10"
                             style={{ backgroundColor: heat }}
                           />
-                          <span className="text-slate-300 truncate">{slice.tag}</span>
+                          <span className="text-foreground/85 truncate">{slice.tag}</span>
                         </div>
-                        <p className="text-[9px] text-slate-600 font-normal normal-case mt-0.5 pl-4">
+                        <p className="text-[9px] text-muted-foreground font-normal normal-case mt-0.5 pl-4">
                           {poleHintJa(pole)} · {halfLabel}
                         </p>
                       </div>
-                      <span className="text-slate-300 font-mono shrink-0 text-right">
-                        <span className="text-slate-500 font-normal normal-case mr-2">{slice.count} 銘柄</span>
+                      <span className="text-foreground/85 font-mono shrink-0 text-right">
+                        <span className="text-muted-foreground font-normal normal-case mr-2">{slice.count} 銘柄</span>
                         {slice.weightPercent}%
                       </span>
                     </li>
@@ -336,11 +336,11 @@ export function StrategySection({
               </ul>
             </>
           ) : (
-            <p className="text-xs text-slate-600">セクターデータがありません。</p>
+            <p className="text-xs text-muted-foreground">セクターデータがありません。</p>
           )}
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+      <div className="bg-card border border-border p-6 rounded-2xl shadow-xl">
         <div className="flex flex-row flex-wrap justify-start items-end gap-x-8 gap-y-5">
           <StatBox
             label="Total profit"
@@ -359,7 +359,7 @@ export function StrategySection({
                 ? jpyFmt.format(totalCostBasisJpy)
                 : "—"
             }
-            valueColor="text-slate-200"
+            valueColor="text-foreground"
             subLabel="Total invested (holdings)"
           />
           <StatBox

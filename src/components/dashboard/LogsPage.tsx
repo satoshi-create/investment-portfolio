@@ -70,33 +70,33 @@ export function LogsPage() {
   const closedTrades = data?.closedTrades ?? [];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
+    <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
           <div>
             <Link
               href="/"
-              className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-cyan-400 transition-colors mb-3"
+              className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-accent-cyan transition-colors mb-3"
             >
               <ArrowLeft size={14} />
               ダッシュボードへ
             </Link>
-            <h1 className="text-2xl font-bold tracking-tight text-white">ログ</h1>
-            <p className="text-[10px] text-slate-600 mt-1">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">ログ</h1>
+            <p className="text-[10px] text-muted-foreground mt-1">
               Portfolio / Holding スナップショットと取引履歴（読み取り専用）。記録はダッシュボードの{" "}
-              <span className="font-mono text-slate-500">Record snapshot</span>、売買は{" "}
-              <span className="font-mono text-slate-500">取引入力</span> から行えます。
+              <span className="font-mono text-muted-foreground/90">Record snapshot</span>、売買は{" "}
+              <span className="font-mono text-muted-foreground/90">取引入力</span> から行えます。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xs text-slate-500 font-mono">{DEFAULT_USER_ID}</span>
-            {loading && <span className="text-xs text-slate-500">Loading…</span>}
+            <span className="text-xs text-muted-foreground font-mono">{DEFAULT_USER_ID}</span>
+            {loading && <span className="text-xs text-muted-foreground">Loading…</span>}
             {error && <span className="text-xs text-rose-400">{error}</span>}
             <button
               type="button"
               onClick={() => void loadLogs()}
               disabled={loading}
-              className="text-[10px] font-bold text-slate-300 border border-slate-600 px-3 py-2 rounded-lg hover:bg-slate-800 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="text-[10px] font-bold text-foreground/80 border border-border px-3 py-2 rounded-lg hover:bg-muted transition-all flex items-center gap-2 disabled:opacity-50"
             >
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               Refresh

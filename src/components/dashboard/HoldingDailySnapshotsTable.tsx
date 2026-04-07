@@ -21,16 +21,16 @@ function formatPriceLocal(kind: TickerInstrumentKind, price: number | null): str
 }
 
 function signedPctClass(v: number | null): string {
-  if (v == null) return "text-slate-500";
+  if (v == null) return "text-muted-foreground";
   if (v > 0) return "text-emerald-400";
   if (v < 0) return "text-rose-400";
-  return "text-slate-400";
+  return "text-muted-foreground";
 }
 
 function signedValueClass(v: number): string {
   if (v > 0) return "text-emerald-400";
   if (v < 0) return "text-rose-400";
-  return "text-slate-400";
+  return "text-muted-foreground";
 }
 
 function formatSignedPercent(v: number | null): string {
@@ -49,20 +49,20 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
   const fx = rows[0]?.fxUsdJpy;
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-      <div className="p-5 border-b border-slate-800 bg-slate-900/50 flex items-start gap-2">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
+      <div className="p-5 border-b border-border bg-card/60 flex items-start gap-2">
         <Layers size={16} className="text-violet-400 shrink-0 mt-0.5" />
         <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
             Holding snapshots (銘柄×日)
           </h3>
-          <p className="text-[10px] text-slate-600 mt-1">
+          <p className="text-[10px] text-muted-foreground mt-1">
             Record snapshot 実行時に `holding_daily_snapshots` へ保存された最新スライス
             {snapshotDate ? (
-              <span className="text-slate-500 font-mono"> · UTC {snapshotDate}</span>
+              <span className="text-muted-foreground/90 font-mono"> · UTC {snapshotDate}</span>
             ) : null}
             {bench != null && bench > 0 ? (
-              <span className="text-slate-500">
+              <span className="text-muted-foreground/90">
                 {" "}
                 · VOO {bench.toFixed(2)} · FX {fx?.toFixed(0) ?? "—"}
               </span>
@@ -71,14 +71,14 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
         </div>
       </div>
       {rows.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-slate-500">
+        <p className="px-5 py-8 text-sm text-muted-foreground">
           データがありません。マイグレーション適用後に{" "}
-          <span className="font-mono text-slate-400">Record snapshot</span> を実行してください。
+          <span className="font-mono text-muted-foreground/90">Record snapshot</span> を実行してください。
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm min-w-[1050px]">
-            <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.06em]">
+            <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyThFirst}`}>
                   銘柄 / コード

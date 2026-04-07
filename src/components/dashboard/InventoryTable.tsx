@@ -28,22 +28,22 @@ export function InventoryTable({
     averageAlpha > 0 ? "text-emerald-400" : averageAlpha < 0 ? "text-rose-400" : "text-slate-400";
   const avgAlphaSign = averageAlpha > 0 ? "+" : "";
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-      <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
+      <div className="p-5 border-b border-border flex justify-between items-center bg-card/60">
+        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Inventory Status
         </h3>
-        <div className="flex items-center gap-3 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
-          <Search size={14} className="text-slate-500" />
+        <div className="flex items-center gap-3 bg-background px-3 py-1.5 rounded-lg border border-border">
+          <Search size={14} className="text-muted-foreground" />
           <input
-            className="bg-transparent border-none outline-none text-xs w-48 text-slate-300"
+            className="bg-transparent border-none outline-none text-xs w-48 text-foreground/90"
             placeholder="Filter structure..."
           />
         </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.1em]">
+          <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
             <tr>
               <th className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyThFirst}`}>Asset</th>
               <th className="px-6 py-4 text-right">Alpha</th>
@@ -51,13 +51,13 @@ export function InventoryTable({
               <th className="px-6 py-4 text-right">Position</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/50">
+          <tbody className="divide-y divide-border/60">
             {stocks.map((stock) => (
-              <tr key={stock.id} className="group hover:bg-slate-800/40 transition-all">
+              <tr key={stock.id} className="group hover:bg-muted/60 transition-all">
                 <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors">
+                      <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors">
                         {stock.ticker}
                       </span>
                       {onTrade ? (
@@ -78,14 +78,14 @@ export function InventoryTable({
                       ) : null}
                     </div>
                     {stock.name ? (
-                      <span className="text-[10px] text-slate-400 leading-snug line-clamp-2" title={stock.name}>
+                      <span className="text-[10px] text-muted-foreground leading-snug line-clamp-2" title={stock.name}>
                         {stock.name}
                       </span>
                     ) : null}
                     {stock.tag.trim().length > 0 ? (
                       <Link
                         href={`/themes/${encodeURIComponent(stock.tag)}`}
-                        className="inline-flex items-center w-fit text-[10px] font-bold uppercase tracking-tight text-cyan-400/90 hover:text-cyan-300 border border-cyan-500/35 rounded-md px-2 py-0.5 mt-0.5 hover:bg-cyan-500/10 transition-colors"
+                        className="inline-flex items-center w-fit text-[10px] font-bold uppercase tracking-tight text-accent-cyan hover:text-accent-cyan/90 border border-accent-cyan/40 rounded-md px-2 py-0.5 mt-0.5 hover:bg-accent-cyan/10 transition-colors"
                       >
                         {stock.tag}
                       </Link>
@@ -95,7 +95,7 @@ export function InventoryTable({
                 <td
                   className={`px-6 py-4 text-right font-mono font-bold ${
                     stock.alphaHistory.length === 0
-                      ? "text-slate-500"
+                      ? "text-muted-foreground"
                       : stock.alphaHistory.slice(-1)[0]! > 0
                         ? "text-emerald-400"
                         : "text-rose-400"
@@ -112,20 +112,20 @@ export function InventoryTable({
                 </td>
                 <td className="px-6 py-4">
                   {stock.alphaHistory.length === 0 ? (
-                    <span className="text-slate-600 text-xs">No data</span>
+                    <span className="text-muted-foreground text-xs">No data</span>
                   ) : (
                     <TrendMiniChart history={stock.alphaHistory} />
                   )}
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex flex-col items-end gap-0.5">
-                    <span className="font-mono text-slate-300 font-bold">{stock.quantity}</span>
+                    <span className="font-mono text-foreground/90 font-bold">{stock.quantity}</span>
                     {stock.currentPrice != null && stock.currentPrice > 0 ? (
-                      <span className="text-[9px] text-slate-500 font-mono">
+                      <span className="text-[9px] text-muted-foreground font-mono">
                         @ {stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}
                       </span>
                     ) : null}
-                    <span className="text-[9px] text-slate-500 font-bold tracking-tighter">
+                    <span className="text-[9px] text-muted-foreground font-bold tracking-tighter">
                       {stock.marketValue > 0 ? `${jpyFmt.format(stock.marketValue)}（推定）` : "—"}
                     </span>
                     {stock.valuationFactor !== 1 ? (
@@ -140,14 +140,14 @@ export function InventoryTable({
             ))}
           </tbody>
           <tfoot>
-            <tr className="group bg-slate-900/90 border-t border-slate-700">
-              <td className={`px-6 py-3 text-xs font-bold text-slate-300 min-w-[10rem] max-w-[11rem] ${stickyTdFootFirst}`}>
+            <tr className="group bg-card/90 border-t border-border">
+              <td className={`px-6 py-3 text-xs font-bold text-foreground/90 min-w-[10rem] max-w-[11rem] ${stickyTdFootFirst}`}>
                 Total: {totalHoldings} {totalHoldings === 1 ? "item" : "items"}
               </td>
               <td className={`px-6 py-3 text-right text-xs font-mono font-bold ${avgAlphaClass}`}>
                 Avg: {Number.isFinite(averageAlpha) ? `${avgAlphaSign}${averageAlpha.toFixed(2)}%` : "—"}
               </td>
-              <td className="px-6 py-3 text-center text-[10px] text-slate-600 uppercase font-bold">
+              <td className="px-6 py-3 text-center text-[10px] text-muted-foreground uppercase font-bold">
                 Portfolio
               </td>
               <td className="px-6 py-3" />

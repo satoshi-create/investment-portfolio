@@ -20,10 +20,10 @@ function fmtPct(v: number | null): string {
 }
 
 function pctClass(v: number | null): string {
-  if (v == null || !Number.isFinite(v)) return "text-slate-500";
+  if (v == null || !Number.isFinite(v)) return "text-muted-foreground";
   if (v > 0) return "text-emerald-400";
   if (v < 0) return "text-rose-400";
-  return "text-slate-400";
+  return "text-muted-foreground";
 }
 
 function fmtRecorded(iso: string): string {
@@ -56,27 +56,27 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-      <div className="p-5 border-b border-slate-800 bg-slate-900/50 flex items-center gap-2">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
+      <div className="p-5 border-b border-border bg-card/60 flex items-center gap-2">
         <Table2 size={16} className="text-cyan-500/90" />
         <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
             Portfolio snapshots
           </h3>
-          <p className="text-[10px] text-slate-600 mt-0.5">
+          <p className="text-[10px] text-muted-foreground mt-0.5">
             DB テーブル portfolio_daily_snapshots + market_glance_snapshots（新しい順・同日は上書き）
           </p>
         </div>
       </div>
       {rows.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-slate-500">
-          行がありません。マイグレーション適用後、<span className="font-mono text-slate-400">Record snapshot</span>{" "}
+        <p className="px-5 py-8 text-sm text-muted-foreground">
+          行がありません。マイグレーション適用後、<span className="font-mono text-muted-foreground/90">Record snapshot</span>{" "}
           で記録してください。
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm min-w-[1020px]">
-            <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.06em]">
+            <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th className={`px-4 py-3 whitespace-nowrap min-w-[6.5rem] ${stickyThFirst}`}>日付 (UTC)</th>
                 <th className="px-4 py-3 whitespace-nowrap">記録時刻</th>
@@ -143,32 +143,32 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
                         <button
                           type="button"
                           onClick={() => setExpandedId(open ? null : r.id)}
-                          className="flex w-full max-w-[11rem] items-center justify-between gap-1 rounded-lg border border-slate-700/80 bg-slate-950/50 px-2 py-1.5 text-left text-[10px] text-slate-400 transition-colors hover:border-slate-600 hover:bg-slate-800/50 hover:text-slate-200"
+                          className="flex w-full max-w-[11rem] items-center justify-between gap-1 rounded-lg border border-border bg-background/60 px-2 py-1.5 text-left text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                           aria-expanded={open}
                         >
-                          <span className="truncate font-mono text-slate-500" title={marketSummary(r.marketIndicators)}>
+                          <span className="truncate font-mono text-muted-foreground" title={marketSummary(r.marketIndicators)}>
                             {marketSummary(r.marketIndicators)}
                           </span>
                           <ChevronDown
                             size={14}
-                            className={`shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+                            className={`shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
                             aria-hidden
                           />
                         </button>
                       </td>
                     </tr>
                     {open ? (
-                      <tr className="bg-slate-950/40">
-                        <td colSpan={COL_COUNT} className="px-4 py-3 border-t border-slate-800/60">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                      <tr className="bg-background/40">
+                        <td colSpan={COL_COUNT} className="px-4 py-3 border-t border-border">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
                             Market glance（記録時点）
                           </p>
                           {r.marketIndicators == null ? (
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-muted-foreground">
                               この日の市場指標は未記録です（009 適用前のスナップショットなど）。
                             </p>
                           ) : r.marketIndicators.length === 0 ? (
-                            <p className="text-xs text-slate-500">記録はありますが指標が空です（取得失敗時など）。</p>
+                            <p className="text-xs text-muted-foreground">記録はありますが指標が空です（取得失敗時など）。</p>
                           ) : (
                             <MarketBar indicators={r.marketIndicators} showTitle={false} layout="modal" />
                           )}

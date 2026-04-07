@@ -31,16 +31,16 @@ function fmtPct(v: number | null): string {
 }
 
 function pctClass(v: number | null): string {
-  if (v == null || !Number.isFinite(v)) return "text-slate-500";
+  if (v == null || !Number.isFinite(v)) return "text-muted-foreground";
   if (v > 0) return "text-emerald-400";
   if (v < 0) return "text-rose-400";
-  return "text-slate-400";
+  return "text-muted-foreground";
 }
 
 function pnlClass(v: number): string {
   if (v > 0) return "text-emerald-400";
   if (v < 0) return "text-rose-400";
-  return "text-slate-400";
+  return "text-muted-foreground";
 }
 
 function computeClosedTradesFooter(rows: ClosedTradeDashboardRow[]) {
@@ -83,27 +83,27 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
   const footer = useMemo(() => computeClosedTradesFooter(rows), [rows]);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-      <div className="p-5 border-b border-slate-800 bg-slate-900/50 flex items-center gap-2">
+    <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
+      <div className="p-5 border-b border-border bg-card/60 flex items-center gap-2">
         <History size={16} className="text-amber-500/90" />
         <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">取引履歴</h3>
-          <p className="text-[10px] text-slate-600 mt-0.5">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">取引履歴</h3>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
             完了済み売買（DB: trade_history・売却のみ）。現在価格は Yahoo 終値ベース（米国株は{" "}
-            <span className="font-mono text-slate-500">USD_JPY_RATE</span> で円換算）。
+            <span className="font-mono text-muted-foreground/90">USD_JPY_RATE</span> で円換算）。
           </p>
         </div>
       </div>
       {rows.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-slate-500">
+        <p className="px-5 py-8 text-sm text-muted-foreground">
           行がありません。マイグレーション{" "}
-          <span className="font-mono text-slate-400">005_trade_history</span> を適用し、
-          <span className="font-mono text-slate-400"> trade_history</span> にデータを投入してください。
+          <span className="font-mono text-muted-foreground/90">005_trade_history</span> を適用し、
+          <span className="font-mono text-muted-foreground/90"> trade_history</span> にデータを投入してください。
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm min-w-[1280px]">
-            <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.06em]">
+            <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th className={`px-3 py-3 whitespace-nowrap min-w-[7rem] max-w-[10rem] ${stickyThFirst}`}>銘柄名</th>
                 <th className="px-3 py-3 whitespace-nowrap">ティッカー</th>
@@ -179,33 +179,33 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
               ))}
             </tbody>
             <tfoot>
-              <tr className="group bg-slate-900/95 border-t border-slate-700">
+              <tr className="group bg-card/95 border-t border-border">
                 <td
-                  className={`px-3 py-3 text-xs font-bold text-slate-300 min-w-[7rem] max-w-[10rem] ${stickyTdFootFirst}`}
+                  className={`px-3 py-3 text-xs font-bold text-foreground/90 min-w-[7rem] max-w-[10rem] ${stickyTdFootFirst}`}
                 >
                   Σ / 平均
-                  <span className="block text-[10px] font-normal text-slate-500 font-mono">
+                  <span className="block text-[10px] font-normal text-muted-foreground font-mono">
                     {footer.count} 件
                   </span>
                 </td>
-                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
-                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
-                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
-                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
-                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
                 <td
-                  className="px-3 py-3 text-right font-mono text-sm font-bold text-slate-200 whitespace-nowrap"
+                  className="px-3 py-3 text-right font-mono text-sm font-bold text-foreground whitespace-nowrap"
                   title="日本株・米株で単位が異なるため参考値です。"
                 >
                   {footer.sumQty > 0 ? fmtQty(footer.sumQty) : "—"}
                 </td>
-                <td className="px-3 py-3 text-right font-mono text-sm font-bold text-slate-100 whitespace-nowrap">
+                <td className="px-3 py-3 text-right font-mono text-sm font-bold text-foreground whitespace-nowrap">
                   {footer.count > 0 ? jpyFmt.format(footer.sumCostJpy) : "—"}
                 </td>
-                <td className="px-3 py-3 text-right font-mono text-sm font-bold text-slate-100 whitespace-nowrap">
+                <td className="px-3 py-3 text-right font-mono text-sm font-bold text-foreground whitespace-nowrap">
                   {footer.count > 0 ? jpyFmt.format(footer.sumProceedsJpy) : "—"}
                 </td>
-                <td className="px-3 py-3 text-right font-mono text-xs font-bold text-slate-400 whitespace-nowrap">
+                <td className="px-3 py-3 text-right font-mono text-xs font-bold text-muted-foreground whitespace-nowrap">
                   {footer.count > 0 ? jpyFmt.format(footer.sumFeesJpy) : "—"}
                 </td>
                 <td
@@ -213,7 +213,7 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
                 >
                   {footer.count > 0 ? jpyFmt.format(footer.sumRealizedPnlJpy) : "—"}
                 </td>
-                <td className="px-3 py-3 text-right text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-right text-[10px] text-muted-foreground whitespace-nowrap">—</td>
                 <td
                   className={`px-3 py-3 text-right font-mono text-xs font-bold whitespace-nowrap ${pctClass(footer.avgPostExitPct)}`}
                   title={`売却後騰落率が算出できた ${footer.postExitCount} 件の算術平均`}
@@ -226,7 +226,7 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
                     "—"
                   )}
                 </td>
-                <td className="px-3 py-3 text-[10px] text-slate-600 whitespace-nowrap">—</td>
+                <td className="px-3 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
               </tr>
             </tfoot>
           </table>

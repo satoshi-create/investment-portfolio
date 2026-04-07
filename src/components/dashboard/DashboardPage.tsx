@@ -130,7 +130,7 @@ export function DashboardPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
+    <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
         <DashboardHeader
           totalAlpha={summary.portfolioAverageAlpha}
@@ -138,11 +138,11 @@ export function DashboardPage() {
           marketIndicators={summary.marketIndicators ?? []}
         />
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-3">
-          <div className="text-xs text-slate-400">
-            <span className="font-bold uppercase tracking-wider text-slate-500">Profile</span>{" "}
-            <span className="text-slate-300 font-mono">{DEFAULT_USER_ID}</span>
-            {loading && <span className="ml-2 text-slate-500">Loading…</span>}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-border bg-card/60 px-4 py-3">
+          <div className="text-xs text-muted-foreground">
+            <span className="font-bold uppercase tracking-wider text-muted-foreground/90">Profile</span>{" "}
+            <span className="text-foreground/90 font-mono">{DEFAULT_USER_ID}</span>
+            {loading && <span className="ml-2 text-muted-foreground/80">Loading…</span>}
             {error && (
               <span className="ml-2 text-rose-400 block sm:inline mt-1 sm:mt-0">{error}</span>
             )}
@@ -164,7 +164,7 @@ export function DashboardPage() {
           <div className="flex flex-wrap gap-2">
             <Link
               href="/logs"
-              className="text-[10px] font-bold text-slate-400 border border-slate-600 px-3 py-2 rounded-lg hover:bg-slate-800 transition-all flex items-center gap-2"
+                className="text-[10px] font-bold text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted transition-all flex items-center gap-2"
             >
               <ScrollText size={14} />
               ログ
@@ -181,7 +181,7 @@ export function DashboardPage() {
               type="button"
               onClick={onRefresh}
               disabled={refreshPending || !!error || loading}
-              className="text-[10px] font-bold text-slate-300 border border-slate-600 px-3 py-2 rounded-lg hover:bg-slate-800 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="text-[10px] font-bold text-foreground/80 border border-border px-3 py-2 rounded-lg hover:bg-muted transition-all flex items-center gap-2 disabled:opacity-50"
             >
               <RefreshCw size={14} className={refreshPending || loading ? "animate-spin" : ""} />
               Refresh

@@ -5,6 +5,7 @@ import { LineChart, Target, X } from "lucide-react";
 
 import { MarketBar } from "@/src/components/dashboard/MarketBar";
 import { StatBox } from "@/src/components/dashboard/StatBox";
+import { ThemeToggle } from "@/src/components/dashboard/ThemeToggle";
 import type { MarketIndicator } from "@/src/types/investment";
 
 type Props = {
@@ -49,17 +50,17 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, marketIndicators }
   }, [marketOpen]);
 
   return (
-    <header className="border-b border-slate-800 pb-6">
+    <header className="border-b border-border pb-6">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between md:gap-8">
         <div className="min-w-0 shrink">
-          <div className="flex items-center gap-2 mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-            <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded border border-blue-500/30">
+          <div className="flex items-center gap-2 mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="px-2 py-0.5 bg-accent-cyan/10 text-accent-cyan rounded border border-accent-cyan/25">
               Alpha Engine v1.2
             </span>
             <span>Satoshi&apos;s Investment OS</span>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-white flex items-center gap-2">
-            <Target className="text-blue-500 shrink-0" size={28} />
+          <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Target className="text-accent-cyan shrink-0" size={28} />
             Structural Cockpit
           </h1>
         </div>
@@ -70,11 +71,11 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, marketIndicators }
             <button
               type="button"
               onClick={() => setMarketOpen(true)}
-              className="order-1 w-fit shrink-0 self-start inline-flex items-center gap-1 rounded-md border border-slate-600/90 bg-slate-900/70 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-400 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-slate-200 md:mb-0.5 md:gap-1.5 md:self-end md:rounded-lg md:px-3 md:py-2 md:text-[10px]"
+              className="order-1 w-fit shrink-0 self-start inline-flex items-center gap-1 rounded-md border border-border bg-card/60 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:mb-0.5 md:gap-1.5 md:self-end md:rounded-lg md:px-3 md:py-2 md:text-[10px]"
               aria-haspopup="dialog"
               aria-expanded={marketOpen}
             >
-              <LineChart className="h-3 w-3 shrink-0 text-slate-500 md:h-3.5 md:w-3.5" aria-hidden />
+              <LineChart className="h-3 w-3 shrink-0 text-muted-foreground md:h-3.5 md:w-3.5" aria-hidden />
               Market glance
             </button>
             <div className="order-2 min-w-0">
@@ -89,9 +90,12 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, marketIndicators }
           <StatBox
             label="VOO (S&P 500 ETF)"
             value={benchText}
-            valueColor="text-slate-300"
+            valueColor="text-foreground/80"
             subLabel="Latest close (USD, Yahoo)"
           />
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+          </div>
         </div>
       </div>
 
@@ -102,7 +106,7 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, marketIndicators }
         >
           <button
             type="button"
-            className="absolute inset-0 bg-slate-950/80 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
             aria-label="Close market glance"
             onClick={() => setMarketOpen(false)}
           />
@@ -110,17 +114,17 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, marketIndicators }
             role="dialog"
             aria-modal="true"
             aria-labelledby="market-glance-title"
-            className="relative z-10 flex h-[80dvh] w-[80vw] max-w-[min(100%,80vw)] flex-col overflow-hidden rounded-2xl border border-slate-600 bg-slate-900 shadow-2xl min-h-0 sm:max-w-[min(56rem,80vw)]"
+            className="relative z-10 flex h-[80dvh] w-[80vw] max-w-[min(100%,80vw)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl min-h-0 sm:max-w-[min(56rem,80vw)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-5">
-              <h2 id="market-glance-title" className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400 sm:text-sm">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+              <h2 id="market-glance-title" className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground sm:text-sm">
                 Market glance
               </h2>
               <button
                 type="button"
                 onClick={() => setMarketOpen(false)}
-                className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200 touch-manipulation"
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation"
                 aria-label="Close"
               >
                 <X size={20} />
@@ -128,7 +132,7 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, marketIndicators }
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4 [-webkit-overflow-scrolling:touch]">
               {marketIndicators.length === 0 ? (
-                <p className="text-sm text-slate-500 sm:text-base">市場指標を取得できませんでした。</p>
+                <p className="text-sm text-muted-foreground sm:text-base">市場指標を取得できませんでした。</p>
               ) : (
                 <MarketBar indicators={marketIndicators} showTitle={false} layout="modal" />
               )}
