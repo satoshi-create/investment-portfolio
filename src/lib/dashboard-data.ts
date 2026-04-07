@@ -22,6 +22,7 @@ import {
   quoteCurrencyForDashboardWeights,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
+  USD_JPY_RATE,
   type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
 import {
@@ -35,6 +36,8 @@ import {
   fetchGlobalMarketIndicators,
   fetchLatestPrice,
   fetchRecentDatedDailyAlphasVsVoo,
+  fetchLatestPriceWithChangePct,
+  fetchUsdJpyRate,
 } from "@/src/lib/price-service";
 
 const TARGET_CORE_PERCENT = 90;
@@ -120,6 +123,23 @@ export function normalizedHoldingValueJpy(input: {
   return convertValueToJpy(base, ccy);
 }
 
+function normalizedHoldingValueJpyWithFx(input: {
+  ticker: string;
+  quantity: number;
+  currentPrice: number | null;
+  valuationFactor: number;
+  fxUsdJpy: number;
+}): number {
+  const { ticker, quantity, currentPrice, valuationFactor, fxUsdJpy } = input;
+  if (currentPrice == null || !Number.isFinite(currentPrice) || currentPrice <= 0) return 0;
+  if (!Number.isFinite(quantity) || quantity <= 0) return 0;
+  const f = Number.isFinite(valuationFactor) && valuationFactor > 0 ? valuationFactor : 1;
+  const base = quantity * currentPrice * f;
+  const ccy = quoteCurrencyForDashboardWeights(ticker);
+  if (ccy === "JPY") return base;
+  return base * fxUsdJpy;
+}
+
 function computeCoreSatellite(stocks: Stock[]): CoreSatelliteBreakdown {
   let coreV = 0;
   let satV = 0;
@@ -147,14 +167,25 @@ function computePortfolioAverageAlpha(stocks: Stock[]): number {
   return roundAlphaMetric(sum / latest.length);
 }
 
-async function resolveBenchmarkLatestClose(): Promise<number> {
+async function resolveBenchmarkSnapshot(): Promise<{ close: number; changePct: number | null }> {
   try {
-    const snap = await fetchLatestPrice(SIGNAL_BENCHMARK_TICKER);
-    if (snap != null && Number.isFinite(snap.close) && snap.close > 0) return snap.close;
+    const snap = await fetchLatestPriceWithChangePct(SIGNAL_BENCHMARK_TICKER, null);
+    if (snap.close != null && Number.isFinite(snap.close) && snap.close > 0) {
+      return { close: snap.close, changePct: snap.changePct };
+    }
   } catch {
     /* Yahoo 失敗時は 0（UI は —） */
   }
-  return 0;
+  return { close: 0, changePct: null };
+}
+
+async function resolveFxUsdJpyRate(): Promise<number | null> {
+  try {
+    const snap = await fetchUsdJpyRate();
+    return snap?.rate ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** `trade_history` の累計確定損益（円）。テーブル未作成時は 0。 */
@@ -256,7 +287,11 @@ function buildByTickerDatedAlphaRows(rows: Iterable<Record<string, unknown>>): M
   return out;
 }
 
-function buildDraftsFromHoldingRows(rows: HoldingQueryRow[], byTicker: Map<string, AlphaPoint[]>): StockDraft[] {
+function buildDraftsFromHoldingRows(
+  rows: HoldingQueryRow[],
+  byTicker: Map<string, AlphaPoint[]>,
+  fxUsdJpy: number,
+): StockDraft[] {
   return rows.map((row) => {
     const id = String(row.id);
     const ticker = String(row.ticker);
@@ -270,11 +305,12 @@ function buildDraftsFromHoldingRows(rows: HoldingQueryRow[], byTicker: Map<strin
         : 1;
     const providerSymbol =
       row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null;
-    const marketValue = normalizedHoldingValueJpy({
+    const marketValue = normalizedHoldingValueJpyWithFx({
       ticker,
       quantity: qty,
       currentPrice,
       valuationFactor,
+      fxUsdJpy,
     });
     const rawStructureTags = row.structure_tags;
     const tagsJson = rawStructureTags == null ? "[]" : String(rawStructureTags);
@@ -287,7 +323,8 @@ function buildDraftsFromHoldingRows(rows: HoldingQueryRow[], byTicker: Map<strin
       qty,
       valuationFactor,
     );
-    const unrealizedPnlJpy = convertValueToJpy(unrealizedPnlLocal, quoteCurrencyForInstrument(instrumentKind));
+    const unrealizedPnlJpy =
+      quoteCurrencyForInstrument(instrumentKind) === "JPY" ? unrealizedPnlLocal : unrealizedPnlLocal * fxUsdJpy;
     const two = lastTwoClosesFromSeries(series);
     const dayChangeRaw = two != null ? dailyReturnPercent(two.prevClose, two.latestClose) : null;
     const dayChangePercent =
@@ -511,9 +548,10 @@ async function fetchEnrichedThemeEcosystem(
  * 指定テーマ（structure_tags 先頭一致）の保有・Alpha・テーマメタ・エコシステムを一括取得。`/themes/[theme]` 用。
  */
 export async function getThemeDetailData(db: Client, userId: string, themeName: string): Promise<ThemeDetailData> {
-  const [theme, benchmarkLatestPrice, h] = await Promise.all([
+  const [theme, benchmarkSnap, fxMaybe, h] = await Promise.all([
     fetchInvestmentThemeRecord(db, userId, themeName),
-    resolveBenchmarkLatestClose(),
+    resolveBenchmarkSnapshot(),
+    resolveFxUsdJpyRate(),
     db.execute({
       sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, provider_symbol, valuation_factor
             FROM holdings
@@ -522,6 +560,7 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
       args: [userId],
     }),
   ]);
+  const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE;
 
   const holdingRows = h.rows as unknown as HoldingQueryRow[];
   const portfolioTickerSet = new Set(holdingRows.map((r) => String(r.ticker).trim().toUpperCase()));
@@ -555,7 +594,7 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
     const rows = a.rows as Record<string, unknown>[];
     const byTicker = buildByTickerFromAlphaRows(rows);
     const byTickerDated = buildByTickerDatedAlphaRows(rows);
-    const drafts = buildDraftsFromHoldingRows(matching, byTicker);
+    const drafts = buildDraftsFromHoldingRows(matching, byTicker, fxUsdJpy);
     themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
     themeAverageUnrealizedPnlPercent = computeThemeAverageUnrealizedPnlPercent(stocks);
@@ -615,7 +654,7 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
     themeTotalMarketValue,
     themeAverageUnrealizedPnlPercent,
     themeAverageAlpha,
-    benchmarkLatestPrice,
+    benchmarkLatestPrice: benchmarkSnap.close,
     ecosystem,
     cumulativeAlphaSeries,
     structuralAlphaTotalPct,
@@ -638,8 +677,9 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   });
 
   if (h.rows.length === 0) {
-    const [benchmarkLatestPrice, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
-      resolveBenchmarkLatestClose(),
+    const [benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
+      resolveBenchmarkSnapshot(),
+      resolveFxUsdJpyRate(),
       fetchTotalRealizedPnlJpy(db, userId),
       fetchGlobalMarketIndicators(),
     ]);
@@ -652,7 +692,9 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       totalMarketValue: 0,
       summary: {
         portfolioAverageAlpha: 0,
-        benchmarkLatestPrice,
+        benchmarkLatestPrice: benchmarkSnap.close,
+        benchmarkChangePct: benchmarkSnap.changePct,
+        fxUsdJpy: fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : null,
         totalHoldings: 0,
         marketIndicators,
         ...financial,
@@ -662,7 +704,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
   const tickers = [...new Set(h.rows.map((r) => String(r.ticker)))];
   const tPlaceholders = tickers.map(() => "?").join(",");
-  const [a, benchmarkLatestPrice, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
+  const [a, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
     db.execute({
       // Match by user + benchmark + ticker only; `holding_id` may be NULL (orphaned rows still chart).
       sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
@@ -670,13 +712,15 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
             ORDER BY ticker ASC, recorded_at ASC`,
       args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers],
     }),
-    resolveBenchmarkLatestClose(),
+    resolveBenchmarkSnapshot(),
+    resolveFxUsdJpyRate(),
     fetchTotalRealizedPnlJpy(db, userId),
     fetchGlobalMarketIndicators(),
   ]);
 
   const byTicker = buildByTickerFromAlphaRows(a.rows as Record<string, unknown>[]);
-  const drafts = buildDraftsFromHoldingRows(h.rows as unknown as HoldingQueryRow[], byTicker);
+  const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE;
+  const drafts = buildDraftsFromHoldingRows(h.rows as unknown as HoldingQueryRow[], byTicker, fxUsdJpy);
 
   const totalMarketValue = drafts.reduce(
     (s, d) => s + sanitizeMarketValueForAggregation(d.marketValue),
@@ -696,7 +740,9 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   const financial = computeFinancialTotals(stocks, totalRealizedPnlJpy);
   const summary = {
     portfolioAverageAlpha: computePortfolioAverageAlpha(stocks),
-    benchmarkLatestPrice,
+    benchmarkLatestPrice: benchmarkSnap.close,
+    benchmarkChangePct: benchmarkSnap.changePct,
+    fxUsdJpy: fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : null,
     totalHoldings: stocks.length,
     marketIndicators,
     ...financial,

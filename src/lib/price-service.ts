@@ -186,6 +186,36 @@ export async function fetchLatestPrice(
   }
 }
 
+/** USD/JPY (JPY=X) latest close. Returns null on failures. */
+export async function fetchUsdJpyRate(): Promise<{ rate: number; date: string } | null> {
+  const snap = await fetchLatestPrice("JPY=X", null);
+  if (snap == null) return null;
+  const r = Number(snap.close);
+  if (!Number.isFinite(r) || r <= 0) return null;
+  return { rate: r, date: snap.date };
+}
+
+/**
+ * Latest close + prev close (shared sessions) for daily change %.
+ * Returns null changePct if insufficient series.
+ */
+export async function fetchLatestPriceWithChangePct(
+  ticker: string,
+  providerSymbol?: string | null,
+): Promise<{ close: number; date: string; changePct: number | null }> {
+  const bars = await fetchPriceHistory(ticker, 3, providerSymbol);
+  if (bars.length === 0) return { close: 0, date: "", changePct: null };
+  const last = bars[bars.length - 1]!;
+  const prev = bars.length >= 2 ? bars[bars.length - 2]! : null;
+  const changePct =
+    prev != null ? dailyReturnPercent(prev.close, last.close) : null;
+  return {
+    close: last.close,
+    date: last.date,
+    changePct: changePct != null && Number.isFinite(changePct) ? roundAlphaMetric(changePct) : null,
+  };
+}
+
 /**
  * Daily closes for backfill (~`days` trading sessions; uses extra calendar window).
  */

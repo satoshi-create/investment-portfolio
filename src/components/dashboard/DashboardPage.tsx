@@ -23,6 +23,8 @@ const DEFAULT_USER_ID =
 const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
   benchmarkLatestPrice: 0,
+  benchmarkChangePct: null,
+  fxUsdJpy: null,
   totalHoldings: 0,
   marketIndicators: [],
   totalCostBasisJpy: 0,
@@ -135,6 +137,7 @@ export function DashboardPage() {
         <DashboardHeader
           totalAlpha={summary.portfolioAverageAlpha}
           benchmarkPrice={summary.benchmarkLatestPrice}
+          benchmarkChangePct={summary.benchmarkChangePct}
           marketIndicators={summary.marketIndicators ?? []}
         />
 

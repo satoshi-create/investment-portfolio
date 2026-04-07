@@ -11,6 +11,7 @@ import type { MarketIndicator } from "@/src/types/investment";
 type Props = {
   totalAlpha: number;
   benchmarkPrice: number;
+  benchmarkChangePct?: number | null;
   marketIndicators: MarketIndicator[];
 };
 
@@ -23,13 +24,17 @@ function formatAlphaPercent(value: number): { text: string; color: string } {
   return { text: `${sign}${value.toFixed(2)}%`, color };
 }
 
-export function DashboardHeader({ totalAlpha, benchmarkPrice, marketIndicators }: Props) {
+export function DashboardHeader({ totalAlpha, benchmarkPrice, benchmarkChangePct, marketIndicators }: Props) {
   const [marketOpen, setMarketOpen] = useState(false);
   const alphaFmt = formatAlphaPercent(totalAlpha);
   const benchText =
     benchmarkPrice > 0 && Number.isFinite(benchmarkPrice)
       ? benchmarkPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })
       : "—";
+  const benchChangeText =
+    benchmarkChangePct != null && Number.isFinite(benchmarkChangePct)
+      ? `${benchmarkChangePct > 0 ? "+" : ""}${benchmarkChangePct.toFixed(2)}%`
+      : null;
 
   useEffect(() => {
     if (!marketOpen) return;
@@ -91,7 +96,7 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, marketIndicators }
             label="VOO (S&P 500 ETF)"
             value={benchText}
             valueColor="text-foreground/80"
-            subLabel="Latest close (USD, Yahoo)"
+            subLabel={benchChangeText ? `Latest close · ${benchChangeText} (1D)` : "Latest close (USD, Yahoo)"}
           />
           <div className="flex items-center gap-2">
             <ThemeToggle />

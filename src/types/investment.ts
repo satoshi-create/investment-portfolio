@@ -101,6 +101,10 @@ export type DashboardSummary = {
   portfolioAverageAlpha: number;
   /** VOO の最新終値（USD）。`alpha_history` は銘柄終値のみ保持のため Yahoo から取得。 */
   benchmarkLatestPrice: number;
+  /** VOO の前日比 %（共有セッションで算出。算出不可は null）。 */
+  benchmarkChangePct: number | null;
+  /** USD/JPY レート（`JPY=X` 最新終値）。取得失敗時は null。 */
+  fxUsdJpy: number | null;
   /** 保有銘柄数 */
   totalHoldings: number;
   /** 世界主要インデックス等（`getDashboardData` が Yahoo から一括取得） */
