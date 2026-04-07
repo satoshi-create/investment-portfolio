@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { History } from "lucide-react";
 
 import type { ClosedTradeDashboardRow } from "@/src/types/investment";
@@ -81,6 +81,72 @@ function computeClosedTradesFooter(rows: ClosedTradeDashboardRow[]) {
 
 export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] }) {
   const footer = useMemo(() => computeClosedTradesFooter(rows), [rows]);
+  const [sortKey, setSortKey] = useState<
+    "name" | "ticker" | "date" | "market" | "account" | "side" | "qty" | "cost" | "proceeds" | "fees" | "pnl" | "price" | "post" | "verdict"
+  >("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const arr = [...rows];
+    const cmpStr = (a: string, b: string) => a.localeCompare(b, "ja");
+    const cmpNum = (a: number | null, b: number | null) => {
+      const ax = a == null || !Number.isFinite(a) ? null : a;
+      const by = b == null || !Number.isFinite(b) ? null : b;
+      if (ax == null && by == null) return 0;
+      if (ax == null) return 1;
+      if (by == null) return -1;
+      return ax < by ? -1 : ax > by ? 1 : 0;
+    };
+    arr.sort((a, b) => {
+      switch (sortKey) {
+        case "name":
+          return dir * cmpStr(a.name ?? "", b.name ?? "");
+        case "ticker":
+          return dir * cmpStr(a.ticker, b.ticker);
+        case "date":
+          return dir * cmpStr(a.tradeDate, b.tradeDate);
+        case "market":
+          return dir * cmpStr(a.market, b.market);
+        case "account":
+          return dir * cmpStr(a.accountName ?? "", b.accountName ?? "");
+        case "side":
+          return dir * cmpStr(a.side, b.side);
+        case "qty":
+          return dir * cmpNum(a.quantity, b.quantity);
+        case "cost":
+          return dir * cmpNum(a.costJpy, b.costJpy);
+        case "proceeds":
+          return dir * cmpNum(a.proceedsJpy, b.proceedsJpy);
+        case "fees":
+          return dir * cmpNum(a.feesJpy, b.feesJpy);
+        case "pnl":
+          return dir * cmpNum(a.realizedPnlJpy, b.realizedPnlJpy);
+        case "price":
+          return dir * cmpNum(a.currentPriceJpy, b.currentPriceJpy);
+        case "post":
+          return dir * cmpNum(a.postExitReturnPct, b.postExitReturnPct);
+        case "verdict":
+          return dir * cmpStr(a.verdictLabel ?? "", b.verdictLabel ?? "");
+        default:
+          return 0;
+      }
+    });
+    return arr;
+  }, [rows, sortDir, sortKey]);
+
+  function toggleSort(next: typeof sortKey) {
+    if (next === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(next);
+      setSortDir("desc");
+    }
+  }
+
+  function sortMark(k: typeof sortKey) {
+    if (k !== sortKey) return "";
+    return sortDir === "asc" ? " ▲" : " ▼";
+  }
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
@@ -105,56 +171,88 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
           <table className="w-full text-left text-sm min-w-[1280px]">
             <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
-                <th className={`px-3 py-3 whitespace-nowrap min-w-[7rem] max-w-[10rem] ${stickyThFirst}`}>銘柄名</th>
-                <th className="px-3 py-3 whitespace-nowrap">ティッカー</th>
-                <th className="px-3 py-3 whitespace-nowrap">約定日</th>
-                <th className="px-3 py-3 whitespace-nowrap">市場</th>
-                <th className="px-3 py-3 whitespace-nowrap">口座</th>
-                <th className="px-3 py-3 whitespace-nowrap">売買</th>
-                <th className="px-3 py-3 text-right whitespace-nowrap">数量</th>
-                <th className="px-3 py-3 text-right whitespace-nowrap">取得代金（円）</th>
-                <th className="px-3 py-3 text-right whitespace-nowrap">譲渡代金（円）</th>
-                <th className="px-3 py-3 text-right whitespace-nowrap">諸経費</th>
-                <th className="px-3 py-3 text-right whitespace-nowrap">確定損益</th>
-                <th className="px-3 py-3 text-right whitespace-nowrap">現在価格（円/単位）</th>
-                <th className="px-3 py-3 text-right whitespace-nowrap">売却後騰落率</th>
-                <th className="px-3 py-3 whitespace-nowrap">売却判定</th>
+                <th
+                  className={`px-3 py-3 whitespace-nowrap min-w-[7rem] max-w-[10rem] ${stickyThFirst} cursor-pointer select-none`}
+                  onClick={() => toggleSort("name")}
+                  title="Sort"
+                >
+                  銘柄名{sortMark("name")}
+                </th>
+                <th className="px-3 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("ticker")} title="Sort">
+                  ティッカー{sortMark("ticker")}
+                </th>
+                <th className="px-3 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("date")} title="Sort">
+                  約定日{sortMark("date")}
+                </th>
+                <th className="px-3 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("market")} title="Sort">
+                  市場{sortMark("market")}
+                </th>
+                <th className="px-3 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("account")} title="Sort">
+                  口座{sortMark("account")}
+                </th>
+                <th className="px-3 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("side")} title="Sort">
+                  売買{sortMark("side")}
+                </th>
+                <th className="px-3 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("qty")} title="Sort">
+                  数量{sortMark("qty")}
+                </th>
+                <th className="px-3 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("cost")} title="Sort">
+                  取得代金（円）{sortMark("cost")}
+                </th>
+                <th className="px-3 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("proceeds")} title="Sort">
+                  譲渡代金（円）{sortMark("proceeds")}
+                </th>
+                <th className="px-3 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("fees")} title="Sort">
+                  諸経費{sortMark("fees")}
+                </th>
+                <th className="px-3 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("pnl")} title="Sort">
+                  確定損益{sortMark("pnl")}
+                </th>
+                <th className="px-3 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("price")} title="Sort">
+                  現在価格（円/単位）{sortMark("price")}
+                </th>
+                <th className="px-3 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("post")} title="Sort">
+                  売却後騰落率{sortMark("post")}
+                </th>
+                <th className="px-3 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("verdict")} title="Sort">
+                  売却判定{sortMark("verdict")}
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {rows.map((r) => (
-                <tr key={r.id} className="group hover:bg-slate-800/35 transition-colors">
+            <tbody className="divide-y divide-border/60">
+              {sorted.map((r) => (
+                <tr key={r.id} className="group hover:bg-muted/60 transition-colors">
                   <td
-                    className={`px-3 py-2.5 text-slate-300 text-xs min-w-[7rem] max-w-[10rem] ${stickyTdFirst}`}
+                    className={`px-3 py-2.5 text-muted-foreground text-xs min-w-[7rem] max-w-[10rem] ${stickyTdFirst}`}
                     title={r.name || undefined}
                   >
                     <span className="line-clamp-3 break-words">{r.name || "—"}</span>
                   </td>
-                  <td className="px-3 py-2.5 font-mono text-slate-200 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 font-mono text-foreground/90 text-xs whitespace-nowrap">
                     {r.ticker}
                   </td>
-                  <td className="px-3 py-2.5 font-mono text-slate-300 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 font-mono text-muted-foreground text-xs whitespace-nowrap">
                     {r.tradeDate}
                   </td>
-                  <td className="px-3 py-2.5 text-slate-400 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
                     {marketLabel(r.market)}
                   </td>
-                  <td className="px-3 py-2.5 text-slate-400 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
                     {r.accountName}
                   </td>
-                  <td className="px-3 py-2.5 text-slate-300 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
                     {sideLabel(r.side)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-slate-300 text-xs">
+                  <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
                     {fmtQty(r.quantity)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-slate-300 text-xs">
+                  <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
                     {jpyFmt.format(r.costJpy)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-slate-300 text-xs">
+                  <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
                     {jpyFmt.format(r.proceedsJpy)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-slate-400 text-xs">
+                  <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
                     {jpyFmt.format(r.feesJpy)}
                   </td>
                   <td
@@ -162,7 +260,7 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
                   >
                     {jpyFmt.format(r.realizedPnlJpy)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-slate-200 text-xs">
+                  <td className="px-3 py-2.5 text-right font-mono text-foreground/90 text-xs">
                     {r.currentPriceJpy != null && Number.isFinite(r.currentPriceJpy)
                       ? jpyFmt.format(r.currentPriceJpy)
                       : "—"}
@@ -172,7 +270,7 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
                   >
                     {fmtPct(r.postExitReturnPct)}
                   </td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap text-slate-200">
+                  <td className="px-3 py-2.5 text-xs whitespace-nowrap text-foreground/90">
                     {r.verdictLabel}
                   </td>
                 </tr>

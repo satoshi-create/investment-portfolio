@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 
 import type { Stock, TickerInstrumentKind } from "@/src/types/investment";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
@@ -92,6 +92,74 @@ function computeFooterAggregates(stocks: Stock[]) {
 
 export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
   const footer = useMemo(() => computeFooterAggregates(stocks), [stocks]);
+  const [sortKey, setSortKey] = useState<
+    "ticker" | "market" | "sector" | "qty" | "avg" | "price" | "day" | "mv" | "pnl" | "pnlpct" | "cat" | "research"
+  >("mv");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const arr = [...stocks];
+    const cmpStr = (a: string, b: string) => a.localeCompare(b, "ja");
+    const cmpNum = (a: number | null, b: number | null) => {
+      const ax = a == null || !Number.isFinite(a) ? null : a;
+      const by = b == null || !Number.isFinite(b) ? null : b;
+      if (ax == null && by == null) return 0;
+      if (ax == null) return 1;
+      if (by == null) return -1;
+      return ax < by ? -1 : ax > by ? 1 : 0;
+    };
+    arr.sort((a, b) => {
+      switch (sortKey) {
+        case "ticker":
+          return dir * cmpStr(a.ticker, b.ticker);
+        case "market":
+          return dir * cmpStr(marketLabel(a.instrumentKind), marketLabel(b.instrumentKind));
+        case "sector":
+          return dir * cmpStr(holdingSectorDisplay(a.sector, a.secondaryTag), holdingSectorDisplay(b.sector, b.secondaryTag));
+        case "qty":
+          return dir * cmpNum(a.quantity, b.quantity);
+        case "avg":
+          return dir * cmpNum(a.avgAcquisitionPrice, b.avgAcquisitionPrice);
+        case "price":
+          return dir * cmpNum(a.currentPrice, b.currentPrice);
+        case "day":
+          return dir * cmpNum(a.dayChangePercent, b.dayChangePercent);
+        case "mv":
+          return dir * cmpNum(a.marketValue, b.marketValue);
+        case "pnl":
+          return dir * cmpNum(a.unrealizedPnlJpy, b.unrealizedPnlJpy);
+        case "pnlpct":
+          return dir * cmpNum(a.unrealizedPnlPercent, b.unrealizedPnlPercent);
+        case "cat":
+          return dir * cmpStr(a.category, b.category);
+        case "research": {
+          const earnCmp = cmpNum(
+            a.daysToEarnings != null && a.daysToEarnings >= 0 ? a.daysToEarnings : null,
+            b.daysToEarnings != null && b.daysToEarnings >= 0 ? b.daysToEarnings : null,
+          );
+          if (earnCmp !== 0) return dir * earnCmp;
+          return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+        }
+        default:
+          return 0;
+      }
+    });
+    return arr;
+  }, [stocks, sortDir, sortKey]);
+
+  function toggleSort(next: typeof sortKey) {
+    if (next === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(next);
+      setSortDir("desc");
+    }
+  }
+
+  function sortMark(k: typeof sortKey) {
+    if (k !== sortKey) return "";
+    return sortDir === "asc" ? " ▲" : " ▼";
+  }
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
@@ -107,23 +175,50 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
         <table className="w-full text-left text-sm min-w-[1100px]">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.08em]">
             <tr>
-              <th className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyThFirst}`}>
-                銘柄 / コード
+              <th
+                className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyThFirst} cursor-pointer select-none`}
+                onClick={() => toggleSort("ticker")}
+                title="Sort"
+              >
+                銘柄 / コード{sortMark("ticker")}
               </th>
-              <th className="px-4 py-3 whitespace-nowrap">市場区分</th>
-              <th className="px-4 py-3 whitespace-nowrap">セクター</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">数量</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">平均取得単価</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">現在価格</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">前日比</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">評価額（円）</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">損益（円）</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">損益率</th>
-              <th className="px-4 py-3 whitespace-nowrap">カテゴリ</th>
+              <th className="px-4 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("market")} title="Sort">
+                市場区分{sortMark("market")}
+              </th>
+              <th className="px-4 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("sector")} title="Sort">
+                セクター{sortMark("sector")}
+              </th>
+              <th className="px-4 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("research")} title="Sort">
+                リサーチ{sortMark("research")}
+              </th>
+              <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("qty")} title="Sort">
+                数量{sortMark("qty")}
+              </th>
+              <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("avg")} title="Sort">
+                平均取得単価{sortMark("avg")}
+              </th>
+              <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("price")} title="Sort">
+                現在価格{sortMark("price")}
+              </th>
+              <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("day")} title="Sort">
+                前日比{sortMark("day")}
+              </th>
+              <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("mv")} title="Sort">
+                評価額（円）{sortMark("mv")}
+              </th>
+              <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("pnl")} title="Sort">
+                損益（円）{sortMark("pnl")}
+              </th>
+              <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("pnlpct")} title="Sort">
+                損益率{sortMark("pnlpct")}
+              </th>
+              <th className="px-4 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("cat")} title="Sort">
+                カテゴリ{sortMark("cat")}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
-            {stocks.map((s) => (
+            {sorted.map((s) => (
               <tr key={s.id} className="group hover:bg-muted/60 transition-colors">
                 <td className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyTdFirst}`}>
                   <div className="flex flex-col gap-0.5">
@@ -157,6 +252,27 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                   }
                 >
                   {holdingSectorDisplay(s.sector, s.secondaryTag)}
+                </td>
+                <td className="px-4 py-3 text-xs whitespace-nowrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
+                      {s.countryName}
+                    </span>
+                    {s.nextEarningsDate ? (
+                      <span className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md" title={`次期決算予定日: ${s.nextEarningsDate}`}>
+                        E:{s.daysToEarnings != null ? `D${s.daysToEarnings}` : s.nextEarningsDate}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">E:—</span>
+                    )}
+                    {s.dividendYieldPercent != null ? (
+                      <span className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md">
+                        Div:{s.dividendYieldPercent.toFixed(2)}%
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">Div:—</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-foreground/85 whitespace-nowrap">{s.quantity}</td>
                 <td className="px-4 py-3 text-right font-mono text-foreground/85 whitespace-nowrap">

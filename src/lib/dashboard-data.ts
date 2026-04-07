@@ -35,6 +35,7 @@ import {
 import {
   fetchGlobalMarketIndicators,
   fetchLatestPrice,
+  fetchEquityResearchSnapshots,
   fetchRecentDatedDailyAlphasVsVoo,
   fetchLatestPriceWithChangePct,
   fetchUsdJpyRate,
@@ -291,6 +292,7 @@ function buildByTickerDatedAlphaRows(rows: Iterable<Record<string, unknown>>): M
 function buildDraftsFromHoldingRows(
   rows: HoldingQueryRow[],
   byTicker: Map<string, AlphaPoint[]>,
+  researchByTicker: Map<string, { nextEarningsDate: string | null; annualDividendRate: number | null; dividendYieldPercent: number | null }>,
   fxUsdJpy: number,
 ): StockDraft[] {
   return rows.map((row) => {
@@ -319,6 +321,18 @@ function buildDraftsFromHoldingRows(
     const tagsJson = rawStructureTags == null ? "[]" : String(rawStructureTags);
     const sector = parseSector(row.sector);
     const instrumentKind = classifyTickerInstrument(ticker);
+    const countryName = instrumentKind === "JP_INVESTMENT_TRUST" ? "日本" : "米国";
+    const research = researchByTicker.get(ticker.toUpperCase()) ?? null;
+    const nextEarningsDate = research?.nextEarningsDate ?? null;
+    const annualDividendRate = research?.annualDividendRate ?? null;
+    const dividendYieldPercent = research?.dividendYieldPercent ?? null;
+    const daysToEarnings = nextEarningsDate != null ? (() => {
+      const d = new Date(`${nextEarningsDate}T00:00:00.000Z`);
+      if (Number.isNaN(d.getTime())) return null;
+      const now = new Date();
+      const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
+    })() : null;
     const avgAcquisitionPrice = parseAvgAcquisitionPrice(row.avg_acquisition_price);
     const { local: unrealizedPnlLocal, percent: unrealizedPnlPercent } = computeUnrealizedPnlLocal(
       currentPrice,
@@ -338,6 +352,11 @@ function buildDraftsFromHoldingRows(
       ticker,
       name: row.name != null ? String(row.name) : "",
       accountType,
+      countryName,
+      nextEarningsDate,
+      daysToEarnings,
+      annualDividendRate,
+      dividendYieldPercent,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
       quantity: qty,
@@ -421,6 +440,10 @@ async function enrichEcosystemMemberRow(
   row: Record<string, unknown>,
   portfolioTickerSet: Set<string>,
   themeCreatedAt: string | null,
+  researchByTicker: Map<
+    string,
+    { nextEarningsDate: string | null; annualDividendRate: number | null; dividendYieldPercent: number | null }
+  >,
 ): Promise<ThemeEcosystemWatchItem> {
   const id = String(row["id"]);
   const themeId = String(row["theme_id"]);
@@ -433,6 +456,23 @@ async function enrichEcosystemMemberRow(
   const rawObs = row["observation_started_at"];
   const observationStartedAt =
     rawObs != null && String(rawObs).trim().length >= 10 ? String(rawObs).trim().slice(0, 10) : null;
+
+  const instrumentKind = classifyTickerInstrument(ticker);
+  const countryName = instrumentKind === "JP_INVESTMENT_TRUST" ? "日本" : "米国";
+  const research = researchByTicker.get(ticker.toUpperCase()) ?? null;
+  const nextEarningsDate = research?.nextEarningsDate ?? null;
+  const annualDividendRate = research?.annualDividendRate ?? null;
+  const dividendYieldPercent = research?.dividendYieldPercent ?? null;
+  const daysToEarnings =
+    nextEarningsDate != null
+      ? (() => {
+          const d = new Date(`${nextEarningsDate}T00:00:00.000Z`);
+          if (Number.isNaN(d.getTime())) return null;
+          const now = new Date();
+          const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+          return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
+        })()
+      : null;
 
   const histRs = await db.execute({
     sql: `SELECT alpha_value, close_price, recorded_at FROM alpha_history
@@ -503,6 +543,11 @@ async function enrichEcosystemMemberRow(
     role,
     isMajorPlayer,
     inPortfolio,
+    countryName,
+    nextEarningsDate,
+    daysToEarnings,
+    annualDividendRate,
+    dividendYieldPercent,
     observationStartedAt,
     alphaHistory,
     currentPrice: lastClose,
@@ -527,11 +572,16 @@ async function fetchEnrichedThemeEcosystem(
       args: [themeId],
     });
     const rows = rs.rows as unknown as Record<string, unknown>[];
+    const researchByTicker = await fetchEquityResearchSnapshots(
+      rows.map((r) => ({ ticker: String(r["ticker"] ?? ""), providerSymbol: null })),
+    );
     const out: ThemeEcosystemWatchItem[] = [];
     for (let i = 0; i < rows.length; i += 2) {
       const chunk = rows.slice(i, i + 2);
       const part = await Promise.all(
-        chunk.map((row) => enrichEcosystemMemberRow(db, userId, row, portfolioTickerSet, themeCreatedAt)),
+        chunk.map((row) =>
+          enrichEcosystemMemberRow(db, userId, row, portfolioTickerSet, themeCreatedAt, researchByTicker),
+        ),
       );
       out.push(...part);
       if (i + 2 < rows.length) {
@@ -574,6 +624,13 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
     return themeFromStructureTags(tagsJson) === themeName;
   });
 
+  const researchByTicker = await fetchEquityResearchSnapshots(
+    matching.map((r) => ({
+      ticker: String(r.ticker),
+      providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
+    })),
+  );
+
   let stocks: Stock[] = [];
   let themeTotalMarketValue = 0;
   let themeAverageUnrealizedPnlPercent = 0;
@@ -598,7 +655,7 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
     const rows = a.rows as Record<string, unknown>[];
     const byTicker = buildByTickerFromAlphaRows(rows);
     const byTickerDated = buildByTickerDatedAlphaRows(rows);
-    const drafts = buildDraftsFromHoldingRows(matching, byTicker, fxUsdJpy);
+    const drafts = buildDraftsFromHoldingRows(matching, byTicker, researchByTicker, fxUsdJpy);
     themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
     themeAverageUnrealizedPnlPercent = computeThemeAverageUnrealizedPnlPercent(stocks);
@@ -724,7 +781,13 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
   const byTicker = buildByTickerFromAlphaRows(a.rows as Record<string, unknown>[]);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE;
-  const drafts = buildDraftsFromHoldingRows(h.rows as unknown as HoldingQueryRow[], byTicker, fxUsdJpy);
+  const researchByTicker = await fetchEquityResearchSnapshots(
+    (h.rows as unknown as HoldingQueryRow[]).map((r) => ({
+      ticker: String(r.ticker),
+      providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
+    })),
+  );
+  const drafts = buildDraftsFromHoldingRows(h.rows as unknown as HoldingQueryRow[], byTicker, researchByTicker, fxUsdJpy);
 
   const totalMarketValue = drafts.reduce(
     (s, d) => s + sanitizeMarketValueForAggregation(d.marketValue),
@@ -786,6 +849,11 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       ticker,
       name: row.name != null ? String(row.name) : "",
       accountType: null,
+      countryName: instrumentKind === "JP_INVESTMENT_TRUST" ? "日本" : "米国",
+      nextEarningsDate: null,
+      daysToEarnings: null,
+      annualDividendRate: null,
+      dividendYieldPercent: null,
       tag,
       alphaHistory: [alpha],
       weight: 0,

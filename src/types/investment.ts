@@ -37,6 +37,16 @@ export interface Stock {
   name: string;
   /** `holdings.account_type`（特定 / NISA）。未設定時は null（表示側で特定扱い可） */
   accountType: "特定" | "NISA" | null;
+  /** 国名（現状は銘柄種別から推定）。例: "米国" / "日本" */
+  countryName: string;
+  /** 次回決算予定日（YYYY-MM-DD）。取得できない場合は null */
+  nextEarningsDate: string | null;
+  /** 次回決算までの日数（今日基準）。取得できない場合は null */
+  daysToEarnings: number | null;
+  /** 年間配当（現地通貨）。取得できない場合は null */
+  annualDividendRate: number | null;
+  /** 年間配当利回り %。取得できない場合は null */
+  dividendYieldPercent: number | null;
   /** 構造投資テーマ（`structure_tags` 先頭） */
   tag: string;
   alphaHistory: AlphaHistory;
@@ -153,6 +163,16 @@ export type ThemeEcosystemWatchItem = {
   isMajorPlayer: boolean;
   /** ポートフォリオのどこかで quantity>0 保有しているか */
   inPortfolio: boolean;
+  /** 国名（現状は銘柄種別から推定）。例: "米国" / "日本" */
+  countryName: string;
+  /** 次回決算予定日（YYYY-MM-DD）。取得できない場合は null */
+  nextEarningsDate: string | null;
+  /** 次回決算までの日数（今日基準）。取得できない場合は null */
+  daysToEarnings: number | null;
+  /** 年間配当（現地通貨）。取得できない場合は null */
+  annualDividendRate: number | null;
+  /** 年間配当利回り %。取得できない場合は null */
+  dividendYieldPercent: number | null;
   /** `theme_ecosystem_members.observation_started_at`（銘柄投入日・累積 Alpha の第一優先起点）。未設定時は null */
   observationStartedAt: string | null;
   /** テーマ `created_at` 起点の累積 Alpha %（日次超過の合計）。`alpha_history` 優先、不足時は Yahoo 日次から算出 */

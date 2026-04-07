@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 
@@ -26,6 +26,56 @@ export function InventoryTable({
   onTrade?: (initial: TradeEntryInitial) => void;
   onTradeNew?: () => void;
 }) {
+  const [sortKey, setSortKey] = useState<
+    "asset" | "alpha" | "trend" | "position" | "research"
+  >("position");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedStocks = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const lastAlpha = (s: Stock) => (s.alphaHistory.length > 0 ? s.alphaHistory[s.alphaHistory.length - 1]! : null);
+    const key = sortKey;
+    const arr = [...stocks];
+    arr.sort((a, b) => {
+      const cmpStr = (x: string, y: string) => x.localeCompare(y, "ja");
+      const cmpNum = (x: number | null, y: number | null) => {
+        const ax = x == null || !Number.isFinite(x) ? null : x;
+        const by = y == null || !Number.isFinite(y) ? null : y;
+        if (ax == null && by == null) return 0;
+        if (ax == null) return 1;
+        if (by == null) return -1;
+        return ax < by ? -1 : ax > by ? 1 : 0;
+      };
+
+      if (key === "asset") return dir * cmpStr(a.ticker, b.ticker);
+      if (key === "alpha") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
+      if (key === "trend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
+      if (key === "position") return dir * cmpNum(a.marketValue, b.marketValue);
+      // research: prioritize upcoming earnings (smaller days), then yield.
+      const earnCmp = cmpNum(
+        a.daysToEarnings != null && a.daysToEarnings >= 0 ? a.daysToEarnings : null,
+        b.daysToEarnings != null && b.daysToEarnings >= 0 ? b.daysToEarnings : null,
+      );
+      if (earnCmp !== 0) return dir * earnCmp;
+      return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+    });
+    return arr;
+  }, [stocks, sortDir, sortKey]);
+
+  function toggleSort(nextKey: typeof sortKey) {
+    if (nextKey === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(nextKey);
+      setSortDir("desc");
+    }
+  }
+
+  function sortMark(k: typeof sortKey) {
+    if (k !== sortKey) return "";
+    return sortDir === "asc" ? " ▲" : " ▼";
+  }
+
   const avgAlphaClass =
     averageAlpha > 0 ? "text-emerald-400" : averageAlpha < 0 ? "text-rose-400" : "text-slate-400";
   const avgAlphaSign = averageAlpha > 0 ? "+" : "";
@@ -58,14 +108,45 @@ export function InventoryTable({
         <table className="w-full text-left text-sm">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
             <tr>
-              <th className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyThFirst}`}>Asset</th>
-              <th className="px-6 py-4 text-right">Alpha</th>
-              <th className="px-6 py-4 text-center">5D Trend</th>
-              <th className="px-6 py-4 text-right">Position</th>
+              <th
+                className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyThFirst} cursor-pointer select-none`}
+                onClick={() => toggleSort("asset")}
+                title="Sort"
+              >
+                Asset{sortMark("asset")}
+              </th>
+              <th
+                className="px-6 py-4 text-left cursor-pointer select-none"
+                onClick={() => toggleSort("research")}
+                title="Sort"
+              >
+                Research{sortMark("research")}
+              </th>
+              <th
+                className="px-6 py-4 text-right cursor-pointer select-none"
+                onClick={() => toggleSort("alpha")}
+                title="Sort"
+              >
+                Alpha{sortMark("alpha")}
+              </th>
+              <th
+                className="px-6 py-4 text-center cursor-pointer select-none"
+                onClick={() => toggleSort("trend")}
+                title="Sort"
+              >
+                5D Trend{sortMark("trend")}
+              </th>
+              <th
+                className="px-6 py-4 text-right cursor-pointer select-none"
+                onClick={() => toggleSort("position")}
+                title="Sort"
+              >
+                Position{sortMark("position")}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
-            {stocks.map((stock) => (
+            {sortedStocks.map((stock) => (
               <tr key={stock.id} className="group hover:bg-muted/60 transition-all">
                 <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
                   <div className="flex flex-col gap-0.5">
@@ -115,6 +196,42 @@ export function InventoryTable({
                         {stock.tag}
                       </Link>
                     ) : null}
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
+                        {stock.countryName}
+                      </span>
+                      {stock.nextEarningsDate ? (
+                        <span
+                          className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
+                          title={`次期決算予定日: ${stock.nextEarningsDate}`}
+                        >
+                          E:{stock.daysToEarnings != null ? `D${stock.daysToEarnings}` : stock.nextEarningsDate}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">E:—</span>
+                      )}
+                      {stock.dividendYieldPercent != null ? (
+                        <span
+                          className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
+                          title={
+                            stock.annualDividendRate != null
+                              ? `年間配当: ${stock.annualDividendRate}`
+                              : "年間配当: —"
+                          }
+                        >
+                          Div:{stock.dividendYieldPercent.toFixed(2)}%
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">Div:—</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">
+                      {stock.accountType ?? "特定"}
+                    </span>
                   </div>
                 </td>
                 <td

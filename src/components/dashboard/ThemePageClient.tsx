@@ -67,18 +67,8 @@ function ThemeMetaBlock({ theme, themeName }: { theme: InvestmentThemeRecord | n
 
 type ThemeDetailJson = ThemeDetailData & { userId?: string; error?: string };
 
-function groupEcosystemByField(items: ThemeEcosystemWatchItem[]): { field: string; items: ThemeEcosystemWatchItem[] }[] {
-  const order: string[] = [];
-  const map = new Map<string, ThemeEcosystemWatchItem[]>();
-  for (const e of items) {
-    const f = e.field.trim() || "その他";
-    if (!map.has(f)) {
-      map.set(f, []);
-      order.push(f);
-    }
-    map.get(f)!.push(e);
-  }
-  return order.map((field) => ({ field, items: map.get(field)! }));
+function fieldLabelOf(e: ThemeEcosystemWatchItem): string {
+  return e.field.trim() || "その他";
 }
 
 export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
@@ -87,6 +77,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [loading, setLoading] = useState(true);
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
   const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(null);
+  const [ecoSortKey, setEcoSortKey] = useState<"asset" | "research" | "alpha" | "trend" | "last">("alpha");
+  const [ecoSortDir, setEcoSortDir] = useState<"asc" | "desc">("desc");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,7 +140,49 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const stocks = data?.stocks ?? [];
   const theme = data?.theme ?? null;
   const ecosystem = data?.ecosystem ?? [];
-  const ecosystemGroups = useMemo(() => groupEcosystemByField(ecosystem), [ecosystem]);
+  const ecosystemSorted = useMemo(() => {
+    const dir = ecoSortDir === "asc" ? 1 : -1;
+    const cmpStr = (a: string, b: string) => a.localeCompare(b, "ja");
+    const cmpNum = (a: number | null, b: number | null) => {
+      const ax = a == null || !Number.isFinite(a) ? null : a;
+      const by = b == null || !Number.isFinite(b) ? null : b;
+      if (ax == null && by == null) return 0;
+      if (ax == null) return 1;
+      if (by == null) return -1;
+      return ax < by ? -1 : ax > by ? 1 : 0;
+    };
+    const lastAlpha = (e: ThemeEcosystemWatchItem) =>
+      e.alphaHistory.length > 0 ? e.alphaHistory[e.alphaHistory.length - 1]! : null;
+
+    const arr = [...ecosystem];
+    arr.sort((a, b) => {
+      if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
+      if (ecoSortKey === "alpha") return dir * cmpNum(a.latestAlpha, b.latestAlpha);
+      if (ecoSortKey === "trend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
+      if (ecoSortKey === "last") return dir * cmpNum(a.currentPrice, b.currentPrice);
+      // research
+      const earnCmp = cmpNum(
+        a.daysToEarnings != null && a.daysToEarnings >= 0 ? a.daysToEarnings : null,
+        b.daysToEarnings != null && b.daysToEarnings >= 0 ? b.daysToEarnings : null,
+      );
+      if (earnCmp !== 0) return dir * earnCmp;
+      return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+    });
+    return arr;
+  }, [ecosystem, ecoSortDir, ecoSortKey]);
+
+  function toggleEcoSort(next: typeof ecoSortKey) {
+    if (next === ecoSortKey) setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setEcoSortKey(next);
+      setEcoSortDir("desc");
+    }
+  }
+
+  function ecoSortMark(k: typeof ecoSortKey) {
+    if (k !== ecoSortKey) return "";
+    return ecoSortDir === "asc" ? " ▲" : " ▼";
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
@@ -259,28 +293,62 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                     <table className="w-full text-left text-sm">
                       <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.1em]">
                         <tr>
-                          <th className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyThFirst}`}>Asset</th>
-                          <th className="px-6 py-4 text-right">Cum. α</th>
-                          <th className="px-6 py-4 text-center">Cumulative trend</th>
-                          <th className="px-6 py-4 text-right">Last</th>
+                          <th
+                            className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyThFirst} cursor-pointer select-none`}
+                            onClick={() => toggleEcoSort("asset")}
+                            title="Sort"
+                          >
+                            Asset{ecoSortMark("asset")}
+                          </th>
+                          <th
+                            className="px-6 py-4 text-left cursor-pointer select-none"
+                            onClick={() => toggleEcoSort("research")}
+                            title="Sort"
+                          >
+                            Research{ecoSortMark("research")}
+                          </th>
+                          <th
+                            className="px-6 py-4 text-right cursor-pointer select-none"
+                            onClick={() => toggleEcoSort("alpha")}
+                            title="Sort"
+                          >
+                            Cum. α{ecoSortMark("alpha")}
+                          </th>
+                          <th
+                            className="px-6 py-4 text-center cursor-pointer select-none"
+                            onClick={() => toggleEcoSort("trend")}
+                            title="Sort"
+                          >
+                            Cumulative trend{ecoSortMark("trend")}
+                          </th>
+                          <th
+                            className="px-6 py-4 text-right cursor-pointer select-none"
+                            onClick={() => toggleEcoSort("last")}
+                            title="Sort"
+                          >
+                            Last{ecoSortMark("last")}
+                          </th>
                         </tr>
                       </thead>
-                      {ecosystemGroups.map(({ field, items }) => (
-                        <tbody key={field} className="divide-y divide-slate-800/50">
-                          <tr className="bg-slate-950/90">
-                            <td
-                              className={`px-6 py-2 min-w-[10rem] max-w-[14rem] sticky left-0 z-[19] bg-slate-950/90 border-r border-slate-800/90 border-b border-slate-800 shadow-[2px_0_10px_rgba(0,0,0,0.35)] text-[10px] font-bold uppercase tracking-wider text-cyan-500/90`}
-                            >
-                              {field}
-                            </td>
-                            <td
-                              colSpan={3}
-                              className="border-b border-slate-800 bg-slate-950/90 px-6 py-2"
-                              aria-hidden
-                            />
-                          </tr>
-                          {items.map((e) => (
-                            <tr key={e.id} className="group hover:bg-slate-800/40 transition-all">
+                      <tbody className="divide-y divide-slate-800/50">
+                        {ecosystemSorted.map((e, idx) => {
+                          const prev = idx > 0 ? ecosystemSorted[idx - 1] : null;
+                          const field = fieldLabelOf(e);
+                          const prevField = prev ? fieldLabelOf(prev) : null;
+                          const showFieldHeader = idx === 0 || field !== prevField;
+                          return (
+                            <React.Fragment key={e.id}>
+                              {showFieldHeader ? (
+                                <tr className="bg-slate-950/90">
+                                  <td
+                                    className={`px-6 py-2 min-w-[10rem] max-w-[14rem] sticky left-0 z-[19] bg-slate-950/90 border-r border-slate-800/90 border-b border-slate-800 shadow-[2px_0_10px_rgba(0,0,0,0.35)] text-[10px] font-bold uppercase tracking-wider text-cyan-500/90`}
+                                  >
+                                    {field}
+                                  </td>
+                                  <td colSpan={4} className="border-b border-slate-800 bg-slate-950/90 px-6 py-2" aria-hidden />
+                                </tr>
+                              ) : null}
+                              <tr className="group hover:bg-slate-800/40 transition-all">
                               <td className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyTdFirst}`}>
                                 <div className="flex flex-col gap-0.5">
                                   <div className="flex items-start justify-between gap-2">
@@ -328,6 +396,35 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                   ) : null}
                                 </div>
                               </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[10px] font-bold text-slate-400 border border-slate-700 bg-slate-950/40 px-2 py-0.5 rounded-md">
+                                      {e.countryName}
+                                    </span>
+                                    {e.nextEarningsDate ? (
+                                      <span
+                                        className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
+                                        title={`次期決算予定日: ${e.nextEarningsDate}`}
+                                      >
+                                        E:{e.daysToEarnings != null ? `D${e.daysToEarnings}` : e.nextEarningsDate}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-500">E:—</span>
+                                    )}
+                                    {e.dividendYieldPercent != null ? (
+                                      <span
+                                        className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
+                                        title={e.annualDividendRate != null ? `年間配当: ${e.annualDividendRate}` : "年間配当: —"}
+                                      >
+                                        Div:{e.dividendYieldPercent.toFixed(2)}%
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-500">Div:—</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
                               <td
                                 className={`px-6 py-4 text-right font-mono font-bold ${
                                   e.latestAlpha != null && Number.isFinite(e.latestAlpha)
@@ -373,10 +470,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                   ) : null}
                                 </div>
                               </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      ))}
+                              </tr>
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
                     </table>
                   </div>
                 </div>

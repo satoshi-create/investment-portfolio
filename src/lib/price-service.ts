@@ -18,6 +18,16 @@ const yahooFinance = new YahooFinance();
 
 export type PriceBar = { date: string; close: number };
 
+export type EquityResearchSnapshot = {
+  ticker: string;
+  /** YYYY-MM-DD */
+  nextEarningsDate: string | null;
+  /** Annual dividend per share/unit (local currency). */
+  annualDividendRate: number | null;
+  /** Dividend yield percent (e.g. 2.15). */
+  dividendYieldPercent: number | null;
+};
+
 /** Row ready for `alpha_history` / dashboard (daily alpha vs VOO, last shared session). */
 export type LatestAlphaPriceRow = {
   holdingId: string;
@@ -136,6 +146,98 @@ function chartBarDateYmd(q: { date: unknown }): string | null {
   return formatDateYmd(d);
 }
 
+function ymdFromYahooDateLike(v: unknown): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return formatDateYmd(v);
+  if (typeof v === "number" && Number.isFinite(v)) {
+    // Yahoo sometimes returns epoch seconds.
+    const ms = v > 10_000_000_000 ? v : v * 1000;
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return null;
+    return formatDateYmd(d);
+  }
+  const s = String(v).trim();
+  if (s.length === 0) return null;
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return formatDateYmd(d);
+  // Already YYYY-MM-DD?
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
+}
+
+function parseDividendYieldPercent(raw: unknown): number | null {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  // Yahoo summaryDetail.dividendYield is usually ratio (e.g. 0.0215).
+  return n <= 1.5 ? Math.round(n * 10000) / 100 : Math.round(n * 100) / 100;
+}
+
+function daysUntilYmd(ymd: string): number | null {
+  const d = new Date(`${ymd}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const diffMs = d.getTime() - todayUtc.getTime();
+  return Math.round(diffMs / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * Yahoo から「次回決算日」「配当（年率/利回り）」を取得（軽量な quoteSummary）。
+ * 失敗した銘柄は null（ログのみ）で継続。
+ */
+export async function fetchEquityResearchSnapshots(
+  inputs: { ticker: string; providerSymbol?: string | null }[],
+  options?: { concurrency?: number; batchDelayMs?: number },
+): Promise<Map<string, EquityResearchSnapshot>> {
+  const concurrency = Math.max(1, options?.concurrency ?? 3);
+  const batchDelayMs = options?.batchDelayMs ?? 350;
+
+  const settled = await runBatched(inputs, concurrency, batchDelayMs, async (it) => {
+    const ticker = it.ticker.trim();
+    if (ticker.length === 0) return null;
+    const sym = toYahooFinanceSymbol(ticker, it.providerSymbol ?? null);
+    if (!sym) return null;
+    try {
+      const qs = await yahooFinance.quoteSummary(sym, {
+        modules: ["calendarEvents", "summaryDetail"],
+      });
+
+      // calendarEvents.earnings.earningsDate: array of { raw, fmt } or Date-like
+      const earningsArr =
+        (qs as any)?.calendarEvents?.earnings?.earningsDate ??
+        (qs as any)?.calendarEvents?.earnings?.earningsDate?.[0];
+      const firstE =
+        Array.isArray(earningsArr) && earningsArr.length > 0 ? earningsArr[0] : earningsArr ?? null;
+      const nextEarningsDate =
+        ymdFromYahooDateLike((firstE as any)?.raw ?? (firstE as any)?.fmt ?? firstE) ?? null;
+
+      const annualDividendRateRaw = (qs as any)?.summaryDetail?.dividendRate;
+      const annualDividendRate =
+        typeof annualDividendRateRaw === "number" && Number.isFinite(annualDividendRateRaw) && annualDividendRateRaw > 0
+          ? annualDividendRateRaw
+          : null;
+
+      const dividendYieldPercent = parseDividendYieldPercent((qs as any)?.summaryDetail?.dividendYield);
+
+      return {
+        ticker: ticker.toUpperCase(),
+        nextEarningsDate,
+        annualDividendRate,
+        dividendYieldPercent,
+      } satisfies EquityResearchSnapshot;
+    } catch (e) {
+      logSkip(sym, "quoteSummary failed (research snapshot)", e);
+      return null;
+    }
+  });
+
+  const out = new Map<string, EquityResearchSnapshot>();
+  for (const r of settled) {
+    if (r == null) continue;
+    out.set(r.ticker, r);
+  }
+  return out;
+}
 async function fetchChartCloses(yahooSymbol: string, calendarDays: number): Promise<PriceBar[]> {
   const days = Math.max(1, Math.floor(Number.isFinite(calendarDays) ? calendarDays : 1));
   const { period1, period2 } = periodRangeForCalendarDays(days);
