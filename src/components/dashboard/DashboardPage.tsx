@@ -230,6 +230,7 @@ export function DashboardPage() {
           totalHoldings={summary.totalHoldings}
           averageAlpha={summary.portfolioAverageAlpha}
           onTrade={(init) => openTradeForm(init)}
+          onTradeNew={() => openTradeForm(null)}
         />
         <HoldingsDetailTable stocks={stocks} />
         <TradeEntryForm

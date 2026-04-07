@@ -62,11 +62,12 @@ type HoldingRow = {
   quantity: number;
   avgAcquisitionPrice: number | null;
   name: string | null;
+  accountType: string | null;
 };
 
 async function selectHolding(tx: Transaction, userId: string, ticker: string): Promise<HoldingRow | null> {
   const rs = await tx.execute({
-    sql: `SELECT id, quantity, avg_acquisition_price, name FROM holdings WHERE user_id = ? AND ticker = ? LIMIT 1`,
+    sql: `SELECT id, quantity, avg_acquisition_price, name, account_type FROM holdings WHERE user_id = ? AND ticker = ? LIMIT 1`,
     args: [userId, ticker],
   });
   if (rs.rows.length === 0) return null;
@@ -79,6 +80,7 @@ async function selectHolding(tx: Transaction, userId: string, ticker: string): P
         ? Number(r.avg_acquisition_price)
         : null,
     name: r.name != null ? String(r.name) : null,
+    accountType: r.account_type != null ? String(r.account_type) : null,
   };
 }
 
@@ -131,8 +133,8 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
       await tx.execute({
         sql: `INSERT INTO holdings (
                 id, user_id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category,
-                provider_symbol, valuation_factor, created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, datetime('now'))`,
+                provider_symbol, valuation_factor, account_type, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, datetime('now'))`,
         args: [
           holdingId,
           p.userId,
@@ -143,6 +145,7 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
           structureTagsJson,
           sectorColumn,
           p.categoryForNewHolding,
+          p.accountName,
         ],
       });
     } else {
@@ -157,7 +160,9 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
         newAvg = (oldQ * oldAvg + qty * unit) / newQty;
       }
       await tx.execute({
-        sql: `UPDATE holdings SET quantity = ?, avg_acquisition_price = ?, name = ?, structure_tags = ?, sector = ? WHERE id = ? AND user_id = ?`,
+        sql: `UPDATE holdings
+              SET quantity = ?, avg_acquisition_price = ?, name = ?, structure_tags = ?, sector = ?
+              WHERE id = ? AND user_id = ?`,
         args: [newQty, newAvg, displayName, structureTagsJson, sectorColumn, holdingId, p.userId],
       });
     }

@@ -35,6 +35,8 @@ export interface Stock {
   id: string;
   ticker: string;
   name: string;
+  /** `holdings.account_type`（特定 / NISA）。未設定時は null（表示側で特定扱い可） */
+  accountType: "特定" | "NISA" | null;
   /** 構造投資テーマ（`structure_tags` 先頭） */
   tag: string;
   alphaHistory: AlphaHistory;

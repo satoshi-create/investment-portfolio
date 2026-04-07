@@ -244,6 +244,7 @@ type HoldingQueryRow = {
   structure_tags: unknown;
   sector: unknown;
   category: unknown;
+  account_type: unknown;
   provider_symbol: unknown;
   valuation_factor: unknown;
 };
@@ -299,6 +300,8 @@ function buildDraftsFromHoldingRows(
     const alphaHistory = series.map((p) => p.alpha);
     const currentPrice = latestCloseFromSeries(series);
     const qty = Number(row.quantity);
+    const accountTypeRaw = row.account_type != null ? String(row.account_type).trim() : "";
+    const accountType = accountTypeRaw === "NISA" ? "NISA" : accountTypeRaw === "特定" ? "特定" : null;
     const valuationFactor =
       row.valuation_factor != null && Number.isFinite(Number(row.valuation_factor))
         ? Number(row.valuation_factor)
@@ -334,6 +337,7 @@ function buildDraftsFromHoldingRows(
       id,
       ticker,
       name: row.name != null ? String(row.name) : "",
+      accountType,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
       quantity: qty,
@@ -553,7 +557,7 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
     resolveBenchmarkSnapshot(),
     resolveFxUsdJpyRate(),
     db.execute({
-      sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, provider_symbol, valuation_factor
+      sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor
             FROM holdings
             WHERE user_id = ? AND quantity > 0
             ORDER BY ticker`,
@@ -669,7 +673,7 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
   const h = await db.execute({
-    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, provider_symbol, valuation_factor
+    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor
           FROM holdings
           WHERE user_id = ? AND quantity > 0
           ORDER BY ticker`,
@@ -781,6 +785,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       id: String(row.signal_id),
       ticker,
       name: row.name != null ? String(row.name) : "",
+      accountType: null,
       tag,
       alphaHistory: [alpha],
       weight: 0,

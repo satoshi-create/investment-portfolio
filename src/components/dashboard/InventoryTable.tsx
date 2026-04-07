@@ -18,11 +18,13 @@ export function InventoryTable({
   totalHoldings,
   averageAlpha,
   onTrade,
+  onTradeNew,
 }: {
   stocks: Stock[];
   totalHoldings: number;
   averageAlpha: number;
   onTrade?: (initial: TradeEntryInitial) => void;
+  onTradeNew?: () => void;
 }) {
   const avgAlphaClass =
     averageAlpha > 0 ? "text-emerald-400" : averageAlpha < 0 ? "text-rose-400" : "text-slate-400";
@@ -33,12 +35,23 @@ export function InventoryTable({
         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Inventory Status
         </h3>
-        <div className="flex items-center gap-3 bg-background px-3 py-1.5 rounded-lg border border-border">
-          <Search size={14} className="text-muted-foreground" />
-          <input
-            className="bg-transparent border-none outline-none text-xs w-48 text-foreground/90"
-            placeholder="Filter structure..."
-          />
+        <div className="flex items-center gap-2">
+          {onTradeNew ? (
+            <button
+              type="button"
+              onClick={onTradeNew}
+              className="text-[10px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-3 py-2 rounded-lg hover:bg-accent-cyan/10 transition-all"
+            >
+              取引入力
+            </button>
+          ) : null}
+          <div className="flex items-center gap-3 bg-background px-3 py-1.5 rounded-lg border border-border">
+            <Search size={14} className="text-muted-foreground" />
+            <input
+              className="bg-transparent border-none outline-none text-xs w-48 text-foreground/90"
+              placeholder="Filter structure..."
+            />
+          </div>
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -60,22 +73,34 @@ export function InventoryTable({
                       <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors">
                         {stock.ticker}
                       </span>
-                      {onTrade ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onTrade({
-                              ticker: stock.ticker,
-                              name: stock.name || undefined,
-                              ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
-                              sector: stock.sector ?? stock.secondaryTag,
-                            })
-                          }
-                          className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-cyan-400 border border-cyan-500/40 px-2 py-0.5 rounded-md hover:bg-cyan-500/10"
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span
+                          className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                            (stock.accountType ?? "特定") === "NISA"
+                              ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
+                              : "text-muted-foreground border-border bg-background/60"
+                          }`}
+                          title="口座区分（holdings.account_type）"
                         >
-                          Trade
-                        </button>
-                      ) : null}
+                          {stock.accountType ?? "特定"}
+                        </span>
+                        {onTrade ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onTrade({
+                                ticker: stock.ticker,
+                                name: stock.name || undefined,
+                                ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
+                                sector: stock.sector ?? stock.secondaryTag,
+                              })
+                            }
+                            className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-0.5 rounded-md hover:bg-accent-cyan/10"
+                          >
+                            Trade
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     {stock.name ? (
                       <span className="text-[10px] text-muted-foreground leading-snug line-clamp-2" title={stock.name}>

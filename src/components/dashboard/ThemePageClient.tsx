@@ -229,6 +229,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 totalHoldings={stocks.length}
                 averageAlpha={data.themeAverageAlpha}
                 onTrade={(init) => openTradeForm(init)}
+                onTradeNew={() => openTradeForm(null)}
               />
             ) : null}
 

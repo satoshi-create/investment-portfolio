@@ -42,7 +42,7 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Pr
   const [unitPrice, setUnitPrice] = useState("");
   const [feesJpy, setFeesJpy] = useState("0");
   const [tradeDate, setTradeDate] = useState(todayYmd);
-  const [accountName, setAccountName] = useState("特定");
+  const [accountName, setAccountName] = useState<"特定" | "NISA">("特定");
   const [category, setCategory] = useState<"Core" | "Satellite">("Satellite");
   const [structureTheme, setStructureTheme] = useState("");
   const [structureSector, setStructureSector] = useState("");
@@ -129,13 +129,31 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Pr
         <form onSubmit={onSubmit} className="space-y-4 p-4">
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">ティッカー</label>
-            <input
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
-              placeholder="NVDA / 9501"
-              required
-            />
+            {initial ? (
+              <input
+                value={ticker}
+                readOnly
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono opacity-90"
+              />
+            ) : (
+              <select
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                required
+              >
+                <option value="" disabled>
+                  選択してください
+                </option>
+                <option value="NVDA">NVDA</option>
+                <option value="NFLX">NFLX</option>
+                <option value="COP">COP</option>
+                <option value="06311181">06311181</option>
+                <option value="NIO">NIO</option>
+                <option value="ENPH">ENPH</option>
+                <option value="WMT">WMT</option>
+              </select>
+            )}
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">銘柄名（任意）</label>
@@ -182,14 +200,27 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Pr
             </div>
             <div>
               <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">口座</label>
-              <select
-                value={accountName}
-                onChange={(e) => setAccountName(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
-              >
-                <option value="特定">特定</option>
-                <option value="NISA">NISA</option>
-              </select>
+              <div className="flex rounded-lg border border-slate-700 bg-slate-950 p-1">
+                <button
+                  type="button"
+                  onClick={() => setAccountName("特定")}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-bold ${
+                    accountName === "特定" ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  特定
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAccountName("NISA")}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-bold ${
+                    accountName === "NISA" ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  NISA
+                </button>
+              </div>
+              <p className="text-[9px] text-slate-600 mt-1">短期 Alpha 狙いは「特定」デフォルト。</p>
             </div>
           </div>
           <div>

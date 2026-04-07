@@ -127,9 +127,21 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
               <tr key={s.id} className="group hover:bg-muted/60 transition-colors">
                 <td className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyTdFirst}`}>
                   <div className="flex flex-col gap-0.5">
-                    <span className="font-medium text-foreground max-w-[11rem] truncate" title={s.name || s.ticker}>
-                      {s.name || s.ticker}
-                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-foreground max-w-[11rem] truncate" title={s.name || s.ticker}>
+                        {s.name || s.ticker}
+                      </span>
+                      <span
+                        className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border shrink-0 ${
+                          (s.accountType ?? "特定") === "NISA"
+                            ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
+                            : "text-muted-foreground border-border bg-background/60"
+                        }`}
+                        title="口座区分（holdings.account_type）"
+                      >
+                        {s.accountType ?? "特定"}
+                      </span>
+                    </div>
                     <span className="text-[10px] font-mono text-muted-foreground">{s.ticker}</span>
                   </div>
                 </td>

@@ -69,12 +69,14 @@ CREATE TABLE "holdings" (
   `avg_acquisition_price` real,
   `structure_tags` text DEFAULT '[]',
   `category` text NOT NULL,
+  `account_type` text NOT NULL DEFAULT '特定',
   `created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
   `provider_symbol` text,
   `valuation_factor` real DEFAULT 1 NOT NULL,
   `sector` text,
   CONSTRAINT `fk_holdings_user_id_profiles_id_fk` FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`) ON DELETE CASCADE,
-  CONSTRAINT "holdings_check_1" CHECK(category IN ('Core','Satellite'))
+  CONSTRAINT "holdings_check_1" CHECK(category IN ('Core','Satellite')),
+  CONSTRAINT "holdings_account_type_check" CHECK(account_type IN ('特定','NISA'))
 );
 
 CREATE INDEX `idx_holdings_ticker` ON `holdings` (`ticker`);
