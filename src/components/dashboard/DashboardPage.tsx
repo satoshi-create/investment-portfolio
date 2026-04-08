@@ -45,6 +45,8 @@ type DashboardPayload = {
 };
 
 export function DashboardPage() {
+  /** Lucide SVG を SSR→クライアントでハイドレーションすると、Dark Reader 等が DOM に挿入した属性で不一致になる。マウント後のみ本体を描画する。 */
+  const [clientReady, setClientReady] = useState(false);
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,6 +90,10 @@ export function DashboardPage() {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    setClientReady(true);
+  }, []);
 
   const onGenerateSignals = () => {
     setActionMessage(null);
@@ -138,6 +144,18 @@ export function DashboardPage() {
     setTradeInitial(initial);
     setTradeFormOpen(true);
   }, []);
+
+  if (!clientReady) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
+        <div className="max-w-6xl mx-auto space-y-6" aria-busy="true">
+          <div className="h-28 rounded-2xl border border-border bg-muted/20 animate-pulse" />
+          <div className="h-24 rounded-2xl border border-border bg-muted/20 animate-pulse" />
+          <div className="h-64 rounded-2xl border border-border bg-muted/20 animate-pulse" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">

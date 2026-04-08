@@ -320,6 +320,229 @@ export async function fetchLatestPriceWithChangePct(
   };
 }
 
+/** Yahoo `quote` 由来のライブに近い価格（優先）＋ chart 日次（フォールバック）の合成結果。 */
+export type HybridHoldingPriceSnapshot = {
+  price: number;
+  changePct: number | null;
+  source: "live" | "close";
+  /** ISO 8601 */
+  asOf: string;
+};
+
+function finitePositive(n: unknown): number | null {
+  const x = Number(n);
+  if (!Number.isFinite(x) || x <= 0) return null;
+  return x;
+}
+
+function pctFromQuoteField(n: unknown): number | null {
+  if (n == null) return null;
+  const x = Number(n);
+  if (!Number.isFinite(x)) return null;
+  return roundAlphaMetric(x);
+}
+
+/** Yahoo の *Time は秒またはミリ秒の UNIX。 */
+function quoteTimeToIso(raw: unknown): string | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const ms = n < 1e12 ? n * 1000 : n;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+/**
+ * `quote` から市場状態に応じて最も「今」に近い価格を選択（REGULAR / PRE / POST / CLOSED）。
+ */
+export function pickLivePriceFromQuote(q: Record<string, unknown>): {
+  price: number;
+  changePct: number | null;
+  asOf: string;
+} | null {
+  const state = String(q["marketState"] ?? "");
+  const prevClose = finitePositive(q["regularMarketPreviousClose"]);
+  const reg = finitePositive(q["regularMarketPrice"]);
+  const post = finitePositive(q["postMarketPrice"]);
+  const pre = finitePositive(q["preMarketPrice"]);
+  const nowIso = new Date().toISOString();
+
+  const pctVsPrev = (price: number): number | null => {
+    if (prevClose == null || prevClose <= 0) return null;
+    return roundAlphaMetric(((price - prevClose) / prevClose) * 100);
+  };
+
+  if (state === "POST" || state === "POSTPOST") {
+    if (post != null) {
+      return {
+        price: post,
+        changePct: pctFromQuoteField(q["postMarketChangePercent"]) ?? pctVsPrev(post),
+        asOf: quoteTimeToIso(q["postMarketTime"]) ?? quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+      };
+    }
+    if (reg != null) {
+      return {
+        price: reg,
+        changePct: pctFromQuoteField(q["regularMarketChangePercent"]) ?? pctVsPrev(reg),
+        asOf: quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+      };
+    }
+  }
+
+  if (state === "PRE" || state === "PREPRE") {
+    if (pre != null) {
+      return {
+        price: pre,
+        changePct: pctFromQuoteField(q["preMarketChangePercent"]) ?? pctVsPrev(pre),
+        asOf: quoteTimeToIso(q["preMarketTime"]) ?? nowIso,
+      };
+    }
+    if (reg != null) {
+      return {
+        price: reg,
+        changePct: pctFromQuoteField(q["regularMarketChangePercent"]) ?? pctVsPrev(reg),
+        asOf: quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+      };
+    }
+  }
+
+  if (state === "REGULAR" && reg != null) {
+    return {
+      price: reg,
+      changePct: pctFromQuoteField(q["regularMarketChangePercent"]) ?? pctVsPrev(reg),
+      asOf: quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+    };
+  }
+
+  if (state === "CLOSED") {
+    if (post != null) {
+      return {
+        price: post,
+        changePct: pctFromQuoteField(q["postMarketChangePercent"]) ?? pctVsPrev(post),
+        asOf: quoteTimeToIso(q["postMarketTime"]) ?? quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+      };
+    }
+    if (reg != null) {
+      return {
+        price: reg,
+        changePct: pctFromQuoteField(q["regularMarketChangePercent"]) ?? pctVsPrev(reg),
+        asOf: quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+      };
+    }
+  }
+
+  if (post != null) {
+    return {
+      price: post,
+      changePct: pctFromQuoteField(q["postMarketChangePercent"]) ?? pctVsPrev(post),
+      asOf: quoteTimeToIso(q["postMarketTime"]) ?? nowIso,
+    };
+  }
+  if (reg != null) {
+    return {
+      price: reg,
+      changePct: pctFromQuoteField(q["regularMarketChangePercent"]) ?? pctVsPrev(reg),
+      asOf: quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+    };
+  }
+  if (pre != null) {
+    return {
+      price: pre,
+      changePct: pctFromQuoteField(q["preMarketChangePercent"]) ?? pctVsPrev(pre),
+      asOf: quoteTimeToIso(q["preMarketTime"]) ?? nowIso,
+    };
+  }
+  return null;
+}
+
+/**
+ * `yahooFinance.quote` でライブに近い最新値を取得（chart とは独立）。
+ */
+export async function fetchLiveQuoteSnapshot(
+  ticker: string,
+  providerSymbol?: string | null,
+): Promise<{ price: number; changePct: number | null; asOf: string } | null> {
+  const yahooSymbol = toYahooFinanceSymbol(ticker, providerSymbol);
+  if (!yahooSymbol) return null;
+  const logLabel = trimProvider(providerSymbol) ?? ticker;
+  try {
+    const q = (await yahooFinance.quote(yahooSymbol, {
+      fields: [
+        "symbol",
+        "marketState",
+        "regularMarketPrice",
+        "regularMarketChangePercent",
+        "regularMarketTime",
+        "regularMarketPreviousClose",
+        "postMarketPrice",
+        "postMarketChangePercent",
+        "postMarketTime",
+        "preMarketPrice",
+        "preMarketChangePercent",
+        "preMarketTime",
+      ],
+    })) as unknown as Record<string, unknown>;
+    if (q == null || typeof q !== "object") return null;
+    return pickLivePriceFromQuote(q);
+  } catch (e) {
+    logSkip(logLabel, "fetchLiveQuoteSnapshot (quote) failed", e);
+    return null;
+  }
+}
+
+/**
+ * ダッシュボード用: quote ライブ（最優先）→ 日足 chart 終値 → 呼び出し側で alpha 系列へフォールバック。
+ */
+export async function fetchHoldingsHybridPriceSnapshots(
+  holdings: { ticker: string; providerSymbol?: string | null }[],
+  options?: { concurrency?: number; batchDelayMs?: number },
+): Promise<Map<string, HybridHoldingPriceSnapshot>> {
+  const uniq = new Map<string, { ticker: string; providerSymbol: string | null }>();
+  for (const h of holdings) {
+    const k = holdingLivePriceKey(h.ticker, h.providerSymbol);
+    if (!uniq.has(k)) {
+      uniq.set(k, { ticker: h.ticker, providerSymbol: trimProvider(h.providerSymbol) });
+    }
+  }
+  const entries = [...uniq.values()];
+  const concurrency = Math.max(1, options?.concurrency ?? 3);
+  const batchDelayMs = options?.batchDelayMs ?? 350;
+  const results = await runBatched(entries, concurrency, batchDelayMs, async (it) => {
+    const key = holdingLivePriceKey(it.ticker, it.providerSymbol);
+    const live = await fetchLiveQuoteSnapshot(it.ticker, it.providerSymbol);
+    if (live != null && Number.isFinite(live.price) && live.price > 0) {
+      return {
+        key,
+        value: {
+          price: live.price,
+          changePct: live.changePct,
+          source: "live" as const,
+          asOf: live.asOf,
+        } satisfies HybridHoldingPriceSnapshot,
+      };
+    }
+    const snap = await fetchLatestPriceWithChangePct(it.ticker, it.providerSymbol);
+    if (!Number.isFinite(snap.close) || snap.close <= 0 || snap.date.length < 10) {
+      return { key, value: null as HybridHoldingPriceSnapshot | null };
+    }
+    return {
+      key,
+      value: {
+        price: snap.close,
+        changePct: snap.changePct,
+        source: "close" as const,
+        asOf: `${snap.date.slice(0, 10)}T00:00:00.000Z`,
+      } satisfies HybridHoldingPriceSnapshot,
+    };
+  });
+  const out = new Map<string, HybridHoldingPriceSnapshot>();
+  for (const r of results) {
+    if (r.value != null) out.set(r.key, r.value);
+  }
+  return out;
+}
+
 /** Stable key for `fetchLatestHoldingsPriceSnapshots` map (ticker + optional Yahoo override). */
 export function holdingLivePriceKey(ticker: string, providerSymbol?: string | null): string {
   const t = ticker.trim();

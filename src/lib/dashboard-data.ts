@@ -38,7 +38,8 @@ import {
   fetchEquityResearchSnapshots,
   fetchRecentDatedDailyAlphasVsVoo,
   fetchLatestPriceWithChangePct,
-  fetchLatestHoldingsPriceSnapshots,
+  fetchHoldingsHybridPriceSnapshots,
+  type HybridHoldingPriceSnapshot,
   fetchUsdJpyRate,
   holdingLivePriceKey,
 } from "@/src/lib/price-service";
@@ -328,7 +329,7 @@ function buildDraftsFromHoldingRows(
   byTicker: Map<string, AlphaPoint[]>,
   researchByTicker: Map<string, { nextEarningsDate: string | null; annualDividendRate: number | null; dividendYieldPercent: number | null }>,
   fxUsdJpy: number,
-  livePriceByHoldingKey: Map<string, { close: number; changePct: number | null }>,
+  hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
 ): StockDraft[] {
   return rows.map((row) => {
     const id = String(row.id);
@@ -339,9 +340,13 @@ function buildDraftsFromHoldingRows(
     const providerSymbol =
       row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null;
     const liveKey = holdingLivePriceKey(ticker, providerSymbol);
-    const live = livePriceByHoldingKey.get(liveKey);
+    const hybrid = hybridPriceByHoldingKey.get(liveKey);
+    const fromHybrid =
+      hybrid != null && Number.isFinite(hybrid.price) && hybrid.price > 0 ? hybrid : null;
     const currentPrice =
-      live != null && Number.isFinite(live.close) && live.close > 0 ? live.close : seriesClose;
+      fromHybrid != null ? fromHybrid.price : seriesClose;
+    const priceSource: "live" | "close" = fromHybrid != null ? fromHybrid.source : "close";
+    const lastUpdatedAt: string | null = fromHybrid != null ? fromHybrid.asOf : null;
     const qty = Number(row.quantity);
     const accountTypeRaw = row.account_type != null ? String(row.account_type).trim() : "";
     const accountType = accountTypeRaw === "NISA" ? "NISA" : accountTypeRaw === "特定" ? "特定" : null;
@@ -382,8 +387,8 @@ function buildDraftsFromHoldingRows(
     const unrealizedPnlJpy =
       quoteCurrencyForInstrument(instrumentKind) === "JPY" ? unrealizedPnlLocal : unrealizedPnlLocal * fxUsdJpy;
     const dayChangePercent =
-      live != null && live.changePct != null && Number.isFinite(live.changePct)
-        ? live.changePct
+      fromHybrid != null && fromHybrid.changePct != null && Number.isFinite(fromHybrid.changePct)
+        ? fromHybrid.changePct
         : (() => {
             const two = lastTwoClosesFromSeries(series);
             const dayChangeRaw = two != null ? dailyReturnPercent(two.prevClose, two.latestClose) : null;
@@ -394,6 +399,8 @@ function buildDraftsFromHoldingRows(
       id,
       ticker,
       name: row.name != null ? String(row.name) : "",
+      priceSource,
+      lastUpdatedAt,
       accountType,
       countryName,
       nextEarningsDate,
@@ -707,14 +714,14 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
     return themeFromStructureTags(tagsJson) === themeName;
   });
 
-  const [researchByTicker, livePriceByHoldingKey] = await Promise.all([
+  const [researchByTicker, hybridPriceByHoldingKey] = await Promise.all([
     fetchEquityResearchSnapshots(
       matching.map((r) => ({
         ticker: String(r.ticker),
         providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
       })),
     ),
-    fetchLatestHoldingsPriceSnapshots(
+    fetchHoldingsHybridPriceSnapshots(
       matching.map((r) => ({
         ticker: String(r.ticker),
         providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
@@ -751,7 +758,7 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
       byTicker,
       researchByTicker,
       fxUsdJpy,
-      livePriceByHoldingKey,
+      hybridPriceByHoldingKey,
     );
     themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
@@ -882,14 +889,14 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   const byTicker = buildByTickerFromAlphaRows(a.rows as Record<string, unknown>[]);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
   const holdingRowsForDash = h.rows as unknown as HoldingQueryRow[];
-  const [researchByTicker, livePriceByHoldingKey] = await Promise.all([
+  const [researchByTicker, hybridPriceByHoldingKey] = await Promise.all([
     fetchEquityResearchSnapshots(
       holdingRowsForDash.map((r) => ({
         ticker: String(r.ticker),
         providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
       })),
     ),
-    fetchLatestHoldingsPriceSnapshots(
+    fetchHoldingsHybridPriceSnapshots(
       holdingRowsForDash.map((r) => ({
         ticker: String(r.ticker),
         providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
@@ -901,7 +908,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     byTicker,
     researchByTicker,
     fxUsdJpy,
-    livePriceByHoldingKey,
+    hybridPriceByHoldingKey,
   );
 
   const totalMarketValue = drafts.reduce(
@@ -982,6 +989,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       instrumentKind,
       secondaryTag: sectorFromStructureTags(stags),
       sector: parseSector(row.sector),
+      priceSource: "close",
+      lastUpdatedAt: null,
       currentPrice: null,
       marketValue: 0,
       valuationFactor: 1,

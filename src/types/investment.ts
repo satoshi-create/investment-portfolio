@@ -69,6 +69,10 @@ export interface Stock {
   secondaryTag: string;
   /** DB `holdings.sector`（明示セクター）。未設定は null（表示・集計は secondaryTag で代替） */
   sector: string | null;
+  /** 表示中の `currentPrice` の取得元（ライブ quote / 日次終値または DB 系列） */
+  priceSource: "live" | "close";
+  /** 価格の基準時刻（ISO 8601）。ライブ時は quote のタイムスタンプ、日次時はその営業日の目安。未取得は null */
+  lastUpdatedAt: string | null;
   /** `alpha_history` 最新行の終値（無ければ null） */
   currentPrice: number | null;
   /**

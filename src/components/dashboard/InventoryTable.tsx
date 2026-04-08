@@ -263,8 +263,24 @@ export function InventoryTable({
                   <div className="flex flex-col items-end gap-0.5">
                     <span className="font-mono text-foreground/90 font-bold">{stock.quantity}</span>
                     {stock.currentPrice != null && stock.currentPrice > 0 ? (
-                      <span className="text-[9px] text-muted-foreground font-mono">
-                        @ {stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}
+                      <span className="text-[9px] text-muted-foreground font-mono inline-flex items-center gap-1 flex-wrap justify-end">
+                        <span>
+                          @ {stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}
+                        </span>
+                        {stock.priceSource === "live" && stock.lastUpdatedAt ? (
+                          <span
+                            className="inline-flex items-center gap-0.5"
+                            title={`Live（Yahoo quote）\n${new Date(stock.lastUpdatedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 motion-safe:animate-pulse"
+                              aria-hidden
+                            />
+                            <span className="text-[7px] font-bold uppercase tracking-wide text-emerald-400/90">
+                              Live
+                            </span>
+                          </span>
+                        ) : null}
                       </span>
                     ) : null}
                     <span className="text-[9px] text-muted-foreground font-bold tracking-tighter">
