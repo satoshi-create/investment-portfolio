@@ -58,7 +58,7 @@ export interface Stock {
   avgAcquisitionPrice: number | null;
   /** 含み損益（銘柄の建て通貨ベース、quantity×factor 込み） */
   unrealizedPnlLocal: number;
-  /** 含み損益の円換算（米株は USD_JPY を適用） */
+  /** 含み損益の円換算（米株は USD/JPY レートを適用） */
   unrealizedPnlJpy: number;
   /** (現在価格 − 平均取得) / 平均取得 × 100（取得単価が無効なら 0） */
   unrealizedPnlPercent: number;
@@ -73,7 +73,7 @@ export interface Stock {
   currentPrice: number | null;
   /**
    * 円ベースの評価額（表示・ウェイト用）。
-   * 計算: quantity × currentPrice × valuation_factor × (USD_JPY_RATE または 1)。
+   * 計算: quantity × currentPrice × valuation_factor ×（米株は USD/JPY レート、投信等は 1）。
    * 英字ティッカーは USD 換算、数字のみの投信は JPY のまま。
    * 指数価格を参照する投信は valuation_factor で実保有額（NAV 相当）に合わせる。
    */
@@ -245,7 +245,7 @@ export type ClosedTradeDashboardRow = {
   proceedsJpy: number;
   feesJpy: number;
   realizedPnlJpy: number;
-  /** 表示用・騰落率計算用（円/単位）。米国株は終値×USD_JPY_RATE */
+  /** 表示用・騰落率計算用（円/単位）。米国株は終値×USD/JPY */
   currentPriceJpy: number | null;
   /** (現在円単価 − 譲渡÷数量) / (譲渡÷数量) × 100 */
   postExitReturnPct: number | null;

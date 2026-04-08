@@ -1,7 +1,8 @@
 import type { Client } from "@libsql/client";
 
-import { roundAlphaMetric, USD_JPY_RATE } from "@/src/lib/alpha-logic";
-import { fetchLatestPrice } from "@/src/lib/price-service";
+import { roundAlphaMetric } from "@/src/lib/alpha-logic";
+import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
+import { fetchLatestPrice, fetchUsdJpyRate } from "@/src/lib/price-service";
 import type { ClosedTradeDashboardRow } from "@/src/types/investment";
 
 type TradeRowDb = {
@@ -28,10 +29,15 @@ function parseSide(raw: string): "BUY" | "SELL" {
   return raw === "BUY" ? "BUY" : "SELL";
 }
 
-function currentPriceJpyFromQuote(market: "JP" | "US", closeUsdOrJpy: number): number {
+function currentPriceJpyFromQuote(
+  market: "JP" | "US",
+  closeUsdOrJpy: number,
+  fxUsdJpy: number,
+): number {
   if (!Number.isFinite(closeUsdOrJpy) || closeUsdOrJpy <= 0) return NaN;
   if (market === "JP") return closeUsdOrJpy;
-  return closeUsdOrJpy * USD_JPY_RATE;
+  const fx = Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? fxUsdJpy : USD_JPY_RATE_FALLBACK;
+  return closeUsdOrJpy * fx;
 }
 
 function postExitMetrics(
@@ -39,6 +45,7 @@ function postExitMetrics(
   quantity: number,
   proceedsJpy: number,
   closeRaw: number | null,
+  fxUsdJpy: number,
 ): { exitPerUnitJpy: number; currentPriceJpy: number | null; postExitReturnPct: number | null } {
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return { exitPerUnitJpy: NaN, currentPriceJpy: null, postExitReturnPct: null };
@@ -50,7 +57,7 @@ function postExitMetrics(
   if (closeRaw == null || !Number.isFinite(closeRaw) || closeRaw <= 0) {
     return { exitPerUnitJpy, currentPriceJpy: null, postExitReturnPct: null };
   }
-  const currentJpy = currentPriceJpyFromQuote(market, closeRaw);
+  const currentJpy = currentPriceJpyFromQuote(market, closeRaw, fxUsdJpy);
   if (!Number.isFinite(currentJpy) || currentJpy <= 0) {
     return { exitPerUnitJpy, currentPriceJpy: null, postExitReturnPct: null };
   }
@@ -105,6 +112,14 @@ export async function fetchClosedTradesForDashboard(
   db: Client,
   userId: string,
 ): Promise<ClosedTradeDashboardRow[]> {
+  let fxUsdJpy = USD_JPY_RATE_FALLBACK;
+  try {
+    const snap = await fetchUsdJpyRate();
+    if (snap != null && Number.isFinite(snap.rate) && snap.rate > 0) fxUsdJpy = snap.rate;
+  } catch {
+    /* keep fallback */
+  }
+
   let rows: TradeRowDb[];
   try {
     rows = await loadTradeRows(db, userId);
@@ -146,6 +161,7 @@ export async function fetchClosedTradesForDashboard(
       t.quantity,
       t.proceedsJpy,
       closeRaw,
+      fxUsdJpy,
     );
     return {
       id: t.id,

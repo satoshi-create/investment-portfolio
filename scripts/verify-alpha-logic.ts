@@ -13,9 +13,12 @@ import {
   quoteCurrencyForDashboardWeights,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
-  USD_JPY_RATE,
 } from "../src/lib/alpha-logic";
 import { normalizedHoldingValueJpy } from "../src/lib/dashboard-data";
+import { USD_JPY_RATE_FALLBACK } from "../src/lib/fx-constants";
+
+/** Test-assumed FX (matches operational fallback when API is unavailable). */
+const TEST_USD_JPY = USD_JPY_RATE_FALLBACK;
 
 function eq(actual: unknown, expected: unknown, msg?: string) {
   assert.equal(actual, expected, msg);
@@ -51,21 +54,22 @@ eq(computeAlphaPercent(dailyReturnPercent(10_000, 10_200), 0), 2);
 eq(computeAlphaPercent(null, 1), null);
 eq(computeAlphaPercent(1, null), null);
 
-eq(convertValueToJpy(100, "JPY"), 100);
-eq(convertValueToJpy(2, "USD"), 2 * USD_JPY_RATE);
+eq(convertValueToJpy(100, "JPY", TEST_USD_JPY), 100);
+eq(convertValueToJpy(2, "USD", TEST_USD_JPY), 2 * TEST_USD_JPY);
 
 eq(quoteCurrencyForDashboardWeights("NVDA"), "USD");
 eq(quoteCurrencyForDashboardWeights("06311181"), "JPY");
 
-// NVDA: qty × USD price × factor × USD_JPY
+// NVDA: qty × USD price × factor × USD/JPY
 eq(
   normalizedHoldingValueJpy({
     ticker: "NVDA",
     quantity: 10,
     currentPrice: 100,
     valuationFactor: 1,
+    fxUsdJpy: TEST_USD_JPY,
   }),
-  10 * 100 * USD_JPY_RATE,
+  10 * 100 * TEST_USD_JPY,
 );
 // JP fund: JPY path (no FX), factor scales index-style quotes toward NAV
 eq(
@@ -74,6 +78,7 @@ eq(
     quantity: 100,
     currentPrice: 14_000,
     valuationFactor: 0.000_02,
+    fxUsdJpy: TEST_USD_JPY,
   }),
   100 * 14_000 * 0.000_02,
 );
@@ -83,6 +88,7 @@ eq(
     quantity: 10,
     currentPrice: 1000,
     valuationFactor: 1,
+    fxUsdJpy: TEST_USD_JPY,
   }),
   10_000,
 );
@@ -92,6 +98,7 @@ eq(
     quantity: 1,
     currentPrice: null,
     valuationFactor: 1,
+    fxUsdJpy: TEST_USD_JPY,
   }),
   0,
 );

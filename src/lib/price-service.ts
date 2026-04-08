@@ -1,6 +1,8 @@
 /**
  * Yahoo Finance integration — use only from Server Actions, Route Handlers, or scripts.
  * (Do not import from Client Components: exposes server-side usage and API load.)
+ *
+ * For `USD_JPY_RATE_FALLBACK` (client-safe), use `@/src/lib/fx-constants`.
  */
 import YahooFinance from "yahoo-finance2";
 
@@ -316,6 +318,46 @@ export async function fetchLatestPriceWithChangePct(
     date: last.date,
     changePct: changePct != null && Number.isFinite(changePct) ? roundAlphaMetric(changePct) : null,
   };
+}
+
+/** Stable key for `fetchLatestHoldingsPriceSnapshots` map (ticker + optional Yahoo override). */
+export function holdingLivePriceKey(ticker: string, providerSymbol?: string | null): string {
+  const t = ticker.trim();
+  const manual = trimProvider(providerSymbol);
+  return `${t}\u0000${manual ?? ""}`;
+}
+
+/**
+ * Per-holding latest daily close + prior-bar change % (same Yahoo path as `fetchLatestPriceWithChangePct`).
+ * Use for dashboard so「現在価格」と「前日比」が同一データ源になる。
+ */
+export async function fetchLatestHoldingsPriceSnapshots(
+  holdings: { ticker: string; providerSymbol?: string | null }[],
+  options?: { concurrency?: number; batchDelayMs?: number },
+): Promise<Map<string, { close: number; changePct: number | null }>> {
+  const uniq = new Map<string, { ticker: string; providerSymbol: string | null }>();
+  for (const h of holdings) {
+    const k = holdingLivePriceKey(h.ticker, h.providerSymbol);
+    if (!uniq.has(k)) {
+      uniq.set(k, { ticker: h.ticker, providerSymbol: trimProvider(h.providerSymbol) });
+    }
+  }
+  const entries = [...uniq.values()];
+  const concurrency = Math.max(1, options?.concurrency ?? 3);
+  const batchDelayMs = options?.batchDelayMs ?? 350;
+  const results = await runBatched(entries, concurrency, batchDelayMs, async (it) => {
+    const key = holdingLivePriceKey(it.ticker, it.providerSymbol);
+    const snap = await fetchLatestPriceWithChangePct(it.ticker, it.providerSymbol);
+    if (!Number.isFinite(snap.close) || snap.close <= 0) {
+      return { key, value: null as { close: number; changePct: number | null } | null };
+    }
+    return { key, value: { close: snap.close, changePct: snap.changePct } };
+  });
+  const out = new Map<string, { close: number; changePct: number | null }>();
+  for (const r of results) {
+    if (r.value != null) out.set(r.key, r.value);
+  }
+  return out;
 }
 
 /**

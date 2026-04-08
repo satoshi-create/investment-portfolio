@@ -1,0 +1,5 @@
+/**
+ * FX-related constants with **no** Node/Yahoo dependencies.
+ * Safe to import from Client Components (`"use client"`).
+ */
+export const USD_JPY_RATE_FALLBACK = 150;

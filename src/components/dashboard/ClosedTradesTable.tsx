@@ -156,7 +156,7 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">取引履歴</h3>
           <p className="text-[10px] text-muted-foreground mt-0.5">
             完了済み売買（DB: trade_history・売却のみ）。現在価格は Yahoo 終値ベース（米国株は{" "}
-            <span className="font-mono text-muted-foreground/90">USD_JPY_RATE</span> で円換算）。
+            <span className="font-mono text-muted-foreground/90">JPY=X</span> で円換算）。
           </p>
         </div>
       </div>

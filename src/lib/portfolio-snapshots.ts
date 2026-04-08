@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 
-import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER, USD_JPY_RATE } from "@/src/lib/alpha-logic";
+import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { getDashboardData } from "@/src/lib/dashboard-data";
 import type {
@@ -191,6 +192,7 @@ async function upsertHoldingDailySnapshotsFromStocks(
   snapshotDate: string,
   recordedAt: string,
   benchmarkClose: number | null,
+  fxUsdJpyApplied: number,
   stocks: Stock[],
 ): Promise<void> {
   for (const st of stocks) {
@@ -243,7 +245,7 @@ async function upsertHoldingDailySnapshotsFromStocks(
         st.dayChangePercent,
         SIGNAL_BENCHMARK_TICKER,
         benchmarkClose,
-        USD_JPY_RATE,
+        fxUsdJpyApplied,
       ],
     });
   }
@@ -262,6 +264,10 @@ export async function recordPortfolioDailySnapshot(
   const recordedAt = new Date().toISOString();
   const benchmarkClose =
     dash.summary.benchmarkLatestPrice > 0 ? dash.summary.benchmarkLatestPrice : null;
+  const fxUsdJpyApplied =
+    dash.summary.fxUsdJpy != null && Number.isFinite(dash.summary.fxUsdJpy) && dash.summary.fxUsdJpy > 0
+      ? dash.summary.fxUsdJpy
+      : USD_JPY_RATE_FALLBACK;
   const totalMv = dash.totalMarketValue;
   const totalPnlJpy = dash.stocks.reduce((s, st) => s + (Number.isFinite(st.unrealizedPnlJpy) ? st.unrealizedPnlJpy : 0), 0);
   const avgAlpha = dash.summary.portfolioAverageAlpha;
@@ -336,7 +342,7 @@ export async function recordPortfolioDailySnapshot(
         userId,
         snapshotDate,
         recordedAt,
-        USD_JPY_RATE,
+        fxUsdJpyApplied,
         SIGNAL_BENCHMARK_TICKER,
         benchmarkClose,
         totalMv,
@@ -374,6 +380,7 @@ export async function recordPortfolioDailySnapshot(
       snapshotDate,
       recordedAt,
       benchmarkClose,
+      fxUsdJpyApplied,
       dash.stocks,
     );
   } catch (e) {

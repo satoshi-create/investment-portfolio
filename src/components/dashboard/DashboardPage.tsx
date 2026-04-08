@@ -218,6 +218,7 @@ export function DashboardPage() {
           totalProfitJpy={summary.totalProfitJpy}
           totalReturnPct={summary.totalReturnPct}
           totalCostBasisJpy={summary.totalCostBasisJpy}
+          fxUsdJpy={summary.fxUsdJpy}
         />
         <SignalsSection
           signals={signals}
@@ -242,6 +243,7 @@ export function DashboardPage() {
             setTradeInitial(null);
           }}
           onSuccess={() => void loadDashboard()}
+          fxUsdJpy={summary.fxUsdJpy}
         />
       </div>
     </div>

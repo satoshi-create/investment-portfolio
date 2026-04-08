@@ -121,6 +121,7 @@ export function aggregateBySector(
 
 /**
  * `holdings.sector` を優先し、空なら `structure_tags` の 2 番目でキー化して集計（セクターバランス用）。
+ * `StructureTagSlice.weightPercent` は **時価評価額（marketValue）ベース**（銘柄数ではない）。
  */
 export function aggregateByHoldingSector(
   rows: Array<{ sector: string | null | undefined; structureTagsJson: string; marketValue: number }>,

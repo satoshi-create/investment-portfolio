@@ -1,6 +1,8 @@
 import type { Client, Transaction } from "@libsql/core/api";
 
-import { classifyTickerInstrument, USD_JPY_RATE } from "@/src/lib/alpha-logic";
+import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
+import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
+import { fetchUsdJpyRate } from "@/src/lib/price-service";
 import { structureTagsJsonFromThemeSector } from "@/src/lib/structure-tags";
 
 export type ExecuteTradeParams = {
@@ -43,18 +45,20 @@ function isUsTicker(ticker: string): boolean {
   return classifyTickerInstrument(ticker) === "US_EQUITY";
 }
 
-/** 数量×単価（現地）を円換算したグロス（手数料前） */
-function grossJpy(qty: number, unitLocal: number, ticker: string): number {
+/** 数量×単価（現地）を円換算したグロス（手数料前）。米株は `JPY=X` 取得レート（失敗時フォールバック）。 */
+function grossJpy(qty: number, unitLocal: number, ticker: string, fxUsdJpy: number): number {
   const base = qty * unitLocal;
   if (!Number.isFinite(base) || base <= 0) return NaN;
-  return isUsTicker(ticker) ? Math.round(base * USD_JPY_RATE) : Math.round(base);
+  const fx = Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? fxUsdJpy : USD_JPY_RATE_FALLBACK;
+  return isUsTicker(ticker) ? Math.round(base * fx) : Math.round(base);
 }
 
 /** 売却数量ぶんの簿価（円） */
-function costBasisJpySold(qtySold: number, avgLocal: number | null, ticker: string): number {
+function costBasisJpySold(qtySold: number, avgLocal: number | null, ticker: string, fxUsdJpy: number): number {
   if (qtySold <= 0 || avgLocal == null || !Number.isFinite(avgLocal) || avgLocal <= 0) return 0;
   const base = qtySold * avgLocal;
-  return isUsTicker(ticker) ? Math.round(base * USD_JPY_RATE) : Math.round(base);
+  const fx = Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? fxUsdJpy : USD_JPY_RATE_FALLBACK;
+  return isUsTicker(ticker) ? Math.round(base * fx) : Math.round(base);
 }
 
 type HoldingRow = {
@@ -91,7 +95,11 @@ async function resolveSignalsForHolding(tx: Transaction, holdingId: string): Pro
   });
 }
 
-export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTradeParams): Promise<ExecuteTradeResult> {
+export async function executeTradeInTransaction(
+  tx: Transaction,
+  p: ExecuteTradeParams,
+  fxUsdJpy: number,
+): Promise<ExecuteTradeResult> {
   assertYmd(p.tradeDate);
   const ticker = normalizeTicker(p.ticker);
   if (!ticker) return { ok: false, message: "ティッカーを入力してください。" };
@@ -104,7 +112,7 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
   const market = isUsTicker(ticker) ? "US" : "JP";
   const displayName = (p.name && p.name.trim().length > 0 ? p.name.trim() : ticker) as string;
 
-  const gJpy = grossJpy(qty, unit, ticker);
+  const gJpy = grossJpy(qty, unit, ticker, fxUsdJpy);
   if (!Number.isFinite(gJpy) || gJpy <= 0) {
     return { ok: false, message: "金額の計算に失敗しました。単価・数量を確認してください。" };
   }
@@ -205,7 +213,7 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
     return { ok: false, message: "平均取得単価が未設定のため、簿価ベースの確定損益を計算できません。" };
   }
 
-  const costBasis = costBasisJpySold(qty, existing.avgAcquisitionPrice, ticker);
+  const costBasis = costBasisJpySold(qty, existing.avgAcquisitionPrice, ticker, fxUsdJpy);
   const proceedsGrossJpy = gJpy;
   const realizedPnlJpy = proceedsGrossJpy - feesJpy - costBasis;
 
@@ -244,9 +252,17 @@ export async function executeTradeInTransaction(tx: Transaction, p: ExecuteTrade
 }
 
 export async function executeTradeWithClient(db: Client, p: ExecuteTradeParams): Promise<ExecuteTradeResult> {
+  let fxUsdJpy = USD_JPY_RATE_FALLBACK;
+  try {
+    const snap = await fetchUsdJpyRate();
+    if (snap != null && Number.isFinite(snap.rate) && snap.rate > 0) fxUsdJpy = snap.rate;
+  } catch {
+    /* keep fallback */
+  }
+
   const tx = await db.transaction("write");
   try {
-    const out = await executeTradeInTransaction(tx, p);
+    const out = await executeTradeInTransaction(tx, p, fxUsdJpy);
     if (!out.ok) {
       await tx.rollback();
       return out;

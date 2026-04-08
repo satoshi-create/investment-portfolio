@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { GitBranch, Radar } from "lucide-react";
 
 import type { StructureTagSlice } from "@/src/types/investment";
-import { USD_JPY_RATE } from "@/src/lib/alpha-logic";
+import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { StatBox } from "@/src/components/dashboard/StatBox";
 
 const SATELLITE_TARGET_MIN = 6;
@@ -165,6 +165,8 @@ type Props = {
   totalProfitJpy: number;
   totalReturnPct: number;
   totalCostBasisJpy: number;
+  /** `JPY=X` 取得値。失敗時はダッシュボード計算と同様にフォールバック表示。 */
+  fxUsdJpy: number | null;
 };
 
 export function StrategySection({
@@ -174,6 +176,7 @@ export function StrategySection({
   totalProfitJpy,
   totalReturnPct,
   totalCostBasisJpy,
+  fxUsdJpy,
 }: Props) {
   const hasSectors = structureBySector.length > 0;
   const sortedSectors = useMemo(() => sortSectorsForBalanceBar(structureBySector), [structureBySector]);
@@ -182,6 +185,10 @@ export function StrategySection({
   const gcBadge = useMemo(() => balanceBadgePresentation(gcStatus), [gcStatus]);
   const gRound = Math.round(gcBalance.growthPct);
   const cRound = Math.round(gcBalance.cyclicalPct);
+  const fxDisplay =
+    fxUsdJpy != null && Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? fxUsdJpy : USD_JPY_RATE_FALLBACK;
+  const fxNote =
+    fxUsdJpy != null && Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? "JPY=X" : `フォールバック ${USD_JPY_RATE_FALLBACK}`;
 
   return (
     <div className="space-y-4">
@@ -369,7 +376,7 @@ export function StrategySection({
                 ? `¥${totalMarketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                 : "—"
             }
-            subLabel={`米株は USD×${USD_JPY_RATE}。指数は valuation_factor で調整`}
+            subLabel={`米株は USD×${fxDisplay.toFixed(2)}（${fxNote}）。指数は valuation_factor で調整`}
           />
         </div>
       </div>

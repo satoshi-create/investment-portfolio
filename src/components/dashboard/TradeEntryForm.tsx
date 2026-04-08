@@ -4,7 +4,8 @@ import React, { useEffect, useMemo, useState, useTransition } from "react";
 import { X } from "lucide-react";
 
 import { executeTradeAction } from "@/app/actions/trades";
-import { classifyTickerInstrument, USD_JPY_RATE } from "@/src/lib/alpha-logic";
+import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
+import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 
 export type TradeEntryInitial = {
   ticker: string;
@@ -21,6 +22,8 @@ type Props = {
   initial: TradeEntryInitial | null;
   onClose: () => void;
   onSuccess?: () => void;
+  /** 取引実行時の円換算はサーバーで `JPY=X` を再取得。ここは表示ヒント用。 */
+  fxUsdJpy?: number | null;
 };
 
 function todayYmd(): string {
@@ -31,7 +34,7 @@ function todayYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
-export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Props) {
+export function TradeEntryForm({ userId, open, initial, onClose, onSuccess, fxUsdJpy }: Props) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
 
@@ -65,7 +68,11 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess }: Pr
   }, [open, initial]);
 
   const isJp = useMemo(() => classifyTickerInstrument(ticker) === "JP_INVESTMENT_TRUST", [ticker]);
-  const unitLabel = isJp ? `単価（円 / 口・株）` : `単価（USD / 株）→ 円換算 × ${USD_JPY_RATE}`;
+  const fxHint =
+    fxUsdJpy != null && Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? fxUsdJpy : USD_JPY_RATE_FALLBACK;
+  const unitLabel = isJp
+    ? `単価（円 / 口・株）`
+    : `単価（USD / 株）→ 概算円換算 × ${fxHint.toFixed(2)}（参考・実行時は JPY=X）`;
 
   if (!open) return null;
 
