@@ -4,12 +4,13 @@ import React, { useCallback, useEffect, useState, useTransition } from "react";
 
 import { recordPortfolioSnapshotAction } from "@/app/actions/snapshot";
 import { generateSignalsAction } from "@/app/actions/signals";
-import type { DashboardSummary, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
+import type { DashboardSummary, InvestmentThemeRecord, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
+import { ThemesNavigationSection } from "@/src/components/dashboard/ThemesNavigationSection";
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import Link from "next/link";
 import { Camera, RefreshCw, ScrollText } from "lucide-react";
@@ -36,6 +37,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
 type DashboardPayload = {
   userId: string;
   stocks: Stock[];
+  allThemes: InvestmentThemeRecord[];
   signals: Signal[];
   structureBySector: StructureTagSlice[];
   totalMarketValue: number;
@@ -69,6 +71,7 @@ export function DashboardPage() {
       setData({
         userId: json.userId!,
         stocks: json.stocks ?? [],
+        allThemes: json.allThemes ?? [],
         signals: json.signals ?? [],
         structureBySector: json.structureBySector ?? [],
         totalMarketValue: json.totalMarketValue ?? 0,
@@ -117,10 +120,15 @@ export function DashboardPage() {
   };
 
   const stocks = data?.stocks ?? [];
+  const allThemes = data?.allThemes ?? [];
   const signals = data?.signals ?? [];
   const structureBySector = data?.structureBySector ?? [];
   const totalMarketValue = data?.totalMarketValue ?? 0;
   const summary = data?.summary ?? EMPTY_SUMMARY;
+
+  const portfolioThemeSet = new Set(
+    stocks.map((s) => (s.tag ?? "").trim()).filter((x) => x.length > 0),
+  );
 
   const satelliteStockCount = stocks.filter(
     (s) => s.category === "Satellite" && s.quantity > 0 && s.marketValue > 0,
@@ -232,6 +240,10 @@ export function DashboardPage() {
           averageAlpha={summary.portfolioAverageAlpha}
           onTrade={(init) => openTradeForm(init)}
           onTradeNew={() => openTradeForm(null)}
+        />
+        <ThemesNavigationSection
+          themes={allThemes}
+          inPortfolioThemeNames={portfolioThemeSet}
         />
         <HoldingsDetailTable stocks={stocks} />
         <TradeEntryForm

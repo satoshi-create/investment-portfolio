@@ -26,6 +26,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       userId,
       stocks: dash.stocks,
+      allThemes: dash.allThemes,
       signals,
       structureByTheme: dash.structureByTheme,
       structureBySector: dash.structureBySector,

@@ -133,6 +133,8 @@ export type DashboardSummary = {
 
 export type DashboardData = {
   stocks: Stock[];
+  /** 保有の有無に関わらず、ユーザーが登録している全テーマ（`investment_themes`）。 */
+  allThemes: InvestmentThemeRecord[];
   /** 構造投資テーマ（`structure_tags` 先頭）別の評価額・銘柄数 */
   structureByTheme: StructureTagSlice[];
   /** `holdings.sector` 優先、空なら `structure_tags` の 2 番目で集計した評価額・銘柄数 */

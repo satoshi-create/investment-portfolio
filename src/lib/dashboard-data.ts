@@ -51,6 +51,32 @@ function asCategory(raw: string): HoldingCategory {
   return raw === "Core" ? "Core" : "Satellite";
 }
 
+async function fetchAllInvestmentThemes(db: Client, userId: string): Promise<InvestmentThemeRecord[]> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT id, user_id, name, description, goal, created_at
+            FROM investment_themes
+            WHERE user_id = ?
+            ORDER BY created_at DESC, name ASC`,
+      args: [userId],
+    });
+    return rs.rows.map((row) => ({
+      id: String(row.id),
+      userId: String(row.user_id),
+      name: String(row.name),
+      description: row.description != null ? String(row.description) : null,
+      goal: row.goal != null ? String(row.goal) : null,
+      createdAt: String(row.created_at),
+    }));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("investment_themes")) {
+      return [];
+    }
+    throw e;
+  }
+}
+
 function latestCloseFromSeries(series: AlphaPoint[]): number | null {
   for (let i = series.length - 1; i >= 0; i--) {
     const c = series[i]!.close;
@@ -769,7 +795,8 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   });
 
   if (h.rows.length === 0) {
-    const [benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
+    const [allThemes, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
+      fetchAllInvestmentThemes(db, userId),
       resolveBenchmarkSnapshot(),
       resolveFxUsdJpyRate(),
       fetchTotalRealizedPnlJpy(db, userId),
@@ -778,6 +805,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     const financial = computeFinancialTotals([], totalRealizedPnlJpy);
     return {
       stocks: [],
+      allThemes,
       structureByTheme: [],
       structureBySector: [],
       coreSatellite: computeCoreSatellite([]),
@@ -796,7 +824,8 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
   const tickers = [...new Set(h.rows.map((r) => String(r.ticker)))];
   const tPlaceholders = tickers.map(() => "?").join(",");
-  const [a, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
+  const [allThemes, a, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
+    fetchAllInvestmentThemes(db, userId),
     db.execute({
       // Match by user + benchmark + ticker only; `holding_id` may be NULL (orphaned rows still chart).
       sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
@@ -861,7 +890,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     ...financial,
   };
 
-  return { stocks, structureByTheme, structureBySector, coreSatellite, totalMarketValue, summary };
+  return { stocks, allThemes, structureByTheme, structureBySector, coreSatellite, totalMarketValue, summary };
 }
 
 export async function fetchStocksForUser(db: Client, userId: string): Promise<Stock[]> {
