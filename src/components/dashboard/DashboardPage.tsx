@@ -244,6 +244,7 @@ export function DashboardPage() {
           }}
           onSuccess={() => void loadDashboard()}
           fxUsdJpy={summary.fxUsdJpy}
+          holdingOptions={stocks.map((s) => ({ ticker: s.ticker, name: s.name }))}
         />
       </div>
     </div>

@@ -557,6 +557,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             setTradeInitial(null);
           }}
           onSuccess={() => void load()}
+          holdingOptions={stocks.map((s) => ({ ticker: s.ticker, name: s.name }))}
         />
       </div>
     </div>

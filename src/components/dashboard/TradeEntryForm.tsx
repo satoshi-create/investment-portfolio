@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useTransition } from "react";
+import React, { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { X } from "lucide-react";
 
 import { executeTradeAction } from "@/app/actions/trades";
@@ -24,6 +24,8 @@ type Props = {
   onSuccess?: () => void;
   /** 取引実行時の円換算はサーバーで `JPY=X` を再取得。ここは表示ヒント用。 */
   fxUsdJpy?: number | null;
+  /** 保有銘柄（候補）。未指定・空なら手入力のみ。 */
+  holdingOptions?: { ticker: string; name: string }[];
 };
 
 function todayYmd(): string {
@@ -34,7 +36,15 @@ function todayYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
-export function TradeEntryForm({ userId, open, initial, onClose, onSuccess, fxUsdJpy }: Props) {
+export function TradeEntryForm({
+  userId,
+  open,
+  initial,
+  onClose,
+  onSuccess,
+  fxUsdJpy,
+  holdingOptions = [],
+}: Props) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
 
@@ -68,6 +78,21 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess, fxUs
   }, [open, initial]);
 
   const isJp = useMemo(() => classifyTickerInstrument(ticker) === "JP_INVESTMENT_TRUST", [ticker]);
+
+  const tickerDatalistId = useId();
+
+  const sortedHoldingOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { ticker: string; name: string }[] = [];
+    for (const h of holdingOptions) {
+      const t = h.ticker.trim();
+      if (t.length === 0 || seen.has(t)) continue;
+      seen.add(t);
+      out.push({ ticker: t, name: (h.name ?? "").trim() || t });
+    }
+    out.sort((a, b) => a.ticker.localeCompare(b.ticker, "en"));
+    return out;
+  }, [holdingOptions]);
   const fxHint =
     fxUsdJpy != null && Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? fxUsdJpy : USD_JPY_RATE_FALLBACK;
   const unitLabel = isJp
@@ -143,23 +168,33 @@ export function TradeEntryForm({ userId, open, initial, onClose, onSuccess, fxUs
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono opacity-90"
               />
             ) : (
-              <select
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
-                required
-              >
-                <option value="" disabled>
-                  選択してください
-                </option>
-                <option value="NVDA">NVDA</option>
-                <option value="NFLX">NFLX</option>
-                <option value="COP">COP</option>
-                <option value="06311181">06311181</option>
-                <option value="NIO">NIO</option>
-                <option value="ENPH">ENPH</option>
-                <option value="WMT">WMT</option>
-              </select>
+              <>
+                <input
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value)}
+                  list={sortedHoldingOptions.length > 0 ? tickerDatalistId : undefined}
+                  autoComplete="off"
+                  placeholder={
+                    sortedHoldingOptions.length > 0
+                      ? "保有から選ぶか、ティッカーを入力"
+                      : "ティッカーを入力（例: AAPL, 9501）"
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                  required
+                />
+                {sortedHoldingOptions.length > 0 ? (
+                  <datalist id={tickerDatalistId}>
+                    {sortedHoldingOptions.map((h) => (
+                      <option key={h.ticker} value={h.ticker}>
+                        {h.name !== h.ticker ? h.name : undefined}
+                      </option>
+                    ))}
+                  </datalist>
+                ) : null}
+                <p className="text-[9px] text-slate-600 mt-1">
+                  下矢印で保有候補を表示。候補にない銘柄もそのまま入力できます。
+                </p>
+              </>
             )}
           </div>
           <div>
