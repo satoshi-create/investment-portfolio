@@ -159,6 +159,16 @@ export type ThemeEcosystemWatchItem = {
   id: string;
   themeId: string;
   ticker: string;
+  /** 未上場銘柄（dummy ticker） */
+  isUnlisted: boolean;
+  /** 代理観測用の上場ティッカー（未上場のときに使用） */
+  proxyTicker: string | null;
+  /** IPO 予定時期（例: '2026-Q4'） */
+  estimatedIpoDate: string | null;
+  /** 想定時価総額（文字列） */
+  estimatedValuation: string | null;
+  /** 企業特徴・リスク要因（ツールチップ等で表示） */
+  observationNotes: string | null;
   companyName: string;
   field: string;
   role: string;

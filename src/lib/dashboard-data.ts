@@ -491,18 +491,36 @@ async function enrichEcosystemMemberRow(
   const id = String(row["id"]);
   const themeId = String(row["theme_id"]);
   const ticker = String(row["ticker"]).trim();
+  const isUnlisted = Number(row["is_unlisted"]) === 1;
+  const proxyTickerRaw = row["proxy_ticker"] != null ? String(row["proxy_ticker"]).trim() : "";
+  const proxyTicker = proxyTickerRaw.length > 0 ? proxyTickerRaw : null;
+  const estimatedIpoDate =
+    row["estimated_ipo_date"] != null && String(row["estimated_ipo_date"]).trim().length > 0
+      ? String(row["estimated_ipo_date"]).trim()
+      : null;
+  const estimatedValuation =
+    row["estimated_valuation"] != null && String(row["estimated_valuation"]).trim().length > 0
+      ? String(row["estimated_valuation"]).trim()
+      : null;
+  const observationNotes =
+    row["observation_notes"] != null && String(row["observation_notes"]).trim().length > 0
+      ? String(row["observation_notes"]).trim()
+      : null;
+
+  const effectiveTicker = isUnlisted ? (proxyTicker ?? "") : ticker;
   const companyName = row["company_name"] != null ? String(row["company_name"]) : ticker;
   const field = row["field"] != null ? String(row["field"]) : "";
   const role = row["role"] != null ? String(row["role"]) : "";
   const isMajorPlayer = Number(row["is_major_player"]) === 1;
-  const inPortfolio = portfolioTickerSet.has(ticker.toUpperCase());
+  const inPortfolio = effectiveTicker.length > 0 ? portfolioTickerSet.has(effectiveTicker.toUpperCase()) : false;
   const rawObs = row["observation_started_at"];
   const observationStartedAt =
     rawObs != null && String(rawObs).trim().length >= 10 ? String(rawObs).trim().slice(0, 10) : null;
 
-  const instrumentKind = classifyTickerInstrument(ticker);
+  const instrumentKind = classifyTickerInstrument(effectiveTicker.length > 0 ? effectiveTicker : ticker);
   const countryName = instrumentKind === "JP_INVESTMENT_TRUST" ? "日本" : "米国";
-  const research = researchByTicker.get(ticker.toUpperCase()) ?? null;
+  const researchKey = effectiveTicker.length > 0 ? effectiveTicker.toUpperCase() : ticker.toUpperCase();
+  const research = researchByTicker.get(researchKey) ?? null;
   const nextEarningsDate = research?.nextEarningsDate ?? null;
   const annualDividendRate = research?.annualDividendRate ?? null;
   const dividendYieldPercent = research?.dividendYieldPercent ?? null;
@@ -517,12 +535,15 @@ async function enrichEcosystemMemberRow(
         })()
       : null;
 
-  const histRs = await db.execute({
-    sql: `SELECT alpha_value, close_price, recorded_at FROM alpha_history
-          WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?
-          ORDER BY recorded_at ASC`,
-    args: [userId, ticker, SIGNAL_BENCHMARK_TICKER],
-  });
+  const histRs =
+    effectiveTicker.length > 0
+      ? await db.execute({
+          sql: `SELECT alpha_value, close_price, recorded_at FROM alpha_history
+                WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?
+                ORDER BY recorded_at ASC`,
+          args: [userId, effectiveTicker, SIGNAL_BENCHMARK_TICKER],
+        })
+      : { rows: [] as Record<string, unknown>[] };
 
   const byDay = new Map<string, number>();
   for (const r of histRs.rows) {
@@ -544,23 +565,27 @@ async function enrichEcosystemMemberRow(
   }
 
   if (datedRows.length < 2) {
-    const live = await fetchRecentDatedDailyAlphasVsVoo(ticker, 120, null);
-    if (live.rows.length >= 2) {
-      datedRows = live.rows;
-      if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
-        lastClose = live.lastClose;
-      }
-    } else if (live.rows.length > 0 && datedRows.length === 0) {
-      datedRows = live.rows;
-      if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
-        lastClose = live.lastClose;
+    if (effectiveTicker.length > 0) {
+      const live = await fetchRecentDatedDailyAlphasVsVoo(effectiveTicker, 120, null);
+      if (live.rows.length >= 2) {
+        datedRows = live.rows;
+        if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
+          lastClose = live.lastClose;
+        }
+      } else if (live.rows.length > 0 && datedRows.length === 0) {
+        datedRows = live.rows;
+        if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
+          lastClose = live.lastClose;
+        }
       }
     }
   }
 
   if (lastClose == null || !Number.isFinite(lastClose) || lastClose <= 0) {
-    const snap = await fetchLatestPrice(ticker, null);
-    if (snap != null && Number.isFinite(snap.close) && snap.close > 0) lastClose = snap.close;
+    if (effectiveTicker.length > 0) {
+      const snap = await fetchLatestPrice(effectiveTicker, null);
+      if (snap != null && Number.isFinite(snap.close) && snap.close > 0) lastClose = snap.close;
+    }
   }
 
   const startDate =
@@ -581,6 +606,11 @@ async function enrichEcosystemMemberRow(
     id,
     themeId,
     ticker,
+    isUnlisted,
+    proxyTicker,
+    estimatedIpoDate,
+    estimatedValuation,
+    observationNotes,
     companyName,
     field,
     role,
@@ -608,15 +638,25 @@ async function fetchEnrichedThemeEcosystem(
 ): Promise<ThemeEcosystemWatchItem[]> {
   try {
     const rs = await db.execute({
-      sql: `SELECT id, theme_id, ticker, company_name, field, role, is_major_player, observation_started_at
+      sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                   company_name, field, role, is_major_player, observation_started_at
             FROM theme_ecosystem_members
             WHERE theme_id = ?
             ORDER BY field ASC, ticker ASC`,
       args: [themeId],
     });
     const rows = rs.rows as unknown as Record<string, unknown>[];
+    const researchTargets = rows
+      .map((r) => {
+        const isUnlisted = Number(r["is_unlisted"]) === 1;
+        const t = String(r["ticker"] ?? "").trim();
+        const proxy = r["proxy_ticker"] != null ? String(r["proxy_ticker"]).trim() : "";
+        const effective = isUnlisted ? proxy : t;
+        return effective;
+      })
+      .filter((x) => x.length > 0);
     const researchByTicker = await fetchEquityResearchSnapshots(
-      rows.map((r) => ({ ticker: String(r["ticker"] ?? ""), providerSymbol: null })),
+      [...new Set(researchTargets)].map((ticker) => ({ ticker, providerSymbol: null })),
     );
     const out: ThemeEcosystemWatchItem[] = [];
     for (let i = 0; i < rows.length; i += 2) {

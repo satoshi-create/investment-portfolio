@@ -352,9 +352,25 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                               <td className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyTdFirst}`}>
                                 <div className="flex flex-col gap-0.5">
                                   <div className="flex items-start justify-between gap-2">
-                                    <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors font-mono">
-                                      {e.ticker}
-                                    </span>
+                                    <div className="min-w-0">
+                                      <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors font-mono">
+                                        {e.ticker}
+                                      </span>
+                                      {e.isUnlisted ? (
+                                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                                          {e.estimatedIpoDate ? (
+                                            <span className="text-[8px] font-bold uppercase tracking-wide text-fuchsia-300/95 border border-fuchsia-500/30 px-1.5 py-0.5 rounded">
+                                              IPO {e.estimatedIpoDate}
+                                            </span>
+                                          ) : null}
+                                          {e.estimatedValuation ? (
+                                            <span className="text-[8px] font-bold uppercase tracking-wide text-slate-300/95 border border-slate-500/30 px-1.5 py-0.5 rounded">
+                                              {e.estimatedValuation}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
                                     <div className="flex flex-wrap gap-1 justify-end shrink-0">
                                       {e.isMajorPlayer ? (
                                         <span className="text-[8px] font-bold uppercase tracking-wide text-amber-400/95 border border-amber-500/35 px-1.5 py-0.5 rounded">
@@ -371,6 +387,14 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                   {e.companyName ? (
                                     <span className="text-[10px] text-slate-400 leading-snug line-clamp-2" title={e.companyName}>
                                       {e.companyName}
+                                    </span>
+                                  ) : null}
+                                  {e.observationNotes ? (
+                                    <span
+                                      className="text-[10px] text-slate-500 leading-snug line-clamp-2"
+                                      title={e.observationNotes}
+                                    >
+                                      {e.observationNotes}
                                     </span>
                                   ) : null}
                                   {e.role ? (
@@ -442,7 +466,14 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                 )}
                               </td>
                               <td className="px-6 py-4">
-                                <EcosystemCumulativeSparkline history={e.alphaHistory} />
+                                <div className="flex flex-col items-center gap-1">
+                                  {e.isUnlisted ? (
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                      Proxy Momentum{e.proxyTicker ? ` (${e.proxyTicker})` : ""}
+                                    </span>
+                                  ) : null}
+                                  <EcosystemCumulativeSparkline history={e.alphaHistory} />
+                                </div>
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="flex flex-col items-end gap-1">
@@ -458,7 +489,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                       type="button"
                                       onClick={() =>
                                         openTradeForm({
-                                          ticker: e.ticker,
+                                          ticker: e.isUnlisted && e.proxyTicker ? e.proxyTicker : e.ticker,
                                           name: e.companyName || undefined,
                                           theme: themeLabel,
                                         })

@@ -9,6 +9,8 @@
     "lint": "eslint",
     "verify:alpha": "tsx scripts/verify-alpha-logic.ts",
     "seed:benchmarks": "tsx scripts/seed-benchmarks.ts",
+    "migrate:ecosystem-unlisted": "tsx scripts/migrate-theme-ecosystem-unlisted.ts",
+    "seed:ipo-2026": "tsx scripts/seed-ipo-candidates-2026.ts",
     "verify:prices": "tsx scripts/verify-price-alpha.ts",
     "set:provider-symbol": "tsx scripts/set-provider-symbol.ts",
     "backfill:alpha": "tsx scripts/backfill-alpha-history.ts",
