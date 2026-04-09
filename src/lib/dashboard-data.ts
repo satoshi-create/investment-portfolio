@@ -612,13 +612,6 @@ async function enrichEcosystemMemberRow(
     }
   }
 
-  if (lastClose == null || !Number.isFinite(lastClose) || lastClose <= 0) {
-    if (effectiveTicker.length > 0) {
-      const snap = await fetchLatestPrice(effectiveTicker, null);
-      if (snap != null && Number.isFinite(snap.close) && snap.close > 0) lastClose = snap.close;
-    }
-  }
-
   const startDate =
     observationStartedAt != null && observationStartedAt.length === 10
       ? observationStartedAt
@@ -632,6 +625,20 @@ async function enrichEcosystemMemberRow(
   const alphaHistory = cumPoints.map((p) => p.cumulative);
   const latestAlpha = alphaHistory.length > 0 ? alphaHistory[alphaHistory.length - 1]! : null;
   const alphaObservationStartDate = cumPoints[0]?.date ?? null;
+
+  /** Last 列: ダッシュボード保有と同じく quote ライブ → 日足 → 系列上の終値。Alpha 系列は日次のまま。 */
+  let displayPrice: number | null = lastClose;
+  if (effectiveTicker.length > 0) {
+    const ql = await fetchLiveQuoteSnapshot(effectiveTicker, null);
+    if (ql != null && Number.isFinite(ql.price) && ql.price > 0) {
+      displayPrice = ql.price;
+    } else {
+      const day = await fetchLatestPrice(effectiveTicker, null);
+      if (day != null && Number.isFinite(day.close) && day.close > 0) {
+        displayPrice = day.close;
+      }
+    }
+  }
 
   return {
     id,
@@ -654,7 +661,7 @@ async function enrichEcosystemMemberRow(
     dividendYieldPercent,
     observationStartedAt,
     alphaHistory,
-    currentPrice: lastClose,
+    currentPrice: displayPrice,
     latestAlpha,
     alphaObservationStartDate,
   };
