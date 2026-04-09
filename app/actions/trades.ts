@@ -14,6 +14,8 @@ export type ExecuteTradeActionInput = {
   side: "BUY" | "SELL";
   quantity: number;
   unitPriceLocal: number;
+  feeLocal?: number;
+  feeCurrency?: "JPY" | "USD";
   feesJpy?: number;
   tradeDate: string;
   categoryForNewHolding?: "Core" | "Satellite";
@@ -55,6 +57,8 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
     side,
     quantity: Number(input.quantity),
     unitPriceLocal: Number(input.unitPriceLocal),
+    feeLocal: input.feeLocal != null ? Number(input.feeLocal) : 0,
+    feeCurrency: input.feeCurrency === "USD" ? "USD" : "JPY",
     feesJpy: input.feesJpy != null ? Number(input.feesJpy) : 0,
     tradeDate: input.tradeDate.trim(),
     categoryForNewHolding: category,

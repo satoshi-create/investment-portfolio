@@ -14,6 +14,10 @@ export type ExecuteTradeParams = {
   quantity: number;
   /** 1 株（口）あたりの単価。米国株は USD、数字ティッカーは JPY。 */
   unitPriceLocal: number;
+  /** 現地通貨建て手数料（米国株は USD、数字ティッカーは JPY） */
+  feeLocal: number;
+  /** `feeLocal` の通貨。米国株は USD、それ以外は JPY。 */
+  feeCurrency: "JPY" | "USD";
   /** 円建て手数料 */
   feesJpy: number;
   /** YYYY-MM-DD */
@@ -107,7 +111,15 @@ export async function executeTradeInTransaction(
   if (!Number.isFinite(qty) || qty <= 0) return { ok: false, message: "数量は正の数にしてください。" };
   const unit = p.unitPriceLocal;
   if (!Number.isFinite(unit) || unit <= 0) return { ok: false, message: "単価は正の数にしてください。" };
-  const feesJpy = Number.isFinite(p.feesJpy) && p.feesJpy >= 0 ? Math.round(p.feesJpy) : 0;
+  const feeLocal = Number.isFinite(p.feeLocal) && p.feeLocal >= 0 ? Number(p.feeLocal) : 0;
+  const feeCurrency: "JPY" | "USD" = p.feeCurrency === "USD" ? "USD" : "JPY";
+  const fx = Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? fxUsdJpy : USD_JPY_RATE_FALLBACK;
+  const feesJpy =
+    feeCurrency === "USD"
+      ? Math.round(feeLocal * fx)
+      : Number.isFinite(p.feesJpy) && p.feesJpy >= 0
+        ? Math.round(p.feesJpy)
+        : Math.round(feeLocal);
 
   const market = isUsTicker(ticker) ? "US" : "JP";
   const displayName = (p.name && p.name.trim().length > 0 ? p.name.trim() : ticker) as string;
@@ -137,7 +149,7 @@ export async function executeTradeInTransaction(
     if (existing == null) {
       holdingId = crypto.randomUUID();
       newQty = qty;
-      newAvg = unit;
+      newAvg = (qty * unit + feeLocal) / qty;
       await tx.execute({
         sql: `INSERT INTO holdings (
                 id, user_id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category,
@@ -163,9 +175,9 @@ export async function executeTradeInTransaction(
       newQty = oldQ + qty;
       if (newQty <= 0) return { ok: false, message: "保有数量の更新が無効です。" };
       if (oldQ <= 0 || oldAvg == null || !Number.isFinite(oldAvg) || oldAvg <= 0) {
-        newAvg = unit;
+        newAvg = (qty * unit + feeLocal) / qty;
       } else {
-        newAvg = (oldQ * oldAvg + qty * unit) / newQty;
+        newAvg = (oldQ * oldAvg + qty * unit + feeLocal) / newQty;
       }
       await tx.execute({
         sql: `UPDATE holdings
@@ -178,8 +190,8 @@ export async function executeTradeInTransaction(
     await tx.execute({
       sql: `INSERT INTO trade_history (
               id, user_id, trade_date, ticker, name, market, account_name, side,
-              quantity, cost_jpy, proceeds_jpy, fees_jpy, realized_pnl_jpy, provider_symbol
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?, NULL)`,
+              quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, provider_symbol
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?, ?, ?, NULL)`,
       args: [
         tradeId,
         p.userId,
@@ -191,6 +203,8 @@ export async function executeTradeInTransaction(
         qty,
         costJpy,
         proceedsJpy,
+        feeLocal,
+        feeCurrency,
         feesJpy,
         realizedPnlJpy,
       ],
@@ -224,8 +238,8 @@ export async function executeTradeInTransaction(
   await tx.execute({
     sql: `INSERT INTO trade_history (
             id, user_id, trade_date, ticker, name, market, account_name, side,
-            quantity, cost_jpy, proceeds_jpy, fees_jpy, realized_pnl_jpy, provider_symbol
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', ?, ?, ?, ?, ?, NULL)`,
+            quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, provider_symbol
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', ?, ?, ?, ?, ?, ?, ?, NULL)`,
     args: [
       tradeId,
       p.userId,
@@ -237,6 +251,8 @@ export async function executeTradeInTransaction(
       qty,
       costBasis,
       proceedsGrossJpy,
+      feeLocal,
+      feeCurrency,
       feesJpy,
       Math.round(realizedPnlJpy),
     ],

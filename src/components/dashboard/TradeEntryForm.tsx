@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useId, useMemo, useState, useTransition } from "react";
+import React, { useId, useMemo, useState, useTransition } from "react";
 import { X } from "lucide-react";
 
 import { executeTradeAction } from "@/app/actions/trades";
 import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
+import { calculateMonexUsFee } from "@/src/lib/fees";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 
 export type TradeEntryInitial = {
@@ -45,39 +46,47 @@ export function TradeEntryForm({
   fxUsdJpy,
   holdingOptions = [],
 }: Props) {
+  if (!open) return null;
+
+  return (
+    <TradeEntryFormInner
+      key={initial?.ticker ?? "__new__"}
+      userId={userId}
+      initial={initial}
+      onClose={onClose}
+      onSuccess={onSuccess}
+      fxUsdJpy={fxUsdJpy}
+      holdingOptions={holdingOptions}
+    />
+  );
+}
+
+function TradeEntryFormInner({
+  userId,
+  initial,
+  onClose,
+  onSuccess,
+  fxUsdJpy,
+  holdingOptions,
+}: Omit<Props, "open">) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
 
-  const [ticker, setTicker] = useState("");
-  const [name, setName] = useState("");
+  const [ticker, setTicker] = useState(initial?.ticker ?? "");
+  const [name, setName] = useState(initial?.name ?? "");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("");
-  const [feesJpy, setFeesJpy] = useState("0");
-  const [tradeDate, setTradeDate] = useState(todayYmd);
+  const [autoFee, setAutoFee] = useState(true);
+  const [manualFeeLocal, setManualFeeLocal] = useState("");
+  const [tradeDate, setTradeDate] = useState(todayYmd());
   const [accountName, setAccountName] = useState<"特定" | "NISA">("特定");
   const [category, setCategory] = useState<"Core" | "Satellite">("Satellite");
-  const [structureTheme, setStructureTheme] = useState("");
-  const [structureSector, setStructureSector] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    setMessage(null);
-    if (initial) {
-      setTicker(initial.ticker);
-      setName(initial.name ?? "");
-      setStructureTheme(initial.theme ?? "");
-      setStructureSector(initial.sector ?? "");
-    } else {
-      setTicker("");
-      setName("");
-      setStructureTheme("");
-      setStructureSector("");
-    }
-    setTradeDate(todayYmd());
-  }, [open, initial]);
+  const [structureTheme, setStructureTheme] = useState(initial?.theme ?? "");
+  const [structureSector, setStructureSector] = useState(initial?.sector ?? "");
 
   const isJp = useMemo(() => classifyTickerInstrument(ticker) === "JP_INVESTMENT_TRUST", [ticker]);
+  const isUs = useMemo(() => classifyTickerInstrument(ticker) === "US_EQUITY", [ticker]);
 
   const tickerDatalistId = useId();
 
@@ -98,15 +107,48 @@ export function TradeEntryForm({
   const unitLabel = isJp
     ? `単価（円 / 口・株）`
     : `単価（USD / 株）→ 概算円換算 × ${fxHint.toFixed(2)}（参考・実行時は JPY=X）`;
+  const feeCurrency: "JPY" | "USD" = isUs ? "USD" : "JPY";
 
-  if (!open) return null;
+  const parsedQty = useMemo(() => Number(quantity.replace(/,/g, "")), [quantity]);
+  const parsedUnit = useMemo(() => Number(unitPrice.replace(/,/g, "")), [unitPrice]);
+
+  const estimatedFeeLocal = useMemo(() => {
+    if (!autoFee) return null;
+    if (!Number.isFinite(parsedQty) || parsedQty <= 0) return null;
+    if (!Number.isFinite(parsedUnit) || parsedUnit <= 0) return null;
+    if (!isUs) return 0;
+    return calculateMonexUsFee(parsedQty, parsedUnit);
+  }, [autoFee, isUs, parsedQty, parsedUnit]);
+
+  const feeLocal = autoFee ? (estimatedFeeLocal != null ? String(estimatedFeeLocal) : "") : manualFeeLocal;
+
+  const feeLocalNumber = useMemo(() => {
+    const v = Number(String(feeLocal).replace(/,/g, ""));
+    return Number.isFinite(v) && v >= 0 ? v : 0;
+  }, [feeLocal]);
+
+  const feesJpyComputed = useMemo(() => {
+    if (feeCurrency === "JPY") return Math.round(feeLocalNumber);
+    return Math.round(feeLocalNumber * fxHint);
+  }, [feeCurrency, feeLocalNumber, fxHint]);
+
+  const feePreviewText = useMemo(() => {
+    if (!Number.isFinite(parsedQty) || parsedQty <= 0) return "—";
+    if (!Number.isFinite(parsedUnit) || parsedUnit <= 0) return "—";
+    const notional = parsedQty * parsedUnit;
+    const effective = (notional + feeLocalNumber) / parsedQty;
+    if (!Number.isFinite(effective) || effective <= 0) return "—";
+    const base = feeCurrency === "JPY" ? `手数料: ¥${feeLocalNumber.toFixed(0)}` : `手数料: $${feeLocalNumber.toFixed(2)}`;
+    const jpy = feeCurrency === "USD" ? `（約 ¥${feesJpyComputed.toLocaleString()}）` : "";
+    const effLabel = feeCurrency === "JPY" ? `手数料込み単価: ¥${effective.toFixed(0)}` : `手数料込み単価: $${effective.toFixed(4)}`;
+    return `${base}${jpy} / ${effLabel}`;
+  }, [feeCurrency, feeLocalNumber, feesJpyComputed, parsedQty, parsedUnit]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
-    const q = Number(quantity.replace(/,/g, ""));
-    const p = Number(unitPrice.replace(/,/g, ""));
-    const f = Number(String(feesJpy).replace(/,/g, ""));
+    const q = parsedQty;
+    const p = parsedUnit;
     if (!ticker.trim()) {
       setMessage("ティッカーを入力してください。");
       return;
@@ -120,7 +162,9 @@ export function TradeEntryForm({
         side,
         quantity: q,
         unitPriceLocal: p,
-        feesJpy: Number.isFinite(f) ? f : 0,
+        feeLocal: feeLocalNumber,
+        feeCurrency,
+        feesJpy: feesJpyComputed,
         tradeDate,
         categoryForNewHolding: category,
         structureTheme: structureTheme.trim(),
@@ -288,12 +332,39 @@ export function TradeEntryForm({
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">手数料（円）</label>
-            <input
-              value={feesJpy}
-              onChange={(e) => setFeesJpy(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
-              inputMode="numeric"
-            />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-bold uppercase text-slate-500">
+                  {feeCurrency === "USD" ? "推定手数料（USD, Monex US）" : "手数料（JPY）"}
+                </p>
+                <label className="flex items-center gap-2 text-[10px] text-slate-400 select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoFee}
+                    onChange={(e) => setAutoFee(e.target.checked)}
+                    className="accent-cyan-500"
+                  />
+                  自動計算
+                </label>
+              </div>
+
+              <input
+                value={feeLocal}
+                onChange={(e) => {
+                  setAutoFee(false);
+                  setManualFeeLocal(e.target.value);
+                }}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                inputMode="decimal"
+                placeholder={feeCurrency === "USD" ? "例: 0.99" : "例: 0"}
+              />
+              <p className="text-[9px] text-slate-600">{feePreviewText}</p>
+              {feeCurrency === "USD" ? (
+                <p className="text-[9px] text-slate-600">
+                  送信時に円換算: 約 ¥{feesJpyComputed.toLocaleString()}（参考。実行時の最終円換算はサーバー側のレートに依存）
+                </p>
+              ) : null}
+            </div>
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">約定日</label>

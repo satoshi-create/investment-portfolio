@@ -204,22 +204,38 @@ export async function fetchEquityResearchSnapshots(
         modules: ["calendarEvents", "summaryDetail"],
       });
 
+      type YahooEarningsDateLike = { raw?: unknown; fmt?: unknown };
+      type YahooQuoteSummaryShape = {
+        calendarEvents?: {
+          earnings?: {
+            earningsDate?: unknown;
+          };
+        };
+        summaryDetail?: {
+          dividendRate?: unknown;
+          dividendYield?: unknown;
+        };
+      };
+      const qss = qs as unknown as YahooQuoteSummaryShape;
+
       // calendarEvents.earnings.earningsDate: array of { raw, fmt } or Date-like
-      const earningsArr =
-        (qs as any)?.calendarEvents?.earnings?.earningsDate ??
-        (qs as any)?.calendarEvents?.earnings?.earningsDate?.[0];
+      const earningsArr = qss.calendarEvents?.earnings?.earningsDate ?? null;
       const firstE =
         Array.isArray(earningsArr) && earningsArr.length > 0 ? earningsArr[0] : earningsArr ?? null;
       const nextEarningsDate =
-        ymdFromYahooDateLike((firstE as any)?.raw ?? (firstE as any)?.fmt ?? firstE) ?? null;
+        ymdFromYahooDateLike(
+          (typeof firstE === "object" && firstE != null
+            ? ((firstE as YahooEarningsDateLike).raw ?? (firstE as YahooEarningsDateLike).fmt ?? firstE)
+            : firstE) as unknown,
+        ) ?? null;
 
-      const annualDividendRateRaw = (qs as any)?.summaryDetail?.dividendRate;
+      const annualDividendRateRaw = qss.summaryDetail?.dividendRate;
       const annualDividendRate =
         typeof annualDividendRateRaw === "number" && Number.isFinite(annualDividendRateRaw) && annualDividendRateRaw > 0
           ? annualDividendRateRaw
           : null;
 
-      const dividendYieldPercent = parseDividendYieldPercent((qs as any)?.summaryDetail?.dividendYield);
+      const dividendYieldPercent = parseDividendYieldPercent(qss.summaryDetail?.dividendYield);
 
       return {
         ticker: ticker.toUpperCase(),

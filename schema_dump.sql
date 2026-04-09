@@ -186,6 +186,8 @@ CREATE TABLE trade_history (
   quantity REAL NOT NULL,
   cost_jpy REAL NOT NULL,
   proceeds_jpy REAL NOT NULL,
+  fee REAL NOT NULL DEFAULT 0,
+  fee_currency TEXT NOT NULL DEFAULT 'JPY',
   fees_jpy REAL NOT NULL DEFAULT 0,
   realized_pnl_jpy REAL NOT NULL,
   provider_symbol TEXT,
