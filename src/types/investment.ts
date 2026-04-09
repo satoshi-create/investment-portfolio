@@ -115,10 +115,14 @@ export type MarketIndicator = {
 export type DashboardSummary = {
   /** 各保有の最新 Alpha（日次）の単純平均 */
   portfolioAverageAlpha: number;
-  /** VOO の最新終値（USD）。`alpha_history` は銘柄終値のみ保持のため Yahoo から取得。 */
+  /** VOO の参照価格（USD）。ライブ quote 優先、失敗時は日足終値。 */
   benchmarkLatestPrice: number;
-  /** VOO の前日比 %（共有セッションで算出。算出不可は null）。 */
+  /** VOO の変化率 %（ライブ時は quote、日次時は直近2本の日足から。算出不可は null）。 */
   benchmarkChangePct: number | null;
+  /** VOO 価格の取得元（`quote` ライブ系 / 日足 chart） */
+  benchmarkPriceSource: "live" | "close";
+  /** VOO 価格の基準時刻（ISO）。ライブ時は quote 時刻、日次時は営業日の目安。 */
+  benchmarkAsOf: string | null;
   /** USD/JPY レート（`JPY=X` 最新終値）。取得失敗時は null。 */
   fxUsdJpy: number | null;
   /** 保有銘柄数 */

@@ -12,6 +12,8 @@ type Props = {
   totalAlpha: number;
   benchmarkPrice: number;
   benchmarkChangePct?: number | null;
+  benchmarkPriceSource?: "live" | "close";
+  benchmarkAsOf?: string | null;
   marketIndicators: MarketIndicator[];
 };
 
@@ -24,7 +26,14 @@ function formatAlphaPercent(value: number): { text: string; color: string } {
   return { text: `${sign}${value.toFixed(2)}%`, color };
 }
 
-export function DashboardHeader({ totalAlpha, benchmarkPrice, benchmarkChangePct, marketIndicators }: Props) {
+export function DashboardHeader({
+  totalAlpha,
+  benchmarkPrice,
+  benchmarkChangePct,
+  benchmarkPriceSource = "close",
+  benchmarkAsOf = null,
+  marketIndicators,
+}: Props) {
   const [marketOpen, setMarketOpen] = useState(false);
   const alphaFmt = formatAlphaPercent(totalAlpha);
   const benchText =
@@ -35,6 +44,19 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, benchmarkChangePct
     benchmarkChangePct != null && Number.isFinite(benchmarkChangePct)
       ? `${benchmarkChangePct > 0 ? "+" : ""}${benchmarkChangePct.toFixed(2)}%`
       : null;
+
+  const benchSubLabel = (() => {
+    if (benchChangeText) {
+      const basis = benchmarkPriceSource === "live" ? "Live (Yahoo quote)" : "Latest close (1D)";
+      return `${basis} · ${benchChangeText}`;
+    }
+    return benchmarkPriceSource === "live" ? "Live quote (USD, Yahoo)" : "Latest close (USD, Yahoo)";
+  })();
+
+  const benchAsOfTitle =
+    benchmarkAsOf != null && benchmarkAsOf.length > 0
+      ? `基準時刻: ${new Date(benchmarkAsOf).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`
+      : undefined;
 
   useEffect(() => {
     if (!marketOpen) return;
@@ -96,7 +118,8 @@ export function DashboardHeader({ totalAlpha, benchmarkPrice, benchmarkChangePct
             label="VOO (S&P 500 ETF)"
             value={benchText}
             valueColor="text-foreground/80"
-            subLabel={benchChangeText ? `Latest close · ${benchChangeText} (1D)` : "Latest close (USD, Yahoo)"}
+            subLabel={benchSubLabel}
+            title={benchAsOfTitle}
           />
           <div className="flex items-center gap-2">
             <ThemeToggle />

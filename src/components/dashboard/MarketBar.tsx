@@ -1,3 +1,7 @@
+/**
+ * Market glance UI。数値は API（`fetchGlobalMarketIndicators`）由来で、Yahoo `quote` を優先し
+ * 取れない場合は日足チャートにフォールバックする。
+ */
 import React from "react";
 
 import type { MarketIndicator } from "@/src/types/investment";

@@ -25,6 +25,8 @@ const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
   benchmarkLatestPrice: 0,
   benchmarkChangePct: null,
+  benchmarkPriceSource: "close",
+  benchmarkAsOf: null,
   fxUsdJpy: null,
   totalHoldings: 0,
   marketIndicators: [],
@@ -164,6 +166,8 @@ export function DashboardPage() {
           totalAlpha={summary.portfolioAverageAlpha}
           benchmarkPrice={summary.benchmarkLatestPrice}
           benchmarkChangePct={summary.benchmarkChangePct}
+          benchmarkPriceSource={summary.benchmarkPriceSource ?? "close"}
+          benchmarkAsOf={summary.benchmarkAsOf ?? null}
           marketIndicators={summary.marketIndicators ?? []}
         />
 

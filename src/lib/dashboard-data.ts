@@ -38,6 +38,7 @@ import {
   fetchEquityResearchSnapshots,
   fetchRecentDatedDailyAlphasVsVoo,
   fetchLatestPriceWithChangePct,
+  fetchLiveQuoteSnapshot,
   fetchHoldingsHybridPriceSnapshots,
   type HybridHoldingPriceSnapshot,
   fetchUsdJpyRate,
@@ -203,16 +204,39 @@ function computePortfolioAverageAlpha(stocks: Stock[]): number {
   return roundAlphaMetric(sum / latest.length);
 }
 
-async function resolveBenchmarkSnapshot(): Promise<{ close: number; changePct: number | null }> {
+type BenchmarkSnapshot = {
+  close: number;
+  changePct: number | null;
+  priceSource: "live" | "close";
+  asOf: string | null;
+};
+
+/** VOO: ライブ `quote` 最優先、次に日足 chart（保有銘柄のハイブリッドと同方針）。 */
+async function resolveBenchmarkSnapshot(): Promise<BenchmarkSnapshot> {
+  const empty: BenchmarkSnapshot = { close: 0, changePct: null, priceSource: "close", asOf: null };
   try {
+    const live = await fetchLiveQuoteSnapshot(SIGNAL_BENCHMARK_TICKER, null);
+    if (live != null && Number.isFinite(live.price) && live.price > 0) {
+      return {
+        close: live.price,
+        changePct: live.changePct,
+        priceSource: "live",
+        asOf: live.asOf,
+      };
+    }
     const snap = await fetchLatestPriceWithChangePct(SIGNAL_BENCHMARK_TICKER, null);
     if (snap.close != null && Number.isFinite(snap.close) && snap.close > 0) {
-      return { close: snap.close, changePct: snap.changePct };
+      return {
+        close: snap.close,
+        changePct: snap.changePct,
+        priceSource: "close",
+        asOf: snap.date.length >= 10 ? `${snap.date.slice(0, 10)}T00:00:00.000Z` : null,
+      };
     }
   } catch {
     /* Yahoo 失敗時は 0（UI は —） */
   }
-  return { close: 0, changePct: null };
+  return empty;
 }
 
 async function resolveFxUsdJpyRate(): Promise<number | null> {
@@ -861,6 +885,8 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
         portfolioAverageAlpha: 0,
         benchmarkLatestPrice: benchmarkSnap.close,
         benchmarkChangePct: benchmarkSnap.changePct,
+        benchmarkPriceSource: benchmarkSnap.priceSource,
+        benchmarkAsOf: benchmarkSnap.asOf,
         fxUsdJpy: fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : null,
         totalHoldings: 0,
         marketIndicators,
@@ -931,6 +957,8 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     portfolioAverageAlpha: computePortfolioAverageAlpha(stocks),
     benchmarkLatestPrice: benchmarkSnap.close,
     benchmarkChangePct: benchmarkSnap.changePct,
+    benchmarkPriceSource: benchmarkSnap.priceSource,
+    benchmarkAsOf: benchmarkSnap.asOf,
     fxUsdJpy: fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : null,
     totalHoldings: stocks.length,
     marketIndicators,

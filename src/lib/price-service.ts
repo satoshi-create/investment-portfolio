@@ -855,6 +855,32 @@ async function fetchYahooCloseAndDayChangePct(yahooSymbol: string): Promise<{ cl
   }
 }
 
+/**
+ * 指数・FX・ETF など Yahoo シンボル 1 本について、quote ライブ優先 → 日足フォールバック。
+ * `providerSymbol` に同じシンボルを渡し、`^GSPC` / `JPY=X` 等をそのまま解決する。
+ */
+async function fetchHybridCloseAndChangeForYahooSymbol(
+  yahooSymbol: string,
+): Promise<{ close: number; changePct: number } | null> {
+  try {
+    const live = await fetchLiveQuoteSnapshot(yahooSymbol, yahooSymbol);
+    if (live != null && Number.isFinite(live.price) && live.price > 0) {
+      let changePct = live.changePct;
+      if (changePct == null || !Number.isFinite(changePct)) {
+        const chart = await fetchYahooCloseAndDayChangePct(yahooSymbol);
+        if (chart != null) changePct = chart.changePct;
+      }
+      return {
+        close: live.price,
+        changePct: changePct != null && Number.isFinite(changePct) ? changePct : 0,
+      };
+    }
+  } catch (e) {
+    logSkip(yahooSymbol, "fetchHybridCloseAndChangeForYahooSymbol (quote) failed", e);
+  }
+  return fetchYahooCloseAndDayChangePct(yahooSymbol);
+}
+
 const GLOBAL_MARKET_BAR_DEFS: readonly { label: string; symbol: string }[] = [
   { label: "USD/JPY", symbol: "JPY=X" },
   { label: "Crude (USO)", symbol: "USO" },
@@ -868,12 +894,13 @@ const GLOBAL_MARKET_BAR_DEFS: readonly { label: string; symbol: string }[] = [
 ];
 
 /**
- * ダッシュボード用マーケットグレンス（並列 Yahoo）。失敗した指標は `value: -1`（UI は —）。
+ * ダッシュボード用マーケットグレンス（並列 Yahoo）。`quote` ライブ優先、失敗時は日足。
+ * 失敗した指標は `value: -1`（UI は —）。
  */
 export async function fetchGlobalMarketIndicators(): Promise<MarketIndicator[]> {
   const settled = await Promise.allSettled(
     GLOBAL_MARKET_BAR_DEFS.map(async ({ label, symbol }) => {
-      const snap = await fetchYahooCloseAndDayChangePct(symbol);
+      const snap = await fetchHybridCloseAndChangeForYahooSymbol(symbol);
       if (snap == null) return { label, value: -1, changePct: 0 } satisfies MarketIndicator;
       return { label, value: snap.close, changePct: snap.changePct };
     }),

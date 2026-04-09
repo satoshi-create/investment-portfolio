@@ -5,14 +5,17 @@ export function StatBox({
   value,
   subLabel,
   valueColor = "text-white",
+  title,
 }: {
   label: string;
   value: string;
   subLabel?: string;
   valueColor?: string;
+  /** ホバーで基準時刻などを表示 */
+  title?: string;
 }) {
   return (
-    <div>
+    <div title={title}>
       <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1 tracking-wider">
         {label}
       </span>
