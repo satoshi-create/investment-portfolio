@@ -50,7 +50,7 @@ function marketSummary(indicators: PortfolioDailySnapshotRow["marketIndicators"]
   return parts.length > 0 ? parts.join(" · ") : `${indicators.length} 指標`;
 }
 
-const COL_COUNT = 11;
+const COL_COUNT = 12;
 
 export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshotRow[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -82,6 +82,9 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
                 <th className="px-4 py-3 whitespace-nowrap">記録時刻</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">USD/JPY</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">VOO</th>
+                <th className="px-4 py-3 text-right whitespace-nowrap" title="記録時点の VOO 当日騰落 %（前スナップ比ではない）">
+                  VOO当日%
+                </th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">評価額 (円)</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">含み損益 (円)</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">平均 α</th>
@@ -110,6 +113,9 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
                         {r.benchmarkClose != null && r.benchmarkClose > 0
                           ? r.benchmarkClose.toLocaleString(undefined, { maximumFractionDigits: 2 })
                           : "—"}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right font-mono text-xs ${pctClass(r.benchmarkChangePct)}`}>
+                        {fmtPct(r.benchmarkChangePct)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-slate-200 text-xs">
                         {jpyFmt.format(r.totalMarketValueJpy)}

@@ -14,6 +14,8 @@ type Props = {
   benchmarkChangePct?: number | null;
   benchmarkPriceSource?: "live" | "close";
   benchmarkAsOf?: string | null;
+  /** 保有の前日比 %（算出できた銘柄の算術平均）。ダッシュボード summary と同じ。 */
+  portfolioAvgDayChangePct?: number | null;
   marketIndicators: MarketIndicator[];
 };
 
@@ -32,10 +34,21 @@ export function DashboardHeader({
   benchmarkChangePct,
   benchmarkPriceSource = "close",
   benchmarkAsOf = null,
+  portfolioAvgDayChangePct = null,
   marketIndicators,
 }: Props) {
   const [marketOpen, setMarketOpen] = useState(false);
   const alphaFmt = formatAlphaPercent(totalAlpha);
+  const daySpreadPct =
+    portfolioAvgDayChangePct != null &&
+    benchmarkChangePct != null &&
+    Number.isFinite(portfolioAvgDayChangePct) &&
+    Number.isFinite(benchmarkChangePct)
+      ? portfolioAvgDayChangePct - benchmarkChangePct
+      : null;
+  const spreadFmt = formatAlphaPercent(
+    daySpreadPct != null && Number.isFinite(daySpreadPct) ? daySpreadPct : Number.NaN,
+  );
   const benchText =
     benchmarkPrice > 0 && Number.isFinite(benchmarkPrice)
       ? benchmarkPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })
@@ -112,6 +125,20 @@ export function DashboardHeader({
                 valueColor={alphaFmt.color}
                 subLabel="Latest daily α vs VOO, equal-weighted"
               />
+              <p
+                className="mt-1.5 text-[8px] leading-snug text-muted-foreground/90"
+                title="均等加重の保有前日比から、VOO の当日騰落（右欄と同じ値）を差し引いた当日の超過リターン（目安）。"
+              >
+                <span className="font-bold uppercase tracking-wider text-muted-foreground/80">α 乖離</span>
+                <span
+                  className={`mx-1.5 font-mono font-semibold tabular-nums tracking-tight ${spreadFmt.color}`}
+                >
+                  {spreadFmt.text}
+                </span>
+                <span className="text-muted-foreground/65 normal-case font-normal tracking-normal">
+                  （均等PF − VOO·1D）
+                </span>
+              </p>
             </div>
           </div>
           <StatBox

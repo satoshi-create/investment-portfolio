@@ -137,6 +137,11 @@ export type DashboardSummary = {
   totalProfitJpy: number;
   /** totalProfitJpy / totalCostBasisJpy × 100（コスト 0 のときは 0） */
   totalReturnPct: number;
+  /**
+   * 保有銘柄の前日比 %（`dayChangePercent` が取れた銘柄の算術平均）。
+   * いずれも算出不可のときは null（Holdings 明細フッターと同じ定義）。
+   */
+  portfolioAvgDayChangePct: number | null;
 };
 
 export type DashboardData = {
@@ -240,6 +245,8 @@ export type PortfolioDailySnapshotRow = {
   fxUsdJpy: number;
   benchmarkTicker: string;
   benchmarkClose: number | null;
+  /** 記録時点の VOO 当日騰落 %（`getDashboardData` の benchmarkChangePct）。未記録・旧行は null */
+  benchmarkChangePct: number | null;
   totalMarketValueJpy: number;
   totalUnrealizedPnlJpy: number | null;
   portfolioAvgAlpha: number | null;

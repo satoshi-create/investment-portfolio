@@ -34,6 +34,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
   totalRealizedPnlJpy: 0,
   totalProfitJpy: 0,
   totalReturnPct: 0,
+  portfolioAvgDayChangePct: null,
 };
 
 type DashboardPayload = {
@@ -168,6 +169,7 @@ export function DashboardPage() {
           benchmarkChangePct={summary.benchmarkChangePct}
           benchmarkPriceSource={summary.benchmarkPriceSource ?? "close"}
           benchmarkAsOf={summary.benchmarkAsOf ?? null}
+          portfolioAvgDayChangePct={summary.portfolioAvgDayChangePct ?? null}
           marketIndicators={summary.marketIndicators ?? []}
         />
 

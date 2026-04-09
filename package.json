@@ -14,7 +14,8 @@
     "verify:prices": "tsx scripts/verify-price-alpha.ts",
     "set:provider-symbol": "tsx scripts/set-provider-symbol.ts",
     "backfill:alpha": "tsx scripts/backfill-alpha-history.ts",
-    "snapshot:daily": "tsx scripts/record-portfolio-snapshot.ts"
+    "snapshot:daily": "tsx scripts/record-portfolio-snapshot.ts",
+    "migrate:portfolio-benchmark-pct": "tsx scripts/migrate-portfolio-benchmark-change-pct.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",

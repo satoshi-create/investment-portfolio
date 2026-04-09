@@ -295,6 +295,15 @@ function computeFinancialTotals(
   };
 }
 
+/** 保有の前日比 %（算出できた銘柄の算術平均）。Holdings 明細フッターと同じ。 */
+function computePortfolioAvgDayChangePct(stocks: Stock[]): number | null {
+  const vals = stocks
+    .map((s) => s.dayChangePercent)
+    .filter((x): x is number => x != null && Number.isFinite(x));
+  if (vals.length === 0) return null;
+  return roundAlphaMetric(vals.reduce((a, b) => a + b, 0) / vals.length);
+}
+
 type HoldingQueryRow = {
   id: unknown;
   ticker: unknown;
@@ -897,6 +906,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
         fxUsdJpy: fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : null,
         totalHoldings: 0,
         marketIndicators,
+        portfolioAvgDayChangePct: null,
         ...financial,
       },
     };
@@ -969,6 +979,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     fxUsdJpy: fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : null,
     totalHoldings: stocks.length,
     marketIndicators,
+    portfolioAvgDayChangePct: computePortfolioAvgDayChangePct(stocks),
     ...financial,
   };
 

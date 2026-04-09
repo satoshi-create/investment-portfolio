@@ -117,6 +117,7 @@ CREATE TABLE portfolio_daily_snapshots (
   fx_usd_jpy REAL NOT NULL,
   benchmark_ticker TEXT NOT NULL,
   benchmark_close REAL,
+  benchmark_change_pct REAL,
   total_market_value_jpy REAL NOT NULL,
   total_unrealized_pnl_jpy REAL,
   portfolio_avg_alpha REAL,

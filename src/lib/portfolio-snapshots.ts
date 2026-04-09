@@ -59,6 +59,7 @@ function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): 
     fxUsdJpy: Number(row.fx_usd_jpy),
     benchmarkTicker: String(row.benchmark_ticker),
     benchmarkClose: numOrNull(row.benchmark_close),
+    benchmarkChangePct: numOrNull(row.benchmark_change_pct),
     totalMarketValueJpy: Number(row.total_market_value_jpy),
     totalUnrealizedPnlJpy: numOrNull(row.total_unrealized_pnl_jpy),
     portfolioAvgAlpha: numOrNull(row.portfolio_avg_alpha),
@@ -81,6 +82,7 @@ export async function fetchPortfolioDailySnapshotsForUser(
   try {
     const rs = await db.execute({
       sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
+                   p.benchmark_change_pct,
                    p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.portfolio_avg_alpha,
                    p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
                    m.payload_json AS market_glance_payload_json
@@ -100,6 +102,7 @@ export async function fetchPortfolioDailySnapshotsForUser(
       try {
         const rs = await db.execute({
           sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                       benchmark_change_pct,
                        total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
                        portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
                 FROM portfolio_daily_snapshots
@@ -264,6 +267,10 @@ export async function recordPortfolioDailySnapshot(
   const recordedAt = new Date().toISOString();
   const benchmarkClose =
     dash.summary.benchmarkLatestPrice > 0 ? dash.summary.benchmarkLatestPrice : null;
+  const benchmarkChangeAtRecord =
+    dash.summary.benchmarkChangePct != null && Number.isFinite(dash.summary.benchmarkChangePct)
+      ? roundAlphaMetric(dash.summary.benchmarkChangePct)
+      : null;
   const fxUsdJpyApplied =
     dash.summary.fxUsdJpy != null && Number.isFinite(dash.summary.fxUsdJpy) && dash.summary.fxUsdJpy > 0
       ? dash.summary.fxUsdJpy
@@ -323,14 +330,16 @@ export async function recordPortfolioDailySnapshot(
     await tx.execute({
       sql: `INSERT INTO portfolio_daily_snapshots (
               id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+              benchmark_change_pct,
               total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
               portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
               id = excluded.id,
               recorded_at = excluded.recorded_at,
               fx_usd_jpy = excluded.fx_usd_jpy,
               benchmark_close = excluded.benchmark_close,
+              benchmark_change_pct = excluded.benchmark_change_pct,
               total_market_value_jpy = excluded.total_market_value_jpy,
               total_unrealized_pnl_jpy = excluded.total_unrealized_pnl_jpy,
               portfolio_avg_alpha = excluded.portfolio_avg_alpha,
@@ -345,6 +354,7 @@ export async function recordPortfolioDailySnapshot(
         fxUsdJpyApplied,
         SIGNAL_BENCHMARK_TICKER,
         benchmarkClose,
+        benchmarkChangeAtRecord,
         totalMv,
         totalPnlJpy,
         avgAlpha,
