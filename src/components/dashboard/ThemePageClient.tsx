@@ -88,6 +88,15 @@ function fieldLabelOf(e: ThemeEcosystemWatchItem): string {
   return e.field.trim() || "その他";
 }
 
+function extractGeopoliticalPotential(observationNotes: string | null | undefined): string | null {
+  if (observationNotes == null) return null;
+  const s = observationNotes.trim();
+  if (s.length === 0) return null;
+  const m = s.match(/地政学(?:ポテンシャル|リスク|要因)[:：]\s*([^\n]+)\s*$/);
+  if (m?.[1]) return m[1].trim();
+  return null;
+}
+
 export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [data, setData] = useState<ThemeDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -393,6 +402,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           >
                             Research{ecoSortMark("research")}
                           </th>
+                          <th className="px-6 py-4 text-left whitespace-nowrap">江戸的役割</th>
                           {ecoShowValueCols ? (
                             <>
                               <th
@@ -438,7 +448,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         {ecosystemSorted.length === 0 && patrolOn ? (
                           <tr>
                             <td
-                              colSpan={ecoShowValueCols ? 7 : 5}
+                              colSpan={ecoShowValueCols ? 8 : 6}
                               className="px-6 py-8 text-center text-sm text-slate-500"
                             >
                               割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。
@@ -467,7 +477,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                     {field}
                                   </td>
                                   <td
-                                    colSpan={ecoShowValueCols ? 6 : 4}
+                                    colSpan={ecoShowValueCols ? 7 : 5}
                                     className="border-b border-slate-800 bg-slate-950/90 px-6 py-2"
                                     aria-hidden
                                   />
@@ -523,19 +533,22 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                       {e.companyName}
                                     </span>
                                   ) : null}
-                                  {e.observationNotes ? (
-                                    <span
-                                      className="text-[10px] text-slate-500 leading-snug line-clamp-2"
-                                      title={e.observationNotes}
-                                    >
-                                      {e.observationNotes}
-                                    </span>
-                                  ) : null}
-                                  {e.role ? (
-                                    <span className="text-[10px] text-slate-500 leading-snug line-clamp-2" title={e.role}>
-                                      {e.role}
-                                    </span>
-                                  ) : null}
+                                  {e.observationNotes ? (() => {
+                                    const geo = extractGeopoliticalPotential(e.observationNotes);
+                                    return (
+                                      <span className="text-[10px] text-slate-500 leading-snug line-clamp-2" title={e.observationNotes}>
+                                        {e.observationNotes}
+                                        {geo ? (
+                                          <span
+                                            className="ml-2 inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-300/90"
+                                            title={`地政学ポテンシャル: ${geo}`}
+                                          >
+                                            Geo
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    );
+                                  })() : null}
                                   {e.observationStartedAt ? (
                                     <span className="text-[10px] font-mono text-slate-600 pt-0.5">
                                       観測開始（投入）{" "}
@@ -582,6 +595,15 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                     )}
                                   </div>
                                 </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                {e.role ? (
+                                  <div className="text-xs text-slate-300 leading-relaxed line-clamp-4" title={e.role}>
+                                    {e.role}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-slate-600">—</span>
+                                )}
                               </td>
                               {ecoShowValueCols ? (
                                 <>
