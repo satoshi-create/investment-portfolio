@@ -91,9 +91,10 @@ function TradeEntryFormInner({
   const tickerDatalistId = useId();
 
   const sortedHoldingOptions = useMemo(() => {
+    const safeHoldingOptions = holdingOptions ?? [];
     const seen = new Set<string>();
     const out: { ticker: string; name: string }[] = [];
-    for (const h of holdingOptions) {
+    for (const h of safeHoldingOptions) {
       const t = h.ticker.trim();
       if (t.length === 0 || seen.has(t)) continue;
       seen.add(t);

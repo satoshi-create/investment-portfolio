@@ -30,6 +30,8 @@ const EMPTY_SUMMARY: DashboardSummary = {
   fxUsdJpy: null,
   totalHoldings: 0,
   marketIndicators: [],
+  goldPrice: null,
+  btcPrice: null,
   totalCostBasisJpy: 0,
   totalRealizedPnlJpy: 0,
   totalProfitJpy: 0,

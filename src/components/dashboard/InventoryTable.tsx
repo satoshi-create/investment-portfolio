@@ -13,23 +13,43 @@ const jpyFmt = new Intl.NumberFormat("ja-JP", {
   maximumFractionDigits: 0,
 });
 
+type SortKey = "asset" | "alpha" | "trend" | "position" | "research" | "deviation" | "drawdown";
+
+function deviationOf(s: Stock): number | null {
+  const z = s.alphaDeviationZ;
+  return z != null && Number.isFinite(z) ? z : null;
+}
+
+function drawdownOf(s: Stock): number | null {
+  const d = s.drawdownFromHigh90dPct;
+  return d != null && Number.isFinite(d) ? d : null;
+}
+
+function isOpportunityRow(s: Stock, themeStructuralTrendUp: boolean): boolean {
+  if (!themeStructuralTrendUp) return false;
+  const z = deviationOf(s);
+  return z != null && z <= -1.5;
+}
+
 export function InventoryTable({
   stocks,
   totalHoldings,
   averageAlpha,
   onTrade,
   onTradeNew,
+  themeStructuralTrendUp = false,
 }: {
   stocks: Stock[];
   totalHoldings: number;
   averageAlpha: number;
   onTrade?: (initial: TradeEntryInitial) => void;
   onTradeNew?: () => void;
+  /** テーマページなどで加重累積 Alpha が上向きのとき true（✨ の条件に使用） */
+  themeStructuralTrendUp?: boolean;
 }) {
-  const [sortKey, setSortKey] = useState<
-    "asset" | "alpha" | "trend" | "position" | "research"
-  >("position");
+  const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [showValueCols, setShowValueCols] = useState(false);
 
   const sortedStocks = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -51,6 +71,8 @@ export function InventoryTable({
       if (key === "alpha") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
       if (key === "trend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
       if (key === "position") return dir * cmpNum(a.marketValue, b.marketValue);
+      if (key === "deviation") return dir * cmpNum(deviationOf(a), deviationOf(b));
+      if (key === "drawdown") return dir * cmpNum(drawdownOf(a), drawdownOf(b));
       // research: prioritize upcoming earnings (smaller days), then yield.
       const earnCmp = cmpNum(
         a.daysToEarnings != null && a.daysToEarnings >= 0 ? a.daysToEarnings : null,
@@ -62,7 +84,7 @@ export function InventoryTable({
     return arr;
   }, [stocks, sortDir, sortKey]);
 
-  function toggleSort(nextKey: typeof sortKey) {
+  function toggleSort(nextKey: SortKey) {
     if (nextKey === sortKey) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
@@ -71,7 +93,7 @@ export function InventoryTable({
     }
   }
 
-  function sortMark(k: typeof sortKey) {
+  function sortMark(k: SortKey) {
     if (k !== sortKey) return "";
     return sortDir === "asc" ? " ▲" : " ▼";
   }
@@ -79,13 +101,24 @@ export function InventoryTable({
   const avgAlphaClass =
     averageAlpha > 0 ? "text-emerald-400" : averageAlpha < 0 ? "text-rose-400" : "text-slate-400";
   const avgAlphaSign = averageAlpha > 0 ? "+" : "";
+
+  function fmtZ(z: number | null): string {
+    if (z == null) return "—";
+    return `${z > 0 ? "+" : ""}${z.toFixed(2)}σ`;
+  }
+
+  function fmtDd(d: number | null): string {
+    if (d == null) return "—";
+    return `${d > 0 ? "+" : ""}${d.toFixed(2)}%`;
+  }
+
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
       <div className="p-5 border-b border-border flex justify-between items-center bg-card/60">
         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Inventory Status
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           {onTradeNew ? (
             <button
               type="button"
@@ -95,6 +128,18 @@ export function InventoryTable({
               取引入力
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setShowValueCols((v) => !v)}
+            className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
+              showValueCols
+                ? "text-amber-400 border-amber-500/50 bg-amber-500/10"
+                : "text-muted-foreground border-border hover:bg-muted/50"
+            }`}
+            title="Alpha 乖離（Z）と 90 日高値からの落ち率を表示"
+          >
+            乖離・落率
+          </button>
           <div className="flex items-center gap-3 bg-background px-3 py-1.5 rounded-lg border border-border">
             <Search size={14} className="text-muted-foreground" />
             <input
@@ -122,6 +167,24 @@ export function InventoryTable({
               >
                 Research{sortMark("research")}
               </th>
+              {showValueCols ? (
+                <>
+                  <th
+                    className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                    onClick={() => toggleSort("deviation")}
+                    title="Alpha 乖離（σ）"
+                  >
+                    乖離{sortMark("deviation")}
+                  </th>
+                  <th
+                    className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                    onClick={() => toggleSort("drawdown")}
+                    title="90 日高値比"
+                  >
+                    落率{sortMark("drawdown")}
+                  </th>
+                </>
+              ) : null}
               <th
                 className="px-6 py-4 text-right cursor-pointer select-none"
                 onClick={() => toggleSort("alpha")}
@@ -146,162 +209,201 @@ export function InventoryTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
-            {sortedStocks.map((stock) => (
-              <tr key={stock.id} className="group hover:bg-muted/60 transition-all">
-                <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors">
-                        {stock.ticker}
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span
-                          className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
-                            (stock.accountType ?? "特定") === "NISA"
-                              ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
-                              : "text-muted-foreground border-border bg-background/60"
-                          }`}
-                          title="口座区分（holdings.account_type）"
-                        >
-                          {stock.accountType ?? "特定"}
-                        </span>
-                        {onTrade ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onTrade({
-                                ticker: stock.ticker,
-                                name: stock.name || undefined,
-                                ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
-                                sector: stock.sector ?? stock.secondaryTag,
-                              })
-                            }
-                            className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-0.5 rounded-md hover:bg-accent-cyan/10"
-                          >
-                            Trade
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                    {stock.name ? (
-                      <span className="text-[10px] text-muted-foreground leading-snug line-clamp-2" title={stock.name}>
-                        {stock.name}
-                      </span>
-                    ) : null}
-                    {stock.tag.trim().length > 0 ? (
-                      <Link
-                        href={`/themes/${encodeURIComponent(stock.tag)}`}
-                        className="inline-flex items-center w-fit text-[10px] font-bold uppercase tracking-tight text-accent-cyan hover:text-accent-cyan/90 border border-accent-cyan/40 rounded-md px-2 py-0.5 mt-0.5 hover:bg-accent-cyan/10 transition-colors"
-                      >
-                        {stock.tag}
-                      </Link>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
-                        {stock.countryName}
-                      </span>
-                      {stock.nextEarningsDate ? (
-                        <span
-                          className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
-                          title={`次期決算予定日: ${stock.nextEarningsDate}`}
-                        >
-                          E:{stock.daysToEarnings != null ? `D${stock.daysToEarnings}` : stock.nextEarningsDate}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground">E:—</span>
-                      )}
-                      {stock.dividendYieldPercent != null ? (
-                        <span
-                          className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
-                          title={
-                            stock.annualDividendRate != null
-                              ? `年間配当: ${stock.annualDividendRate}`
-                              : "年間配当: —"
-                          }
-                        >
-                          Div:{stock.dividendYieldPercent.toFixed(2)}%
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground">Div:—</span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">
-                      {stock.accountType ?? "特定"}
-                    </span>
-                  </div>
-                </td>
-                <td
-                  className={`px-6 py-4 text-right font-mono font-bold ${
-                    stock.alphaHistory.length === 0
-                      ? "text-muted-foreground"
-                      : stock.alphaHistory.slice(-1)[0]! > 0
-                        ? "text-emerald-400"
-                        : "text-rose-400"
-                  }`}
-                >
-                  {stock.alphaHistory.length === 0 ? (
-                    "—"
-                  ) : (
-                    <>
-                      {stock.alphaHistory.slice(-1)[0]! > 0 ? "+" : ""}
-                      {stock.alphaHistory.slice(-1)[0]}%
-                    </>
-                  )}
-                </td>
-                <td className="px-6 py-4">
-                  {stock.alphaHistory.length === 0 ? (
-                    <span className="text-muted-foreground text-xs">No data</span>
-                  ) : (
-                    <TrendMiniChart history={stock.alphaHistory} />
-                  )}
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span className="font-mono text-foreground/90 font-bold">{stock.quantity}</span>
-                    {stock.currentPrice != null && stock.currentPrice > 0 ? (
-                      <span className="text-[9px] text-muted-foreground font-mono inline-flex items-center gap-1 flex-wrap justify-end">
-                        <span>
-                          @ {stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}
-                        </span>
-                        {stock.priceSource === "live" && stock.lastUpdatedAt ? (
-                          <span
-                            className="inline-flex items-center gap-0.5"
-                            title={`Live（Yahoo quote）\n${new Date(stock.lastUpdatedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`}
-                          >
+            {sortedStocks.map((stock) => {
+              const opp = isOpportunityRow(stock, themeStructuralTrendUp);
+              const z = deviationOf(stock);
+              const dd = drawdownOf(stock);
+              return (
+                <tr key={stock.id} className="group hover:bg-muted/60 transition-all">
+                  <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-1 min-w-0">
+                          {opp ? (
                             <span
-                              className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 motion-safe:animate-pulse"
-                              aria-hidden
-                            />
-                            <span className="text-[7px] font-bold uppercase tracking-wide text-emerald-400/90">
-                              Live
+                              className="shrink-0 text-base leading-none"
+                              title="テーマの構造トレンドは上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"
+                              aria-label="Opportunity"
+                            >
+                              ✨
                             </span>
+                          ) : null}
+                          <span className="truncate">{stock.ticker}</span>
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span
+                            className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                              (stock.accountType ?? "特定") === "NISA"
+                                ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
+                                : "text-muted-foreground border-border bg-background/60"
+                            }`}
+                            title="口座区分（holdings.account_type）"
+                          >
+                            {stock.accountType ?? "特定"}
                           </span>
-                        ) : null}
+                          {onTrade ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onTrade({
+                                  ticker: stock.ticker,
+                                  name: stock.name || undefined,
+                                  ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
+                                  sector: stock.sector ?? stock.secondaryTag,
+                                })
+                              }
+                              className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-0.5 rounded-md hover:bg-accent-cyan/10"
+                            >
+                              Trade
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      {stock.name ? (
+                        <span className="text-[10px] text-muted-foreground leading-snug line-clamp-2" title={stock.name}>
+                          {stock.name}
+                        </span>
+                      ) : null}
+                      {stock.tag.trim().length > 0 ? (
+                        <Link
+                          href={`/themes/${encodeURIComponent(stock.tag)}`}
+                          className="inline-flex items-center w-fit text-[10px] font-bold uppercase tracking-tight text-accent-cyan hover:text-accent-cyan/90 border border-accent-cyan/40 rounded-md px-2 py-0.5 mt-0.5 hover:bg-accent-cyan/10 transition-colors"
+                        >
+                          {stock.tag}
+                        </Link>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
+                          {stock.countryName}
+                        </span>
+                        {stock.nextEarningsDate ? (
+                          <span
+                            className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
+                            title={`次期決算予定日: ${stock.nextEarningsDate}`}
+                          >
+                            E:{stock.daysToEarnings != null ? `D${stock.daysToEarnings}` : stock.nextEarningsDate}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">E:—</span>
+                        )}
+                        {stock.dividendYieldPercent != null ? (
+                          <span
+                            className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
+                            title={
+                              stock.annualDividendRate != null
+                                ? `年間配当: ${stock.annualDividendRate}`
+                                : "年間配当: —"
+                            }
+                          >
+                            Div:{stock.dividendYieldPercent.toFixed(2)}%
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">Div:—</span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">
+                        {stock.accountType ?? "特定"}
                       </span>
-                    ) : null}
-                    <span className="text-[9px] text-muted-foreground font-bold tracking-tighter">
-                      {stock.marketValue > 0 ? `${jpyFmt.format(stock.marketValue)}（推定）` : "—"}
-                    </span>
-                    {stock.valuationFactor !== 1 ? (
-                      <span className="text-[8px] text-amber-500/90 font-mono">factor {stock.valuationFactor}</span>
-                    ) : null}
-                    <span className="text-[9px] font-bold uppercase tracking-tighter text-blue-400">
-                      {stock.weight > 0 ? `${stock.weight.toFixed(1)}% wt` : stock.marketValue > 0 ? "0% wt" : "—"}
-                    </span>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                    </div>
+                  </td>
+                  {showValueCols ? (
+                    <>
+                      <td
+                        className={`px-6 py-4 text-right font-mono text-xs font-bold ${
+                          z == null ? "text-muted-foreground" : z < -1 ? "text-amber-400" : z > 1 ? "text-emerald-400" : "text-foreground/90"
+                        }`}
+                      >
+                        {fmtZ(z)}
+                      </td>
+                      <td
+                        className={`px-6 py-4 text-right font-mono text-xs font-bold ${
+                          dd == null ? "text-muted-foreground" : dd < -10 ? "text-rose-400" : "text-foreground/90"
+                        }`}
+                      >
+                        {fmtDd(dd)}
+                      </td>
+                    </>
+                  ) : null}
+                  <td
+                    className={`px-6 py-4 text-right font-mono font-bold ${
+                      stock.alphaHistory.length === 0
+                        ? "text-muted-foreground"
+                        : stock.alphaHistory.slice(-1)[0]! > 0
+                          ? "text-emerald-400"
+                          : "text-rose-400"
+                    }`}
+                  >
+                    {stock.alphaHistory.length === 0 ? (
+                      "—"
+                    ) : (
+                      <>
+                        {stock.alphaHistory.slice(-1)[0]! > 0 ? "+" : ""}
+                        {stock.alphaHistory.slice(-1)[0]}%
+                      </>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {stock.alphaHistory.length === 0 ? (
+                      <span className="text-muted-foreground text-xs">No data</span>
+                    ) : (
+                      <TrendMiniChart history={stock.alphaHistory} />
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="font-mono text-foreground/90 font-bold">{stock.quantity}</span>
+                      {stock.currentPrice != null && stock.currentPrice > 0 ? (
+                        <span className="text-[9px] text-muted-foreground font-mono inline-flex items-center gap-1 flex-wrap justify-end">
+                          <span>
+                            @ {stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}
+                          </span>
+                          {stock.priceSource === "live" && stock.lastUpdatedAt ? (
+                            <span
+                              className="inline-flex items-center gap-0.5"
+                              title={`Live（Yahoo quote）\n${new Date(stock.lastUpdatedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`}
+                            >
+                              <span
+                                className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 motion-safe:animate-pulse"
+                                aria-hidden
+                              />
+                              <span className="text-[7px] font-bold uppercase tracking-wide text-emerald-400/90">
+                                Live
+                              </span>
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : null}
+                      <span className="text-[9px] text-muted-foreground font-bold tracking-tighter">
+                        {stock.marketValue > 0 ? `${jpyFmt.format(stock.marketValue)}（推定）` : "—"}
+                      </span>
+                      {stock.valuationFactor !== 1 ? (
+                        <span className="text-[8px] text-amber-500/90 font-mono">factor {stock.valuationFactor}</span>
+                      ) : null}
+                      <span className="text-[9px] font-bold uppercase tracking-tighter text-blue-400">
+                        {stock.weight > 0 ? `${stock.weight.toFixed(1)}% wt` : stock.marketValue > 0 ? "0% wt" : "—"}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr className="group bg-card/90 border-t border-border">
               <td className={`px-6 py-3 text-xs font-bold text-foreground/90 min-w-[10rem] max-w-[11rem] ${stickyTdFootFirst}`}>
                 Total: {totalHoldings} {totalHoldings === 1 ? "item" : "items"}
               </td>
+              <td className="px-6 py-3" />
+              {showValueCols ? (
+                <>
+                  <td className="px-6 py-3" />
+                  <td className="px-6 py-3" />
+                </>
+              ) : null}
               <td className={`px-6 py-3 text-right text-xs font-mono font-bold ${avgAlphaClass}`}>
                 Avg: {Number.isFinite(averageAlpha) ? `${avgAlphaSign}${averageAlpha.toFixed(2)}%` : "—"}
               </td>
@@ -316,4 +418,3 @@ export function InventoryTable({
     </div>
   );
 }
-

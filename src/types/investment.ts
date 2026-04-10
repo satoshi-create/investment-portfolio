@@ -75,6 +75,10 @@ export interface Stock {
   lastUpdatedAt: string | null;
   /** `alpha_history` 最新行の終値（無ければ null） */
   currentPrice: number | null;
+  /** 直近日次 Alpha の約30営業日ベース Z（負ほど直近が平均より冷えている）。算出不可は null */
+  alphaDeviationZ: number | null;
+  /** 過去約90観測の終値高値対比（現在価）。算出不可は null */
+  drawdownFromHigh90dPct: number | null;
   /**
    * 円ベースの評価額（表示・ウェイト用）。
    * 計算: quantity × currentPrice × valuation_factor ×（米株は USD/JPY レート、投信等は 1）。
@@ -129,6 +133,10 @@ export type DashboardSummary = {
   totalHoldings: number;
   /** 世界主要インデックス等（`getDashboardData` が Yahoo から一括取得） */
   marketIndicators: MarketIndicator[];
+  /** Gold futures (GC=F) price (USD). */
+  goldPrice: number | null;
+  /** Bitcoin price (BTC-USD, USD). */
+  btcPrice: number | null;
   /** 現在保有の取得価格合計（円）：各銘柄の marketValue − unrealizedPnlJpy の合計 */
   totalCostBasisJpy: number;
   /** `trade_history.realized_pnl_jpy` の累計（円） */
@@ -207,6 +215,10 @@ export type ThemeEcosystemWatchItem = {
   latestAlpha: number | null;
   /** 累積系列上の実際の起点営観測日（投入日に最も近いデータ上の日）。算出不可時は null */
   alphaObservationStartDate: string | null;
+  /** 日次 Alpha 系列からの Z（累積系列ではなく `alpha_history` / Yahoo 日次）。算出不可は null */
+  alphaDeviationZ: number | null;
+  /** 約90営業日の終値高値対比（現在価）。算出不可は null */
+  drawdownFromHigh90dPct: number | null;
 };
 
 /** テーマ起点正規化後の累積 Alpha（日次超過の合計、パーセントポイント）。 */

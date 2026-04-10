@@ -176,3 +176,64 @@ export function mergeWeightedCumulativeAlphaSeries(
   }
   return out;
 }
+
+/**
+ * 直近の日次 Alpha が、直前までの最大 `windowSize` 日（当日除く）の平均・標準偏差から見て何 σ 外れているか。
+ * 負が大きいほど「直近だけ市場期待が冷えている」状態。系列不足や分散 0 は null。
+ */
+export function computeAlphaDeviationZScore(dailyAlphasChronological: number[], windowSize = 30): number | null {
+  if (dailyAlphasChronological.length < 3) return null;
+  const maxWin = Math.max(3, Math.floor(windowSize));
+  const win = dailyAlphasChronological.slice(-maxWin);
+  if (win.length < 3) return null;
+  const current = win[win.length - 1]!;
+  const baseline = win.slice(0, -1);
+  if (baseline.length < 2) return null;
+  let sum = 0;
+  for (const x of baseline) {
+    if (!Number.isFinite(x)) return null;
+    sum += x;
+  }
+  const mean = sum / baseline.length;
+  let varAcc = 0;
+  for (const x of baseline) {
+    const d = x - mean;
+    varAcc += d * d;
+  }
+  const variance = varAcc / (baseline.length - 1);
+  const std = Math.sqrt(variance);
+  if (!Number.isFinite(std) || std < 1e-9) return null;
+  if (!Number.isFinite(current)) return null;
+  return roundAlphaMetric((current - mean) / std);
+}
+
+/**
+ * 直近 `lookback` 本の終値高値に対する現在価の乖離（%）。(現在/高値 - 1)×100。高値下では負。
+ */
+export function computePriceDrawdownFromHighPercent(
+  closesChronological: (number | null | undefined)[],
+  currentPrice: number | null | undefined,
+  lookback = 90,
+): number | null {
+  if (currentPrice == null || !Number.isFinite(currentPrice) || currentPrice <= 0) return null;
+  const lb = Math.max(1, Math.floor(lookback));
+  const slice = closesChronological.slice(-lb);
+  const valid = slice.filter((c): c is number => c != null && Number.isFinite(c) && c > 0);
+  if (valid.length === 0) return null;
+  const high = Math.max(...valid);
+  if (!(high > 0)) return null;
+  return roundAlphaMetric((currentPrice / high - 1) * 100);
+}
+
+/** 加重累積 Alpha 系列が直近で上向きか（終値 vs 数点手前）。 */
+export function isCumulativeSeriesTrendUpward(
+  series: { cumulative: number }[],
+  lookbackPoints = 8,
+): boolean {
+  if (series.length < 2) return false;
+  const last = series[series.length - 1]!.cumulative;
+  const lb = Math.max(1, Math.floor(lookbackPoints));
+  const idx = Math.max(0, series.length - 1 - lb);
+  const prev = series[idx]!.cumulative;
+  return Number.isFinite(last) && Number.isFinite(prev) && last > prev;
+}

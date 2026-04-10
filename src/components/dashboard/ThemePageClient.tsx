@@ -10,6 +10,7 @@ import type {
   ThemeDetailData,
   ThemeEcosystemWatchItem,
 } from "@/src/types/investment";
+import { isCumulativeSeriesTrendUpward } from "@/src/lib/alpha-logic";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
@@ -39,6 +40,22 @@ function pctClass(v: number): string {
   if (v > 0) return "text-emerald-400";
   if (v < 0) return "text-rose-400";
   return "text-slate-400";
+}
+
+function fmtZsigma(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return `${v > 0 ? "+" : ""}${v.toFixed(2)}σ`;
+}
+
+function fmtDdCol(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
+function ecoOpportunityRow(e: ThemeEcosystemWatchItem, themeUp: boolean): boolean {
+  if (!themeUp) return false;
+  const z = e.alphaDeviationZ;
+  return z != null && Number.isFinite(z) && z <= -1.5;
 }
 
 function ThemeMetaBlock({ theme, themeName }: { theme: InvestmentThemeRecord | null; themeName: string }) {
@@ -77,8 +94,12 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [loading, setLoading] = useState(true);
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
   const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(null);
-  const [ecoSortKey, setEcoSortKey] = useState<"asset" | "research" | "alpha" | "trend" | "last">("alpha");
+  const [ecoSortKey, setEcoSortKey] = useState<
+    "asset" | "research" | "alpha" | "trend" | "last" | "deviation" | "drawdown"
+  >("alpha");
   const [ecoSortDir, setEcoSortDir] = useState<"asc" | "desc">("desc");
+  const [ecoShowValueCols, setEcoShowValueCols] = useState(false);
+  const [patrolOn, setPatrolOn] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +128,14 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
               alphaObservationStartDate:
                 typeof item.alphaObservationStartDate === "string" && item.alphaObservationStartDate.length >= 10
                   ? item.alphaObservationStartDate.slice(0, 10)
+                  : null,
+              alphaDeviationZ:
+                typeof item.alphaDeviationZ === "number" && Number.isFinite(item.alphaDeviationZ)
+                  ? item.alphaDeviationZ
+                  : null,
+              drawdownFromHigh90dPct:
+                typeof item.drawdownFromHigh90dPct === "number" && Number.isFinite(item.drawdownFromHigh90dPct)
+                  ? item.drawdownFromHigh90dPct
                   : null,
             }))
           : [],
@@ -140,6 +169,24 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const stocks = data?.stocks ?? [];
   const theme = data?.theme ?? null;
   const ecosystem = data?.ecosystem ?? [];
+  const cumulativeSeries = data?.cumulativeAlphaSeries ?? [];
+  const themeStructuralTrendUp = useMemo(() => isCumulativeSeriesTrendUpward(cumulativeSeries), [cumulativeSeries]);
+
+  useEffect(() => {
+    if (patrolOn) setEcoShowValueCols(true);
+  }, [patrolOn]);
+
+  const ecosystemFiltered = useMemo(() => {
+    if (!patrolOn) return ecosystem;
+    return ecosystem.filter((e) => {
+      const z = e.alphaDeviationZ;
+      const dd = e.drawdownFromHigh90dPct;
+      const coldAlpha = z != null && z <= -1.5;
+      const deepDrawdown = dd != null && dd <= -12;
+      return coldAlpha || deepDrawdown;
+    });
+  }, [ecosystem, patrolOn]);
+
   const ecosystemSorted = useMemo(() => {
     const dir = ecoSortDir === "asc" ? 1 : -1;
     const cmpStr = (a: string, b: string) => a.localeCompare(b, "ja");
@@ -153,13 +200,21 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     };
     const lastAlpha = (e: ThemeEcosystemWatchItem) =>
       e.alphaHistory.length > 0 ? e.alphaHistory[e.alphaHistory.length - 1]! : null;
+    const devZ = (e: ThemeEcosystemWatchItem) =>
+      e.alphaDeviationZ != null && Number.isFinite(e.alphaDeviationZ) ? e.alphaDeviationZ : null;
+    const ddOf = (e: ThemeEcosystemWatchItem) =>
+      e.drawdownFromHigh90dPct != null && Number.isFinite(e.drawdownFromHigh90dPct)
+        ? e.drawdownFromHigh90dPct
+        : null;
 
-    const arr = [...ecosystem];
+    const arr = [...ecosystemFiltered];
     arr.sort((a, b) => {
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
       if (ecoSortKey === "alpha") return dir * cmpNum(a.latestAlpha, b.latestAlpha);
       if (ecoSortKey === "trend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
       if (ecoSortKey === "last") return dir * cmpNum(a.currentPrice, b.currentPrice);
+      if (ecoSortKey === "deviation") return dir * cmpNum(devZ(a), devZ(b));
+      if (ecoSortKey === "drawdown") return dir * cmpNum(ddOf(a), ddOf(b));
       // research
       const earnCmp = cmpNum(
         a.daysToEarnings != null && a.daysToEarnings >= 0 ? a.daysToEarnings : null,
@@ -169,7 +224,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
       return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
     });
     return arr;
-  }, [ecosystem, ecoSortDir, ecoSortKey]);
+  }, [ecosystemFiltered, ecoSortDir, ecoSortKey]);
 
   function toggleEcoSort(next: typeof ecoSortKey) {
     if (next === ecoSortKey) setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -264,6 +319,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 averageAlpha={data.themeAverageAlpha}
                 onTrade={(init) => openTradeForm(init)}
                 onTradeNew={() => openTradeForm(null)}
+                themeStructuralTrendUp={themeStructuralTrendUp}
               />
             ) : null}
 
@@ -285,9 +341,39 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         </p>
                       </div>
                     </div>
-                    <p className="text-[10px] font-mono text-slate-600 shrink-0">
-                      計 {ecosystem.length} 銘柄
-                    </p>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEcoShowValueCols((v) => !v)}
+                          className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
+                            ecoShowValueCols
+                              ? "text-amber-400 border-amber-500/50 bg-amber-500/10"
+                              : "text-slate-500 border-slate-700 hover:bg-slate-800/60"
+                          }`}
+                          title="日次 Alpha 乖離（σ）と 90 日高値比"
+                        >
+                          乖離・落率
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPatrolOn((p) => !p)}
+                          className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
+                            patrolOn
+                              ? "text-cyan-400 border-cyan-500/50 bg-cyan-500/10"
+                              : "text-slate-500 border-slate-700 hover:bg-slate-800/60"
+                          }`}
+                          title="Alpha 乖離が大きい負け、または高値からの下落が大きい銘柄のみ"
+                        >
+                          割安パトロール
+                        </button>
+                      </div>
+                      <p className="text-[10px] font-mono text-slate-600 text-right">
+                        {patrolOn
+                          ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
+                          : `計 ${ecosystem.length} 銘柄`}
+                      </p>
+                    </div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -307,6 +393,24 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           >
                             Research{ecoSortMark("research")}
                           </th>
+                          {ecoShowValueCols ? (
+                            <>
+                              <th
+                                className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                                onClick={() => toggleEcoSort("deviation")}
+                                title="日次 Alpha 乖離（σ）"
+                              >
+                                乖離{ecoSortMark("deviation")}
+                              </th>
+                              <th
+                                className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                                onClick={() => toggleEcoSort("drawdown")}
+                                title="90 日高値比"
+                              >
+                                落率{ecoSortMark("drawdown")}
+                              </th>
+                            </>
+                          ) : null}
                           <th
                             className="px-6 py-4 text-right cursor-pointer select-none"
                             onClick={() => toggleEcoSort("alpha")}
@@ -331,11 +435,28 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/50">
+                        {ecosystemSorted.length === 0 && patrolOn ? (
+                          <tr>
+                            <td
+                              colSpan={ecoShowValueCols ? 7 : 5}
+                              className="px-6 py-8 text-center text-sm text-slate-500"
+                            >
+                              割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。
+                            </td>
+                          </tr>
+                        ) : null}
                         {ecosystemSorted.map((e, idx) => {
                           const prev = idx > 0 ? ecosystemSorted[idx - 1] : null;
                           const field = fieldLabelOf(e);
                           const prevField = prev ? fieldLabelOf(prev) : null;
                           const showFieldHeader = idx === 0 || field !== prevField;
+                          const ecoOpp = ecoOpportunityRow(e, themeStructuralTrendUp);
+                          const zEco =
+                            e.alphaDeviationZ != null && Number.isFinite(e.alphaDeviationZ) ? e.alphaDeviationZ : null;
+                          const ddEco =
+                            e.drawdownFromHigh90dPct != null && Number.isFinite(e.drawdownFromHigh90dPct)
+                              ? e.drawdownFromHigh90dPct
+                              : null;
                           return (
                             <React.Fragment key={e.id}>
                               {showFieldHeader ? (
@@ -345,7 +466,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                   >
                                     {field}
                                   </td>
-                                  <td colSpan={4} className="border-b border-slate-800 bg-slate-950/90 px-6 py-2" aria-hidden />
+                                  <td
+                                    colSpan={ecoShowValueCols ? 6 : 4}
+                                    className="border-b border-slate-800 bg-slate-950/90 px-6 py-2"
+                                    aria-hidden
+                                  />
                                 </tr>
                               ) : null}
                               <tr className="group hover:bg-slate-800/40 transition-all">
@@ -353,8 +478,17 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                 <div className="flex flex-col gap-0.5">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
-                                      <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors font-mono">
-                                        {e.ticker}
+                                      <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors font-mono inline-flex items-center gap-1">
+                                        {ecoOpp ? (
+                                          <span
+                                            className="shrink-0 text-base leading-none"
+                                            title="テーマの加重累積 Alpha は上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"
+                                            aria-label="Opportunity"
+                                          >
+                                            ✨
+                                          </span>
+                                        ) : null}
+                                        <span className="break-all">{e.ticker}</span>
                                       </span>
                                       {e.isUnlisted ? (
                                         <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -449,6 +583,34 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                   </div>
                                 </div>
                               </td>
+                              {ecoShowValueCols ? (
+                                <>
+                                  <td
+                                    className={`px-6 py-4 text-right font-mono text-xs font-bold ${
+                                      zEco == null
+                                        ? "text-slate-500"
+                                        : zEco < -1
+                                          ? "text-amber-400"
+                                          : zEco > 1
+                                            ? "text-emerald-400"
+                                            : "text-slate-200"
+                                    }`}
+                                  >
+                                    {fmtZsigma(zEco)}
+                                  </td>
+                                  <td
+                                    className={`px-6 py-4 text-right font-mono text-xs font-bold ${
+                                      ddEco == null
+                                        ? "text-slate-500"
+                                        : ddEco < -10
+                                          ? "text-rose-400"
+                                          : "text-slate-200"
+                                    }`}
+                                  >
+                                    {fmtDdCol(ddEco)}
+                                  </td>
+                                </>
+                              ) : null}
                               <td
                                 className={`px-6 py-4 text-right font-mono font-bold ${
                                   e.latestAlpha != null && Number.isFinite(e.latestAlpha)

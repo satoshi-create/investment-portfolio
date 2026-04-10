@@ -900,6 +900,8 @@ async function fetchHybridCloseAndChangeForYahooSymbol(
 const GLOBAL_MARKET_BAR_DEFS: readonly { label: string; symbol: string }[] = [
   { label: "USD/JPY", symbol: "JPY=X" },
   { label: "Crude (USO)", symbol: "USO" },
+  { label: "Gold", symbol: "GC=F" },
+  { label: "BTC", symbol: "BTC-USD" },
   { label: "S&P 500", symbol: "^GSPC" },
   { label: "NASDAQ 100", symbol: "^NDX" },
   { label: "SOX", symbol: "^SOX" },

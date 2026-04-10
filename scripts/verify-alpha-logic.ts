@@ -6,9 +6,12 @@ import assert from "node:assert/strict";
 import {
   calculateCumulativeAlpha,
   classifyTickerInstrument,
+  computeAlphaDeviationZScore,
   computeAlphaPercent,
+  computePriceDrawdownFromHighPercent,
   convertValueToJpy,
   dailyReturnPercent,
+  isCumulativeSeriesTrendUpward,
   mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
   roundAlphaMetric,
@@ -137,5 +140,21 @@ const merged = mergeWeightedCumulativeAlphaSeries([
 ]);
 eq(merged.length, 2);
 eq(merged[1]!.cumulative, 3);
+
+// Alpha deviation Z: oscillating baseline then cold last day (baseline σ > 0)
+const altBaseline: number[] = [];
+for (let i = 0; i < 29; i++) altBaseline.push(i % 2 === 0 ? 0.15 : -0.15);
+const zCold = computeAlphaDeviationZScore([...altBaseline, -2.5], 30);
+eq(zCold != null && zCold < -1.5, true);
+
+eq(computeAlphaDeviationZScore([0, 1]), null);
+eq(computeAlphaDeviationZScore([1, 1, 1, 1]), null);
+
+eq(computePriceDrawdownFromHighPercent([80, 100, 90], 90), -10);
+eq(computePriceDrawdownFromHighPercent([100], 100), 0);
+eq(computePriceDrawdownFromHighPercent([], 100), null);
+
+eq(isCumulativeSeriesTrendUpward([{ cumulative: 0 }, { cumulative: 1 }]), true);
+eq(isCumulativeSeriesTrendUpward([{ cumulative: 1 }, { cumulative: 0 }]), false);
 
 console.log("verify-alpha-logic: all assertions passed.");

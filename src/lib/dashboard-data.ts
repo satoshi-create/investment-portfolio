@@ -16,6 +16,8 @@ import type {
 import {
   calculateCumulativeAlpha,
   classifyTickerInstrument,
+  computeAlphaDeviationZScore,
+  computePriceDrawdownFromHighPercent,
   convertValueToJpy,
   dailyReturnPercent,
   mergeWeightedCumulativeAlphaSeries,
@@ -40,6 +42,7 @@ import {
   fetchLatestPriceWithChangePct,
   fetchLiveQuoteSnapshot,
   fetchHoldingsHybridPriceSnapshots,
+  fetchPriceHistory,
   type HybridHoldingPriceSnapshot,
   fetchUsdJpyRate,
   holdingLivePriceKey,
@@ -369,6 +372,7 @@ function buildDraftsFromHoldingRows(
     const ticker = String(row.ticker);
     const series = byTicker.get(ticker) ?? [];
     const alphaHistory = series.map((p) => p.alpha);
+    const closesForDrawdown = series.map((p) => p.close);
     const seriesClose = latestCloseFromSeries(series);
     const providerSymbol =
       row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null;
@@ -378,6 +382,8 @@ function buildDraftsFromHoldingRows(
       hybrid != null && Number.isFinite(hybrid.price) && hybrid.price > 0 ? hybrid : null;
     const currentPrice =
       fromHybrid != null ? fromHybrid.price : seriesClose;
+    const alphaDeviationZ = computeAlphaDeviationZScore(alphaHistory);
+    const drawdownFromHigh90dPct = computePriceDrawdownFromHighPercent(closesForDrawdown, currentPrice);
     const priceSource: "live" | "close" = fromHybrid != null ? fromHybrid.source : "close";
     const lastUpdatedAt: string | null = fromHybrid != null ? fromHybrid.asOf : null;
     const qty = Number(row.quantity);
@@ -442,6 +448,8 @@ function buildDraftsFromHoldingRows(
       dividendYieldPercent,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
+      alphaDeviationZ,
+      drawdownFromHigh90dPct,
       quantity: qty,
       category: asCategory(String(row.category)),
       avgAcquisitionPrice,
@@ -649,6 +657,28 @@ async function enrichEcosystemMemberRow(
     }
   }
 
+  const dailyAlphas = datedRows.map((d) => d.alphaValue);
+  const alphaDeviationZ = computeAlphaDeviationZScore(dailyAlphas);
+
+  const closeSeriesFromDb: number[] = [];
+  for (const r of histRs.rows) {
+    const cp = r["close_price"];
+    const n = cp != null ? Number(cp) : NaN;
+    if (Number.isFinite(n) && n > 0) closeSeriesFromDb.push(n);
+  }
+  let closesForDrawdown: (number | null)[] = closeSeriesFromDb;
+  if (closeSeriesFromDb.length < 25 && effectiveTicker.length > 0) {
+    try {
+      const bars = await fetchPriceHistory(effectiveTicker, 110, null);
+      if (bars.length >= 8) {
+        closesForDrawdown = bars.map((b) => b.close);
+      }
+    } catch {
+      /* keep DB closes */
+    }
+  }
+  const drawdownFromHigh90dPct = computePriceDrawdownFromHighPercent(closesForDrawdown, displayPrice);
+
   return {
     id,
     themeId,
@@ -673,6 +703,8 @@ async function enrichEcosystemMemberRow(
     currentPrice: displayPrice,
     latestAlpha,
     alphaObservationStartDate,
+    alphaDeviationZ,
+    drawdownFromHigh90dPct,
   };
 }
 
@@ -890,6 +922,12 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       fetchGlobalMarketIndicators(),
     ]);
     const financial = computeFinancialTotals([], totalRealizedPnlJpy);
+    const indicatorValueOrNull = (label: string): number | null => {
+      const m = marketIndicators.find((x) => x.label === label);
+      return m != null && Number.isFinite(m.value) && m.value > 0 ? m.value : null;
+    };
+    const goldPrice = indicatorValueOrNull("Gold");
+    const btcPrice = indicatorValueOrNull("BTC");
     return {
       stocks: [],
       allThemes,
@@ -906,6 +944,8 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
         fxUsdJpy: fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : null,
         totalHoldings: 0,
         marketIndicators,
+        goldPrice,
+        btcPrice,
         portfolioAvgDayChangePct: null,
         ...financial,
       },
@@ -970,6 +1010,12 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   const coreSatellite = computeCoreSatellite(stocks);
 
   const financial = computeFinancialTotals(stocks, totalRealizedPnlJpy);
+  const goldIndicator = marketIndicators.find((m) => m.label === "Gold");
+  const btcIndicator = marketIndicators.find((m) => m.label === "BTC");
+  const goldPrice =
+    goldIndicator != null && Number.isFinite(goldIndicator.value) && goldIndicator.value > 0 ? goldIndicator.value : null;
+  const btcPrice =
+    btcIndicator != null && Number.isFinite(btcIndicator.value) && btcIndicator.value > 0 ? btcIndicator.value : null;
   const summary = {
     portfolioAverageAlpha: computePortfolioAverageAlpha(stocks),
     benchmarkLatestPrice: benchmarkSnap.close,
@@ -979,6 +1025,8 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     fxUsdJpy: fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : null,
     totalHoldings: stocks.length,
     marketIndicators,
+    goldPrice,
+    btcPrice,
     portfolioAvgDayChangePct: computePortfolioAvgDayChangePct(stocks),
     ...financial,
   };
@@ -1038,6 +1086,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       priceSource: "close",
       lastUpdatedAt: null,
       currentPrice: null,
+      alphaDeviationZ: null,
+      drawdownFromHigh90dPct: null,
       marketValue: 0,
       valuationFactor: 1,
       isWarning: isWarn,
