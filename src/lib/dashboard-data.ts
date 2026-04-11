@@ -535,6 +535,7 @@ async function enrichEcosystemMemberRow(
     string,
     { nextEarningsDate: string | null; annualDividendRate: number | null; dividendYieldPercent: number | null }
   >,
+  options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem> {
   const id = String(row["id"]);
   const themeId = String(row["theme_id"]);
@@ -561,6 +562,7 @@ async function enrichEcosystemMemberRow(
   const role = row["role"] != null ? String(row["role"]) : "";
   const isMajorPlayer = Number(row["is_major_player"]) === 1;
   const inPortfolio = effectiveTicker.length > 0 ? portfolioTickerSet.has(effectiveTicker.toUpperCase()) : false;
+  const fast = options?.fast === true;
   const rawObs = row["observation_started_at"];
   const observationStartedAt =
     rawObs != null && String(rawObs).trim().length >= 10 ? String(rawObs).trim().slice(0, 10) : null;
@@ -614,16 +616,18 @@ async function enrichEcosystemMemberRow(
 
   if (datedRows.length < 2) {
     if (effectiveTicker.length > 0) {
-      const live = await fetchRecentDatedDailyAlphasVsVoo(effectiveTicker, 120, null);
-      if (live.rows.length >= 2) {
-        datedRows = live.rows;
-        if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
-          lastClose = live.lastClose;
-        }
-      } else if (live.rows.length > 0 && datedRows.length === 0) {
-        datedRows = live.rows;
-        if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
-          lastClose = live.lastClose;
+      if (!(fast && !inPortfolio)) {
+        const live = await fetchRecentDatedDailyAlphasVsVoo(effectiveTicker, 120, null);
+        if (live.rows.length >= 2) {
+          datedRows = live.rows;
+          if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
+            lastClose = live.lastClose;
+          }
+        } else if (live.rows.length > 0 && datedRows.length === 0) {
+          datedRows = live.rows;
+          if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
+            lastClose = live.lastClose;
+          }
         }
       }
     }
@@ -643,9 +647,13 @@ async function enrichEcosystemMemberRow(
   const latestAlpha = alphaHistory.length > 0 ? alphaHistory[alphaHistory.length - 1]! : null;
   const alphaObservationStartDate = cumPoints[0]?.date ?? null;
 
-  /** Last 列: ダッシュボード保有と同じく quote ライブ → 日足 → 系列上の終値。Alpha 系列は日次のまま。 */
+  /**
+   * Last 列:
+   * - Watchlist（非保有）は初回ロード速度優先で DB/系列の終値を使う（live quote は叩かない）
+   * - 保有銘柄のみ live quote を許可（必要なら）
+   */
   let displayPrice: number | null = lastClose;
-  if (effectiveTicker.length > 0) {
+  if (effectiveTicker.length > 0 && inPortfolio) {
     const ql = await fetchLiveQuoteSnapshot(effectiveTicker, null);
     if (ql != null && Number.isFinite(ql.price) && ql.price > 0) {
       displayPrice = ql.price;
@@ -667,7 +675,7 @@ async function enrichEcosystemMemberRow(
     if (Number.isFinite(n) && n > 0) closeSeriesFromDb.push(n);
   }
   let closesForDrawdown: (number | null)[] = closeSeriesFromDb;
-  if (closeSeriesFromDb.length < 25 && effectiveTicker.length > 0) {
+  if (!fast && closeSeriesFromDb.length < 25 && effectiveTicker.length > 0) {
     try {
       const bars = await fetchPriceHistory(effectiveTicker, 110, null);
       if (bars.length >= 8) {
@@ -714,6 +722,8 @@ async function fetchEnrichedThemeEcosystem(
   themeId: string,
   portfolioTickerSet: Set<string>,
   themeCreatedAt: string | null,
+  perf?: { enabled: boolean; requestId?: string | null },
+  options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem[]> {
   try {
     const rs = await db.execute({
@@ -725,6 +735,7 @@ async function fetchEnrichedThemeEcosystem(
       args: [themeId],
     });
     const rows = rs.rows as unknown as Record<string, unknown>[];
+    const tResearch0 = perf?.enabled ? Date.now() : 0;
     const researchTargets = rows
       .map((r) => {
         const isUnlisted = Number(r["is_unlisted"]) === 1;
@@ -734,21 +745,61 @@ async function fetchEnrichedThemeEcosystem(
         return effective;
       })
       .filter((x) => x.length > 0);
-    const researchByTicker = await fetchEquityResearchSnapshots(
-      [...new Set(researchTargets)].map((ticker) => ({ ticker, providerSymbol: null })),
-    );
-    const out: ThemeEcosystemWatchItem[] = [];
-    for (let i = 0; i < rows.length; i += 2) {
-      const chunk = rows.slice(i, i + 2);
-      const part = await Promise.all(
-        chunk.map((row) =>
-          enrichEcosystemMemberRow(db, userId, row, portfolioTickerSet, themeCreatedAt, researchByTicker),
-        ),
+    const fast = options?.fast === true;
+    const researchByTicker = fast
+      ? new Map()
+      : await fetchEquityResearchSnapshots(
+          [...new Set(researchTargets)].map((ticker) => ({ ticker, providerSymbol: null })),
+          // Ecosystem watchlist can be large; prefer higher throughput here.
+          { concurrency: 10, batchDelayMs: 25 },
+        );
+    if (perf?.enabled && perf.requestId) {
+      console.log(
+        `[perf] ${perf.requestId} ecosystem:research ms=${Date.now() - tResearch0} tickers=${new Set(researchTargets).size} skipped=${fast ? 1 : 0}`,
       );
-      out.push(...part);
-      if (i + 2 < rows.length) {
-        await new Promise((r) => setTimeout(r, 250));
+    }
+
+    /**
+     * Yahoo Finance 等の外部 I/O がボトルネックになりやすいので、適度な並列度で回す。
+     * 一部失敗してもページ全体を止めない（Promise.allSettled 相当）。
+     */
+    const CONCURRENCY = 6;
+    const results: (ThemeEcosystemWatchItem | null)[] = new Array(rows.length).fill(null);
+    let nextIdx = 0;
+    let failed = 0;
+    const tEnrich0 = perf?.enabled ? Date.now() : 0;
+
+    async function worker() {
+      while (true) {
+        const i = nextIdx;
+        nextIdx += 1;
+        if (i >= rows.length) return;
+        const row = rows[i]!;
+        try {
+          results[i] = await enrichEcosystemMemberRow(
+            db,
+            userId,
+            row,
+            portfolioTickerSet,
+            themeCreatedAt,
+            researchByTicker,
+            { fast },
+          );
+        } catch {
+          // Skip failed ticker to keep the page responsive.
+          results[i] = null;
+          failed += 1;
+        }
       }
+    }
+
+    await Promise.allSettled(Array.from({ length: Math.min(CONCURRENCY, rows.length) }, () => worker()));
+
+    const out = results.filter((x): x is ThemeEcosystemWatchItem => x != null);
+    if (perf?.enabled && perf.requestId) {
+      console.log(
+        `[perf] ${perf.requestId} ecosystem:enrich ms=${Date.now() - tEnrich0} rows=${rows.length} ok=${out.length} failed=${failed} concurrency=${CONCURRENCY}`,
+      );
     }
     return out;
   } catch (e) {
@@ -763,18 +814,46 @@ async function fetchEnrichedThemeEcosystem(
 /**
  * 指定テーマ（structure_tags 先頭一致）の保有・Alpha・テーマメタ・エコシステムを一括取得。`/themes/[theme]` 用。
  */
-export async function getThemeDetailData(db: Client, userId: string, themeName: string): Promise<ThemeDetailData> {
+export async function getThemeDetailData(
+  db: Client,
+  userId: string,
+  themeName: string,
+  options?: { perf?: boolean; requestId?: string | null; fast?: boolean },
+): Promise<ThemeDetailData> {
+  const perf = { enabled: options?.perf === true, requestId: options?.requestId ?? null };
+  const fast = options?.fast === true;
+  const t0 = perf.enabled ? Date.now() : 0;
   const [theme, benchmarkSnap, fxMaybe, h] = await Promise.all([
-    fetchInvestmentThemeRecord(db, userId, themeName),
-    resolveBenchmarkSnapshot(),
-    resolveFxUsdJpyRate(),
-    db.execute({
-      sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor
-            FROM holdings
-            WHERE user_id = ? AND quantity > 0
-            ORDER BY ticker`,
-      args: [userId],
-    }),
+    (async () => {
+      const t = perf.enabled ? Date.now() : 0;
+      const out = await fetchInvestmentThemeRecord(db, userId, themeName);
+      if (perf.enabled && perf.requestId) console.log(`[perf] ${perf.requestId} themeRecord ms=${Date.now() - t}`);
+      return out;
+    })(),
+    (async () => {
+      const t = perf.enabled ? Date.now() : 0;
+      const out = await resolveBenchmarkSnapshot();
+      if (perf.enabled && perf.requestId) console.log(`[perf] ${perf.requestId} benchmarkSnap ms=${Date.now() - t}`);
+      return out;
+    })(),
+    (async () => {
+      const t = perf.enabled ? Date.now() : 0;
+      const out = await resolveFxUsdJpyRate();
+      if (perf.enabled && perf.requestId) console.log(`[perf] ${perf.requestId} fxUsdJpy ms=${Date.now() - t}`);
+      return out;
+    })(),
+    (async () => {
+      const t = perf.enabled ? Date.now() : 0;
+      const out = await db.execute({
+        sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor
+              FROM holdings
+              WHERE user_id = ? AND quantity > 0
+              ORDER BY ticker`,
+        args: [userId],
+      });
+      if (perf.enabled && perf.requestId) console.log(`[perf] ${perf.requestId} holdingsQuery ms=${Date.now() - t}`);
+      return out;
+    })(),
   ]);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
 
@@ -787,18 +866,30 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
   });
 
   const [researchByTicker, hybridPriceByHoldingKey] = await Promise.all([
-    fetchEquityResearchSnapshots(
-      matching.map((r) => ({
-        ticker: String(r.ticker),
-        providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
-      })),
-    ),
-    fetchHoldingsHybridPriceSnapshots(
-      matching.map((r) => ({
-        ticker: String(r.ticker),
-        providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
-      })),
-    ),
+    (async () => {
+      const t = perf.enabled ? Date.now() : 0;
+      const out = await fetchEquityResearchSnapshots(
+        matching.map((r) => ({
+          ticker: String(r.ticker),
+          providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
+        })),
+      );
+      if (perf.enabled && perf.requestId)
+        console.log(`[perf] ${perf.requestId} holdings:research ms=${Date.now() - t} tickers=${matching.length}`);
+      return out;
+    })(),
+    (async () => {
+      const t = perf.enabled ? Date.now() : 0;
+      const out = await fetchHoldingsHybridPriceSnapshots(
+        matching.map((r) => ({
+          ticker: String(r.ticker),
+          providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
+        })),
+      );
+      if (perf.enabled && perf.requestId)
+        console.log(`[perf] ${perf.requestId} holdings:hybridPrices ms=${Date.now() - t} tickers=${matching.length}`);
+      return out;
+    })(),
   ]);
 
   let stocks: Stock[] = [];
@@ -815,12 +906,16 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
   if (matching.length > 0) {
     const tickers = [...new Set(matching.map((r) => String(r.ticker)))];
     const tPlaceholders = tickers.map(() => "?").join(",");
+    const tAlphaQ = perf.enabled ? Date.now() : 0;
     const a = await db.execute({
       sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
             WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
             ORDER BY ticker ASC, recorded_at ASC`,
       args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers],
     });
+    if (perf.enabled && perf.requestId) {
+      console.log(`[perf] ${perf.requestId} alphaHistoryQuery ms=${Date.now() - tAlphaQ} tickers=${tickers.length}`);
+    }
 
     const rows = a.rows as Record<string, unknown>[];
     const byTicker = buildByTickerFromAlphaRows(rows);
@@ -881,8 +976,13 @@ export async function getThemeDetailData(db: Client, userId: string, themeName: 
           theme.id,
           portfolioTickerSet,
           theme.createdAt != null ? String(theme.createdAt) : null,
+          perf,
+          { fast },
         )
       : [];
+  if (perf.enabled && perf.requestId) {
+    console.log(`[perf] ${perf.requestId} getThemeDetailData totalMs=${Date.now() - t0} theme="${themeName}"`);
+  }
 
   return {
     themeName,

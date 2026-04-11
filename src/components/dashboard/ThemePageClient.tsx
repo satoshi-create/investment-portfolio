@@ -110,13 +110,13 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [ecoShowValueCols, setEcoShowValueCols] = useState(false);
   const [patrolOn, setPatrolOn] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}`,
-        { cache: "no-store" },
+        `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}&fast=1`,
+        { cache: "no-store", signal },
       );
       const json = (await res.json()) as ThemeDetailJson;
       if (!res.ok) {
@@ -159,15 +159,18 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             : null,
       } as ThemeDetailData);
     } catch (e) {
+      if (signal.aborted || (e instanceof Error && e.name === "AbortError")) return;
       setData(null);
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, [themeLabel]);
 
   useEffect(() => {
-    void load();
+    const ac = new AbortController();
+    void load(ac.signal);
+    return () => ac.abort();
   }, [load]);
 
   const openTradeForm = useCallback((initial: TradeEntryInitial | null) => {
@@ -771,7 +774,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             setTradeFormOpen(false);
             setTradeInitial(null);
           }}
-          onSuccess={() => void load()}
+          onSuccess={() => {
+            const ac = new AbortController();
+            void load(ac.signal);
+          }}
           holdingOptions={stocks.map((s) => ({ ticker: s.ticker, name: s.name }))}
         />
       </div>

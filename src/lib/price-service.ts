@@ -16,7 +16,10 @@ import {
 } from "@/src/lib/alpha-logic";
 import type { MarketIndicator } from "@/src/types/investment";
 
-const yahooFinance = new YahooFinance();
+/** Yahoo アンケートの初回表示を抑止。先物など quote スキーマ不一致は `fetchLiveQuoteSnapshot` で validateResult: false を使用。 */
+const yahooFinance = new YahooFinance({
+  suppressNotices: ["yahooSurvey"],
+});
 
 export type PriceBar = { date: string; close: number };
 
@@ -483,22 +486,27 @@ export async function fetchLiveQuoteSnapshot(
   if (!yahooSymbol) return null;
   const logLabel = trimProvider(providerSymbol) ?? ticker;
   try {
-    const q = (await yahooFinance.quote(yahooSymbol, {
-      fields: [
-        "symbol",
-        "marketState",
-        "regularMarketPrice",
-        "regularMarketChangePercent",
-        "regularMarketTime",
-        "regularMarketPreviousClose",
-        "postMarketPrice",
-        "postMarketChangePercent",
-        "postMarketTime",
-        "preMarketPrice",
-        "preMarketChangePercent",
-        "preMarketTime",
-      ],
-    })) as unknown as Record<string, unknown>;
+    const q = (await yahooFinance.quote(
+      yahooSymbol,
+      {
+        fields: [
+          "symbol",
+          "marketState",
+          "regularMarketPrice",
+          "regularMarketChangePercent",
+          "regularMarketTime",
+          "regularMarketPreviousClose",
+          "postMarketPrice",
+          "postMarketChangePercent",
+          "postMarketTime",
+          "preMarketPrice",
+          "preMarketChangePercent",
+          "preMarketTime",
+        ],
+      },
+      // FUTURE 等、Yahoo 応答が yahoo-finance2 の Quote スキーマと不一致になることがある（例: GC=F）
+      { validateResult: false },
+    )) as unknown as Record<string, unknown>;
     if (q == null || typeof q !== "object") return null;
     return pickLivePriceFromQuote(q);
   } catch (e) {

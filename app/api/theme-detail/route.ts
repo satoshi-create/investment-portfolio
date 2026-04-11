@@ -17,12 +17,22 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId") ?? defaultProfileUserId();
   const theme = searchParams.get("theme");
+  const perf = searchParams.get("perf") === "1";
+  const fast = searchParams.get("fast") === "1";
   if (theme == null || theme.trim().length === 0) {
     return NextResponse.json({ error: "Missing theme query parameter" }, { status: 400 });
   }
 
   try {
-    const data = await getThemeDetailData(getDb(), userId, theme.trim());
+    const t0 = perf ? Date.now() : 0;
+    const requestId = perf ? `theme-detail:${Math.random().toString(16).slice(2, 8)}` : null;
+    if (perf && requestId) {
+      console.log(`[perf] ${requestId} start theme="${theme.trim()}" user="${userId}"`);
+    }
+    const data = await getThemeDetailData(getDb(), userId, theme.trim(), { perf, requestId, fast });
+    if (perf && requestId) {
+      console.log(`[perf] ${requestId} done totalMs=${Date.now() - t0}`);
+    }
     return NextResponse.json({ userId, ...data });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
