@@ -1,10 +1,11 @@
 /**
  * Backfill `alpha_history` for all holdings (VOO benchmark) using Yahoo + alpha-logic.
  * Usage: npm run backfill:alpha [-- <userId>]
- * Env: DEFAULT_PROFILE_USER_ID, BACKFILL_DAYS (default 30), BACKFILL_DELAY_MS (default 1000)
+ * Env: NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID, BACKFILL_DAYS (default 30), BACKFILL_DELAY_MS (default 1000)
  */
 import { config } from "dotenv";
 
+import { defaultProfileUserId } from "../src/lib/authorize-signals";
 import { computeAlphaPercent, dailyReturnPercent, SIGNAL_BENCHMARK_TICKER } from "../src/lib/alpha-logic";
 import { upsertAlphaHistoryRow } from "../src/lib/db-operations";
 import { getDb, isDbConfigured } from "../src/lib/db";
@@ -72,9 +73,7 @@ const delayMs = Math.max(0, Math.floor(Number(process.env.BACKFILL_DELAY_MS ?? "
 async function main() {
   const userIdArg = process.argv[2];
   const userId =
-    userIdArg && userIdArg.trim().length > 0
-      ? userIdArg.trim()
-      : process.env.DEFAULT_PROFILE_USER_ID?.trim() || "user-satoshi";
+    userIdArg && userIdArg.trim().length > 0 ? userIdArg.trim() : defaultProfileUserId();
 
   if (!isDbConfigured()) {
     console.error("Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN (e.g. .env.local).");

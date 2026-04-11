@@ -60,6 +60,26 @@ CREATE INDEX idx_holding_snapshots_user_date
 CREATE INDEX idx_holding_snapshots_holding
   ON holding_daily_snapshots(holding_id, snapshot_date DESC);
 
+CREATE TABLE holding_snapshots (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  snapshot_date TEXT NOT NULL,
+  recorded_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  ticker TEXT NOT NULL,
+  quantity REAL NOT NULL,
+  avg_acquisition_price REAL,
+  current_price REAL,
+  alpha_deviation_z REAL,
+  drawdown_pct REAL,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  UNIQUE (user_id, ticker, snapshot_date)
+);
+
+CREATE INDEX idx_holding_snapshots_metric_user_date
+  ON holding_snapshots(user_id, snapshot_date DESC);
+CREATE INDEX idx_holding_snapshots_metric_user_ticker
+  ON holding_snapshots(user_id, ticker);
+
 CREATE TABLE "holdings" (
   `id` text PRIMARY KEY,
   `user_id` text NOT NULL,
@@ -120,6 +140,8 @@ CREATE TABLE portfolio_daily_snapshots (
   benchmark_change_pct REAL,
   total_market_value_jpy REAL NOT NULL,
   total_unrealized_pnl_jpy REAL,
+  total_profit REAL,
+  cost_basis REAL,
   portfolio_avg_alpha REAL,
   portfolio_return_vs_prev_pct REAL,
   benchmark_return_vs_prev_pct REAL,

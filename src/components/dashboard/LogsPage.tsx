@@ -12,12 +12,9 @@ import type {
 import { ClosedTradesTable } from "@/src/components/dashboard/ClosedTradesTable";
 import { HoldingDailySnapshotsTable } from "@/src/components/dashboard/HoldingDailySnapshotsTable";
 import { PortfolioSnapshotsTable } from "@/src/components/dashboard/PortfolioSnapshotsTable";
+import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 
-const DEFAULT_USER_ID =
-  typeof process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID === "string" &&
-  process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID.length > 0
-    ? process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID
-    : "user-satoshi";
+const DEFAULT_USER_ID = defaultProfileUserId();
 
 type LogsPayload = {
   userId: string;

@@ -261,6 +261,10 @@ export type PortfolioDailySnapshotRow = {
   benchmarkChangePct: number | null;
   totalMarketValueJpy: number;
   totalUnrealizedPnlJpy: number | null;
+  /** `total_profit`（合計含み損益・円）。未移行 DB では null */
+  totalProfitJpy: number | null;
+  /** `cost_basis`（総取得コスト・円）。未移行 DB では null */
+  costBasisJpy: number | null;
   portfolioAvgAlpha: number | null;
   portfolioReturnVsPrevPct: number | null;
   benchmarkReturnVsPrevPct: number | null;

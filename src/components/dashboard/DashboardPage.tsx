@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState, useTransition } from "react";
 
 import { recordPortfolioSnapshotAction } from "@/app/actions/snapshot";
 import { generateSignalsAction } from "@/app/actions/signals";
+import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import type { DashboardSummary, InvestmentThemeRecord, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
@@ -15,11 +16,7 @@ import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboa
 import Link from "next/link";
 import { Camera, RefreshCw, ScrollText } from "lucide-react";
 
-const DEFAULT_USER_ID =
-  typeof process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID === "string" &&
-  process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID.length > 0
-    ? process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID
-    : "user-satoshi";
+const DEFAULT_USER_ID = defaultProfileUserId();
 
 const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,

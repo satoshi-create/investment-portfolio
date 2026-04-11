@@ -5,16 +5,13 @@
 import { config } from "dotenv";
 import { randomUUID } from "crypto";
 
+import { defaultProfileUserId } from "../src/lib/authorize-signals";
 import { getDb, isDbConfigured } from "../src/lib/db";
 
 config({ path: ".env.local" });
 config();
 
-const DEFAULT_USER_ID =
-  typeof process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID === "string" &&
-  process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID.length > 0
-    ? process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID
-    : "user-satoshi";
+const DEFAULT_USER_ID = defaultProfileUserId();
 
 type SeedRow = {
   companyName: string;

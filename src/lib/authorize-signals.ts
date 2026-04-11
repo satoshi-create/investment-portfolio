@@ -18,6 +18,8 @@ export function authorizeSignalsRequest(request: Request): boolean {
   return false;
 }
 
+/** 既定プロフィール ID（`.env` の `NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID`。未設定時は `user-satoshi`）。 */
 export function defaultProfileUserId(): string {
-  return process.env.DEFAULT_PROFILE_USER_ID ?? "user-satoshi";
+  const v = process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID?.trim();
+  return v && v.length > 0 ? v : "user-satoshi";
 }

@@ -1,6 +1,10 @@
 import type { Client } from "@libsql/client";
 
-import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+import {
+  quoteCurrencyForDashboardWeights,
+  roundAlphaMetric,
+  SIGNAL_BENCHMARK_TICKER,
+} from "@/src/lib/alpha-logic";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { getDashboardData } from "@/src/lib/dashboard-data";
@@ -24,6 +28,12 @@ function numOrNull(v: unknown): number | null {
   if (v == null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function isSqliteMissingColumn(e: unknown, column: string): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes(column.toLowerCase());
 }
 
 /** Parse `market_glance_snapshots.payload_json` → validated indicators (empty array OK). */
@@ -50,6 +60,19 @@ function parseMarketGlancePayload(raw: unknown): MarketIndicator[] | undefined {
   }
 }
 
+/** 取得単価×数量×換算係数を円建てコストに（ダッシュの評価額換算と整合）。 */
+function holdingCostBasisJpy(st: Stock, fxUsdJpy: number): number {
+  const ap = st.avgAcquisitionPrice;
+  if (ap == null || !Number.isFinite(ap) || ap <= 0) return 0;
+  if (!Number.isFinite(st.quantity) || st.quantity <= 0) return 0;
+  const f = st.valuationFactor > 0 ? st.valuationFactor : 1;
+  const base = st.quantity * ap * f;
+  const ccy = quoteCurrencyForDashboardWeights(st.ticker);
+  if (ccy === "JPY") return base;
+  if (!Number.isFinite(fxUsdJpy) || fxUsdJpy <= 0) return 0;
+  return base * fxUsdJpy;
+}
+
 function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): PortfolioDailySnapshotRow {
   const base: PortfolioDailySnapshotRow = {
     id: String(row.id),
@@ -62,6 +85,8 @@ function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): 
     benchmarkChangePct: numOrNull(row.benchmark_change_pct),
     totalMarketValueJpy: Number(row.total_market_value_jpy),
     totalUnrealizedPnlJpy: numOrNull(row.total_unrealized_pnl_jpy),
+    totalProfitJpy: numOrNull(row.total_profit),
+    costBasisJpy: numOrNull(row.cost_basis),
     portfolioAvgAlpha: numOrNull(row.portfolio_avg_alpha),
     portfolioReturnVsPrevPct: numOrNull(row.portfolio_return_vs_prev_pct),
     benchmarkReturnVsPrevPct: numOrNull(row.benchmark_return_vs_prev_pct),
@@ -83,7 +108,7 @@ export async function fetchPortfolioDailySnapshotsForUser(
     const rs = await db.execute({
       sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
                    p.benchmark_change_pct,
-                   p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.portfolio_avg_alpha,
+                   p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.total_profit, p.cost_basis, p.portfolio_avg_alpha,
                    p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
                    m.payload_json AS market_glance_payload_json
             FROM portfolio_daily_snapshots p
@@ -96,6 +121,43 @@ export async function fetchPortfolioDailySnapshotsForUser(
     });
     return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
   } catch (e) {
+    if (isSqliteMissingColumn(e, "total_profit") || isSqliteMissingColumn(e, "cost_basis")) {
+      try {
+        const rs = await db.execute({
+          sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
+                       p.benchmark_change_pct,
+                       p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.portfolio_avg_alpha,
+                       p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
+                       m.payload_json AS market_glance_payload_json
+                FROM portfolio_daily_snapshots p
+                LEFT JOIN market_glance_snapshots m
+                  ON m.user_id = p.user_id AND m.snapshot_date = p.snapshot_date
+                WHERE p.user_id = ?
+                ORDER BY p.snapshot_date DESC
+                LIMIT ?`,
+          args: [userId, cap],
+        });
+        return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
+      } catch (e2) {
+        const m2 = e2 instanceof Error ? e2.message : String(e2);
+        const m2Lower = m2.toLowerCase();
+        if (m2Lower.includes("no such table") && m2Lower.includes("market_glance_snapshots")) {
+          const rs = await db.execute({
+            sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                         benchmark_change_pct,
+                         total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
+                         portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+                  FROM portfolio_daily_snapshots
+                  WHERE user_id = ?
+                  ORDER BY snapshot_date DESC
+                  LIMIT ?`,
+            args: [userId, cap],
+          });
+          return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
+        }
+        throw e2;
+      }
+    }
     const msg = e instanceof Error ? e.message : String(e);
     const msgLower = msg.toLowerCase();
     if (msgLower.includes("no such table") && msgLower.includes("market_glance_snapshots")) {
@@ -103,7 +165,7 @@ export async function fetchPortfolioDailySnapshotsForUser(
         const rs = await db.execute({
           sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
                        benchmark_change_pct,
-                       total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
+                       total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis, portfolio_avg_alpha,
                        portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
                 FROM portfolio_daily_snapshots
                 WHERE user_id = ?
@@ -113,6 +175,20 @@ export async function fetchPortfolioDailySnapshotsForUser(
         });
         return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
       } catch (e2) {
+        if (isSqliteMissingColumn(e2, "total_profit") || isSqliteMissingColumn(e2, "cost_basis")) {
+          const rs = await db.execute({
+            sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                         benchmark_change_pct,
+                         total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
+                         portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+                  FROM portfolio_daily_snapshots
+                  WHERE user_id = ?
+                  ORDER BY snapshot_date DESC
+                  LIMIT ?`,
+            args: [userId, cap],
+          });
+          return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
+        }
         const m2 = e2 instanceof Error ? e2.message : String(e2);
         if (m2.includes("no such table") || m2.toLowerCase().includes("portfolio_daily_snapshots")) {
           return [];
@@ -186,6 +262,44 @@ export async function fetchHoldingDailySnapshotsLatestForUser(
       return { snapshotDate: null, rows: [] };
     }
     throw e;
+  }
+}
+
+async function upsertHoldingSnapshotsFromStocks(
+  db: Client,
+  userId: string,
+  snapshotDate: string,
+  recordedAt: string,
+  stocks: Stock[],
+): Promise<void> {
+  for (const st of stocks) {
+    const rowId = crypto.randomUUID();
+    await db.execute({
+      sql: `INSERT INTO holding_snapshots (
+              id, user_id, snapshot_date, recorded_at, ticker, quantity,
+              avg_acquisition_price, current_price, alpha_deviation_z, drawdown_pct
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, ticker, snapshot_date) DO UPDATE SET
+              id = excluded.id,
+              recorded_at = excluded.recorded_at,
+              quantity = excluded.quantity,
+              avg_acquisition_price = excluded.avg_acquisition_price,
+              current_price = excluded.current_price,
+              alpha_deviation_z = excluded.alpha_deviation_z,
+              drawdown_pct = excluded.drawdown_pct`,
+      args: [
+        rowId,
+        userId,
+        snapshotDate,
+        recordedAt,
+        st.ticker,
+        st.quantity,
+        st.avgAcquisitionPrice,
+        st.currentPrice,
+        st.alphaDeviationZ,
+        st.drawdownFromHigh90dPct,
+      ],
+    });
   }
 }
 
@@ -277,6 +391,7 @@ export async function recordPortfolioDailySnapshot(
       : USD_JPY_RATE_FALLBACK;
   const totalMv = dash.totalMarketValue;
   const totalPnlJpy = dash.stocks.reduce((s, st) => s + (Number.isFinite(st.unrealizedPnlJpy) ? st.unrealizedPnlJpy : 0), 0);
+  const totalCostBasisJpy = dash.stocks.reduce((s, st) => s + holdingCostBasisJpy(st, fxUsdJpyApplied), 0);
   const avgAlpha = dash.summary.portfolioAverageAlpha;
 
   const prevRs = await db.execute({
@@ -331,9 +446,9 @@ export async function recordPortfolioDailySnapshot(
       sql: `INSERT INTO portfolio_daily_snapshots (
               id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
               benchmark_change_pct,
-              total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
+              total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis, portfolio_avg_alpha,
               portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
               id = excluded.id,
               recorded_at = excluded.recorded_at,
@@ -342,6 +457,8 @@ export async function recordPortfolioDailySnapshot(
               benchmark_change_pct = excluded.benchmark_change_pct,
               total_market_value_jpy = excluded.total_market_value_jpy,
               total_unrealized_pnl_jpy = excluded.total_unrealized_pnl_jpy,
+              total_profit = excluded.total_profit,
+              cost_basis = excluded.cost_basis,
               portfolio_avg_alpha = excluded.portfolio_avg_alpha,
               portfolio_return_vs_prev_pct = excluded.portfolio_return_vs_prev_pct,
               benchmark_return_vs_prev_pct = excluded.benchmark_return_vs_prev_pct,
@@ -357,6 +474,8 @@ export async function recordPortfolioDailySnapshot(
         benchmarkChangeAtRecord,
         totalMv,
         totalPnlJpy,
+        totalPnlJpy,
+        totalCostBasisJpy,
         avgAlpha,
         portfolioReturnVsPrev,
         benchmarkReturnVsPrev,
@@ -404,6 +523,16 @@ export async function recordPortfolioDailySnapshot(
     } else {
       throw e;
     }
+  }
+
+  try {
+    await upsertHoldingSnapshotsFromStocks(db, userId, snapshotDate, recordedAt, dash.stocks);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const msgLower = msg.toLowerCase();
+    const metricTableMissing =
+      msgLower.includes("no such table") && msgLower.includes("holding_snapshots");
+    if (!metricTableMissing) throw e;
   }
 
   return {

@@ -11,17 +11,14 @@ import type {
   ThemeEcosystemWatchItem,
 } from "@/src/types/investment";
 import { isCumulativeSeriesTrendUpward } from "@/src/lib/alpha-logic";
+import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
-const DEFAULT_USER_ID =
-  typeof process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID === "string" &&
-  process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID.length > 0
-    ? process.env.NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID
-    : "user-satoshi";
+const DEFAULT_USER_ID = defaultProfileUserId();
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",

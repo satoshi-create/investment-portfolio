@@ -1,7 +1,7 @@
 /**
  * Record one portfolio_daily_snapshots row (UTC calendar day). For cron / CI.
  * Usage: npm run snapshot:daily [-- <userId>]
- * Env: TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, optional DEFAULT_PROFILE_USER_ID
+ * Env: TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, optional NEXT_PUBLIC_DEFAULT_PROFILE_USER_ID
  */
 import { config } from "dotenv";
 
@@ -15,9 +15,7 @@ config();
 async function main() {
   const userIdArg = process.argv[2];
   const userId =
-    userIdArg && userIdArg.trim().length > 0
-      ? userIdArg.trim()
-      : process.env.DEFAULT_PROFILE_USER_ID?.trim() || defaultProfileUserId();
+    userIdArg && userIdArg.trim().length > 0 ? userIdArg.trim() : defaultProfileUserId();
 
   if (!isDbConfigured()) {
     console.error("Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN (e.g. .env.local).");
