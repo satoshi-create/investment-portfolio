@@ -294,6 +294,8 @@ export type ClosedTradeDashboardRow = {
   postExitReturnPct: number | null;
   /** 正: 🚨 痛恨 / 負: ✅ 英断 / 算出不可: — */
   verdictLabel: string;
+  /** `trade_history.reason`（取引時メモ）。未記録・旧行は null */
+  reason: string | null;
 };
 
 export type HoldingDailySnapshotRow = {

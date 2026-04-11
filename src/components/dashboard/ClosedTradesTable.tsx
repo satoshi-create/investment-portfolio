@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { History } from "lucide-react";
+import { ChevronDown, History } from "lucide-react";
 
 import type { ClosedTradeDashboardRow } from "@/src/types/investment";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
@@ -79,8 +79,11 @@ function computeClosedTradesFooter(rows: ClosedTradeDashboardRow[]) {
   };
 }
 
+const TABLE_COL_COUNT = 15;
+
 export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] }) {
   const footer = useMemo(() => computeClosedTradesFooter(rows), [rows]);
+  const [expandedReasonId, setExpandedReasonId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<
     "name" | "ticker" | "date" | "market" | "account" | "side" | "qty" | "cost" | "proceeds" | "fees" | "pnl" | "price" | "post" | "verdict"
   >("date");
@@ -168,7 +171,7 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[1280px]">
+          <table className="w-full text-left text-sm min-w-[1360px]">
             <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th
@@ -214,67 +217,108 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
                 <th className="px-3 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("post")} title="Sort">
                   売却後騰落率{sortMark("post")}
                 </th>
+                <th className="px-3 py-3 whitespace-nowrap min-w-[6.5rem] max-w-[9rem]" title="trade_history.reason">
+                  理由
+                </th>
                 <th className="px-3 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("verdict")} title="Sort">
                   売却判定{sortMark("verdict")}
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
-              {sorted.map((r) => (
-                <tr key={r.id} className="group hover:bg-muted/60 transition-colors">
-                  <td
-                    className={`px-3 py-2.5 text-muted-foreground text-xs min-w-[7rem] max-w-[10rem] ${stickyTdFirst}`}
-                    title={r.name || undefined}
-                  >
-                    <span className="line-clamp-3 break-words">{r.name || "—"}</span>
-                  </td>
-                  <td className="px-3 py-2.5 font-mono text-foreground/90 text-xs whitespace-nowrap">
-                    {r.ticker}
-                  </td>
-                  <td className="px-3 py-2.5 font-mono text-muted-foreground text-xs whitespace-nowrap">
-                    {r.tradeDate}
-                  </td>
-                  <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
-                    {marketLabel(r.market)}
-                  </td>
-                  <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
-                    {r.accountName}
-                  </td>
-                  <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
-                    {sideLabel(r.side)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
-                    {fmtQty(r.quantity)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
-                    {jpyFmt.format(r.costJpy)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
-                    {jpyFmt.format(r.proceedsJpy)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
-                    {jpyFmt.format(r.feesJpy)}
-                  </td>
-                  <td
-                    className={`px-3 py-2.5 text-right font-mono text-xs font-medium ${pnlClass(r.realizedPnlJpy)}`}
-                  >
-                    {jpyFmt.format(r.realizedPnlJpy)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-foreground/90 text-xs">
-                    {r.currentPriceJpy != null && Number.isFinite(r.currentPriceJpy)
-                      ? jpyFmt.format(r.currentPriceJpy)
-                      : "—"}
-                  </td>
-                  <td
-                    className={`px-3 py-2.5 text-right font-mono text-xs font-medium ${pctClass(r.postExitReturnPct)}`}
-                  >
-                    {fmtPct(r.postExitReturnPct)}
-                  </td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap text-foreground/90">
-                    {r.verdictLabel}
-                  </td>
-                </tr>
-              ))}
+              {sorted.map((r) => {
+                const reasonOpen = expandedReasonId === r.id;
+                const hasReason = r.reason != null && r.reason.trim().length > 0;
+                return (
+                  <React.Fragment key={r.id}>
+                    <tr className="group hover:bg-muted/60 transition-colors">
+                      <td
+                        className={`px-3 py-2.5 text-muted-foreground text-xs min-w-[7rem] max-w-[10rem] ${stickyTdFirst}`}
+                        title={r.name || undefined}
+                      >
+                        <span className="line-clamp-3 break-words">{r.name || "—"}</span>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-foreground/90 text-xs whitespace-nowrap">
+                        {r.ticker}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-muted-foreground text-xs whitespace-nowrap">
+                        {r.tradeDate}
+                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
+                        {marketLabel(r.market)}
+                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
+                        {r.accountName}
+                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
+                        {sideLabel(r.side)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
+                        {fmtQty(r.quantity)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
+                        {jpyFmt.format(r.costJpy)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
+                        {jpyFmt.format(r.proceedsJpy)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-muted-foreground text-xs">
+                        {jpyFmt.format(r.feesJpy)}
+                      </td>
+                      <td
+                        className={`px-3 py-2.5 text-right font-mono text-xs font-medium ${pnlClass(r.realizedPnlJpy)}`}
+                      >
+                        {jpyFmt.format(r.realizedPnlJpy)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-foreground/90 text-xs">
+                        {r.currentPriceJpy != null && Number.isFinite(r.currentPriceJpy)
+                          ? jpyFmt.format(r.currentPriceJpy)
+                          : "—"}
+                      </td>
+                      <td
+                        className={`px-3 py-2.5 text-right font-mono text-xs font-medium ${pctClass(r.postExitReturnPct)}`}
+                      >
+                        {fmtPct(r.postExitReturnPct)}
+                      </td>
+                      <td className="px-3 py-2.5 align-top max-w-[9rem]">
+                        {hasReason ? (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedReasonId(reasonOpen ? null : r.id)}
+                            className="flex w-full items-start justify-between gap-1 rounded-lg border border-border bg-background/60 px-2 py-1.5 text-left transition-colors hover:bg-muted"
+                            aria-expanded={reasonOpen}
+                            title={r.reason ?? undefined}
+                          >
+                            <span className="line-clamp-2 break-words text-[11px] text-muted-foreground leading-snug">
+                              {r.reason}
+                            </span>
+                            <ChevronDown
+                              size={14}
+                              className={`mt-0.5 shrink-0 text-muted-foreground transition-transform ${reasonOpen ? "rotate-180" : ""}`}
+                              aria-hidden
+                            />
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs whitespace-nowrap text-foreground/90">
+                        {r.verdictLabel}
+                      </td>
+                    </tr>
+                    {reasonOpen && hasReason ? (
+                      <tr className="bg-muted/30 border-t border-border/50">
+                        <td colSpan={TABLE_COL_COUNT} className="px-4 py-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                            取引の理由・反省
+                          </p>
+                          <p className="text-sm text-foreground/90 whitespace-pre-wrap break-words">{r.reason}</p>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
             <tfoot>
               <tr className="group bg-card/95 border-t border-border">
@@ -324,6 +368,7 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
                     "—"
                   )}
                 </td>
+                <td className="px-3 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
                 <td className="px-3 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
               </tr>
             </tfoot>

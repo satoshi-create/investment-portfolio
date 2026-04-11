@@ -84,6 +84,7 @@ function TradeEntryFormInner({
   const [category, setCategory] = useState<"Core" | "Satellite">("Satellite");
   const [structureTheme, setStructureTheme] = useState(initial?.theme ?? "");
   const [structureSector, setStructureSector] = useState(initial?.sector ?? "");
+  const [tradeReason, setTradeReason] = useState("");
 
   const isJp = useMemo(() => classifyTickerInstrument(ticker) === "JP_INVESTMENT_TRUST", [ticker]);
   const isUs = useMemo(() => classifyTickerInstrument(ticker) === "US_EQUITY", [ticker]);
@@ -170,6 +171,7 @@ function TradeEntryFormInner({
         categoryForNewHolding: category,
         structureTheme: structureTheme.trim(),
         structureSector: structureSector.trim(),
+        reason: tradeReason.trim() || undefined,
       });
       setMessage(res.message);
       if (res.ok) {
@@ -376,6 +378,22 @@ function TradeEntryFormInner({
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
               required
             />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+              取引の理由・反省（任意）
+            </label>
+            <textarea
+              value={tradeReason}
+              onChange={(e) => setTradeReason(e.target.value)}
+              maxLength={4000}
+              rows={4}
+              placeholder="構造的な変化への対応、パニックへの逆行、テーマとの整合、次に活かすこと…"
+              className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 min-h-[5rem]"
+            />
+            <p className="text-[9px] text-slate-600 mt-1">
+              ログの取引履歴で確認できます（最大 4000 文字）。
+            </p>
           </div>
           {side === "BUY" ? (
             <div>

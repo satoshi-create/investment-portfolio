@@ -27,6 +27,8 @@ export type ExecuteTradeParams = {
   /** `structure_tags` の [0]=テーマ、[1]=セクター として保存 */
   structureTheme: string;
   structureSector: string;
+  /** 取引理由・反省（任意・DB `trade_history.reason`） */
+  reason?: string;
 };
 
 export type ExecuteTradeResult =
@@ -92,6 +94,13 @@ async function selectHolding(tx: Transaction, userId: string, ticker: string): P
   };
 }
 
+const TRADE_REASON_MAX_LEN = 4000;
+
+function normalizeTradeReason(raw: string | undefined): string | null {
+  const t = (raw ?? "").trim().slice(0, TRADE_REASON_MAX_LEN);
+  return t.length > 0 ? t : null;
+}
+
 async function resolveSignalsForHolding(tx: Transaction, holdingId: string): Promise<void> {
   await tx.execute({
     sql: `UPDATE signals SET is_resolved = 1 WHERE holding_id = ? AND is_resolved = 0`,
@@ -134,6 +143,7 @@ export async function executeTradeInTransaction(
     p.structureSector != null && String(p.structureSector).trim().length > 0
       ? String(p.structureSector).trim()
       : null;
+  const reasonStored = normalizeTradeReason(p.reason);
 
   if (p.side === "BUY") {
     const existing = await selectHolding(tx, p.userId, ticker);
@@ -190,8 +200,8 @@ export async function executeTradeInTransaction(
     await tx.execute({
       sql: `INSERT INTO trade_history (
               id, user_id, trade_date, ticker, name, market, account_name, side,
-              quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, provider_symbol
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?, ?, ?, NULL)`,
+              quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, reason, provider_symbol
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       args: [
         tradeId,
         p.userId,
@@ -207,6 +217,7 @@ export async function executeTradeInTransaction(
         feeCurrency,
         feesJpy,
         realizedPnlJpy,
+        reasonStored,
       ],
     });
 
@@ -238,8 +249,8 @@ export async function executeTradeInTransaction(
   await tx.execute({
     sql: `INSERT INTO trade_history (
             id, user_id, trade_date, ticker, name, market, account_name, side,
-            quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, provider_symbol
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', ?, ?, ?, ?, ?, ?, ?, NULL)`,
+            quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, reason, provider_symbol
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
     args: [
       tradeId,
       p.userId,
@@ -255,6 +266,7 @@ export async function executeTradeInTransaction(
       feeCurrency,
       feesJpy,
       Math.round(realizedPnlJpy),
+      reasonStored,
     ],
   });
 
@@ -292,6 +304,12 @@ export async function executeTradeWithClient(db: Client, p: ExecuteTradeParams):
       return {
         ok: false,
         message: "trade_history テーブルがありません。migrations/005_trade_history.sql を適用してください。",
+      };
+    }
+    if (msg.toLowerCase().includes("no such column") && msg.toLowerCase().includes("reason")) {
+      return {
+        ok: false,
+        message: "trade_history に reason 列がありません。migrations/016_trade_history_reason.sql を適用してください。",
       };
     }
     return { ok: false, message: msg };

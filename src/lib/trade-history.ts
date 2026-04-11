@@ -19,6 +19,7 @@ type TradeRowDb = {
   feesJpy: number;
   realizedPnlJpy: number;
   providerSymbol: string | null;
+  reason: string | null;
 };
 
 function parseMarket(raw: string): "JP" | "US" {
@@ -76,16 +77,8 @@ function verdictLabel(pct: number | null): string {
   return "—";
 }
 
-async function loadTradeRows(db: Client, userId: string): Promise<TradeRowDb[]> {
-  const rs = await db.execute({
-    sql: `SELECT id, trade_date, ticker, name, market, account_name, side, quantity,
-                 cost_jpy, proceeds_jpy, fees_jpy, realized_pnl_jpy, provider_symbol
-          FROM trade_history
-          WHERE user_id = ? AND side = 'SELL'
-          ORDER BY trade_date DESC, ticker ASC`,
-    args: [userId],
-  });
-  return rs.rows.map((row) => ({
+function mapTradeRow(row: Record<string, unknown>): TradeRowDb {
+  return {
     id: String(row.id),
     tradeDate: String(row.trade_date),
     ticker: String(row.ticker),
@@ -102,7 +95,40 @@ async function loadTradeRows(db: Client, userId: string): Promise<TradeRowDb[]> 
       row.provider_symbol != null && String(row.provider_symbol).length > 0
         ? String(row.provider_symbol)
         : null,
-  }));
+    reason:
+      row.reason != null && String(row.reason).trim().length > 0 ? String(row.reason).trim() : null,
+  };
+}
+
+function isSqliteMissingReasonColumn(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("reason");
+}
+
+async function loadTradeRows(db: Client, userId: string): Promise<TradeRowDb[]> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT id, trade_date, ticker, name, market, account_name, side, quantity,
+                   cost_jpy, proceeds_jpy, fees_jpy, realized_pnl_jpy, provider_symbol, reason
+            FROM trade_history
+            WHERE user_id = ? AND side = 'SELL'
+            ORDER BY trade_date DESC, ticker ASC`,
+      args: [userId],
+    });
+    return rs.rows.map((row) => mapTradeRow(row as Record<string, unknown>));
+  } catch (e) {
+    if (!isSqliteMissingReasonColumn(e)) throw e;
+    const rs = await db.execute({
+      sql: `SELECT id, trade_date, ticker, name, market, account_name, side, quantity,
+                   cost_jpy, proceeds_jpy, fees_jpy, realized_pnl_jpy, provider_symbol
+            FROM trade_history
+            WHERE user_id = ? AND side = 'SELL'
+            ORDER BY trade_date DESC, ticker ASC`,
+      args: [userId],
+    });
+    return rs.rows.map((row) => mapTradeRow({ ...row, reason: null }));
+  }
 }
 
 /**
@@ -179,6 +205,7 @@ export async function fetchClosedTradesForDashboard(
       currentPriceJpy,
       postExitReturnPct,
       verdictLabel: verdictLabel(postExitReturnPct),
+      reason: t.reason,
     };
   });
 }

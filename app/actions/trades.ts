@@ -23,6 +23,8 @@ export type ExecuteTradeActionInput = {
   structureTheme?: string;
   /** `structure_tags` 2 番目および `holdings.sector` */
   structureSector?: string;
+  /** 取引理由・反省（任意、`trade_history.reason`） */
+  reason?: string;
 };
 
 export type ExecuteTradeActionResult = {
@@ -49,6 +51,8 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
   const side = input.side === "BUY" ? "BUY" : "SELL";
   const category = input.categoryForNewHolding === "Core" ? "Core" : "Satellite";
 
+  const reasonRaw = input.reason?.trim().slice(0, 4000) ?? "";
+
   const params: ExecuteTradeParams = {
     userId: uid,
     ticker: input.ticker,
@@ -64,6 +68,7 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
     categoryForNewHolding: category,
     structureTheme: input.structureTheme?.trim() ?? "",
     structureSector: input.structureSector?.trim() ?? "",
+    reason: reasonRaw.length > 0 ? reasonRaw : undefined,
   };
 
   const db = getDb();

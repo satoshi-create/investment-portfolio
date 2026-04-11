@@ -213,6 +213,7 @@ CREATE TABLE trade_history (
   fees_jpy REAL NOT NULL DEFAULT 0,
   realized_pnl_jpy REAL NOT NULL,
   provider_symbol TEXT,
+  reason TEXT,
   FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
 
