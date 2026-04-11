@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, Table2 } from "lucide-react";
+import { ChevronDown, FileSpreadsheet, Table2 } from "lucide-react";
 
 import { MarketBar } from "@/src/components/dashboard/MarketBar";
+import { PORTFOLIO_SNAPSHOT_CSV_COLUMNS, portfolioSnapshotsToCsvRows } from "@/src/lib/csv-dashboard-presets";
+import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
 import type { PortfolioDailySnapshotRow } from "@/src/types/investment";
 import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
@@ -64,19 +66,38 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
-      <div className="p-5 border-b border-border bg-card/60 flex items-center gap-2">
-        <Table2 size={16} className="text-cyan-500/90" />
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-            Portfolio snapshots
-          </h3>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            portfolio_daily_snapshots + market_glance_snapshots。合計損益・コストは{" "}
-            <span className="font-mono text-muted-foreground/90">total_profit</span> /{" "}
-            <span className="font-mono text-muted-foreground/90">cost_basis</span>（トップの Total profit / Cost basis
-            と同義）
-          </p>
+      <div className="p-5 border-b border-border bg-card/60 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2 min-w-0">
+          <Table2 size={16} className="text-cyan-500/90 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+              Portfolio snapshots
+            </h3>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              portfolio_daily_snapshots + market_glance_snapshots。合計損益・コストは{" "}
+              <span className="font-mono text-muted-foreground/90">total_profit</span> /{" "}
+              <span className="font-mono text-muted-foreground/90">cost_basis</span>（トップの Total profit / Cost basis
+              と同義）
+            </p>
+          </div>
         </div>
+        {rows.length > 0 ? (
+          <button
+            type="button"
+            onClick={() =>
+              exportToCSV(
+                portfolioSnapshotsToCsvRows(rows),
+                portfolioCsvFileName("portfolio_snapshots"),
+                PORTFOLIO_SNAPSHOT_CSV_COLUMNS,
+              )
+            }
+            className="inline-flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/50 transition-all"
+            title="表示中のスナップショット行を CSV でダウンロード"
+          >
+            <FileSpreadsheet size={14} />
+            CSV
+          </button>
+        ) : null}
       </div>
       {rows.length === 0 ? (
         <p className="px-5 py-8 text-sm text-muted-foreground">

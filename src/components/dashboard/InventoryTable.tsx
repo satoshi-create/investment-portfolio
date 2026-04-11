@@ -1,8 +1,12 @@
+"use client";
+
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { FileSpreadsheet, Search } from "lucide-react";
 
 import type { Stock } from "@/src/types/investment";
+import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
+import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
@@ -50,12 +54,22 @@ export function InventoryTable({
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showValueCols, setShowValueCols] = useState(false);
+  const [structureFilter, setStructureFilter] = useState("");
+
+  const filteredStocks = useMemo(() => {
+    const q = structureFilter.trim().toLowerCase();
+    if (!q) return stocks;
+    return stocks.filter((s) => {
+      const hay = [s.ticker, s.name ?? "", s.tag, s.secondaryTag, s.sector ?? ""].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }, [stocks, structureFilter]);
 
   const sortedStocks = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
     const lastAlpha = (s: Stock) => (s.alphaHistory.length > 0 ? s.alphaHistory[s.alphaHistory.length - 1]! : null);
     const key = sortKey;
-    const arr = [...stocks];
+    const arr = [...filteredStocks];
     arr.sort((a, b) => {
       const cmpStr = (x: string, y: string) => x.localeCompare(y, "ja");
       const cmpNum = (x: number | null, y: number | null) => {
@@ -82,7 +96,11 @@ export function InventoryTable({
       return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
     });
     return arr;
-  }, [stocks, sortDir, sortKey]);
+  }, [filteredStocks, sortDir, sortKey]);
+
+  function handleCsvDownload() {
+    exportToCSV(stocksToCsvRows(sortedStocks), portfolioCsvFileName("portfolio"), STOCK_CSV_COLUMNS);
+  }
 
   function toggleSort(nextKey: SortKey) {
     if (nextKey === sortKey) {
@@ -140,11 +158,24 @@ export function InventoryTable({
           >
             乖離・落率
           </button>
+          <button
+            type="button"
+            onClick={handleCsvDownload}
+            disabled={sortedStocks.length === 0}
+            className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/50 disabled:opacity-40 disabled:pointer-events-none transition-all"
+            title="表示中の銘柄（フィルター・並び順反映）を CSV でダウンロード"
+          >
+            <FileSpreadsheet size={14} className="shrink-0" />
+            CSVダウンロード
+          </button>
           <div className="flex items-center gap-3 bg-background px-3 py-1.5 rounded-lg border border-border">
             <Search size={14} className="text-muted-foreground" />
             <input
+              value={structureFilter}
+              onChange={(e) => setStructureFilter(e.target.value)}
               className="bg-transparent border-none outline-none text-xs w-48 text-foreground/90"
-              placeholder="Filter structure..."
+              placeholder="構造で絞り込み…"
+              aria-label="構造で絞り込み"
             />
           </div>
         </div>
@@ -395,7 +426,9 @@ export function InventoryTable({
           <tfoot>
             <tr className="group bg-card/90 border-t border-border">
               <td className={`px-6 py-3 text-xs font-bold text-foreground/90 min-w-[10rem] max-w-[11rem] ${stickyTdFootFirst}`}>
-                Total: {totalHoldings} {totalHoldings === 1 ? "item" : "items"}
+                Total: {sortedStocks.length}
+                {sortedStocks.length === 1 ? " item" : " items"}
+                {structureFilter.trim() ? `（全 ${totalHoldings}）` : ""}
               </td>
               <td className="px-6 py-3" />
               {showValueCols ? (

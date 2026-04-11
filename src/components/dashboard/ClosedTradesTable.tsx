@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from "react";
-import { ChevronDown, History } from "lucide-react";
+import { ChevronDown, FileSpreadsheet, History } from "lucide-react";
 
 import type { ClosedTradeDashboardRow } from "@/src/types/investment";
+import { CLOSED_TRADE_CSV_COLUMNS, closedTradesToCsvRows } from "@/src/lib/csv-dashboard-presets";
+import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
@@ -151,17 +153,34 @@ export function ClosedTradesTable({ rows }: { rows: ClosedTradeDashboardRow[] })
     return sortDir === "asc" ? " ▲" : " ▼";
   }
 
+  function handleCsvDownload() {
+    exportToCSV(closedTradesToCsvRows(sorted), portfolioCsvFileName("closed_trades"), CLOSED_TRADE_CSV_COLUMNS);
+  }
+
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
-      <div className="p-5 border-b border-border bg-card/60 flex items-center gap-2">
-        <History size={16} className="text-amber-500/90" />
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">取引履歴</h3>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            完了済み売買（DB: trade_history・売却のみ）。現在価格は Yahoo 終値ベース（米国株は{" "}
-            <span className="font-mono text-muted-foreground/90">JPY=X</span> で円換算）。
-          </p>
+      <div className="p-5 border-b border-border bg-card/60 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2 min-w-0">
+          <History size={16} className="text-amber-500/90 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">取引履歴</h3>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              完了済み売買（DB: trade_history・売却のみ）。現在価格は Yahoo 終値ベース（米国株は{" "}
+              <span className="font-mono text-muted-foreground/90">JPY=X</span> で円換算）。
+            </p>
+          </div>
         </div>
+        {rows.length > 0 ? (
+          <button
+            type="button"
+            onClick={handleCsvDownload}
+            className="inline-flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/50 transition-all"
+            title="現在の並び順で表示中の取引行を CSV でダウンロード"
+          >
+            <FileSpreadsheet size={14} />
+            CSV
+          </button>
+        ) : null}
       </div>
       {rows.length === 0 ? (
         <p className="px-5 py-8 text-sm text-muted-foreground">

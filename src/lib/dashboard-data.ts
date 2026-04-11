@@ -26,6 +26,7 @@ import {
   SIGNAL_BENCHMARK_TICKER,
   type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
+import { parseAdoptionStage } from "@/src/lib/adoption-stage";
 import {
   aggregateByHoldingSector,
   aggregateByTheme,
@@ -555,6 +556,11 @@ async function enrichEcosystemMemberRow(
     row["observation_notes"] != null && String(row["observation_notes"]).trim().length > 0
       ? String(row["observation_notes"]).trim()
       : null;
+  const adoptionStage = parseAdoptionStage(row["adoption_stage"]);
+  const adoptionStageRationale =
+    row["adoption_stage_rationale"] != null && String(row["adoption_stage_rationale"]).trim().length > 0
+      ? String(row["adoption_stage_rationale"]).trim()
+      : null;
 
   const effectiveTicker = isUnlisted ? (proxyTicker ?? "") : ticker;
   const companyName = row["company_name"] != null ? String(row["company_name"]) : ticker;
@@ -713,7 +719,18 @@ async function enrichEcosystemMemberRow(
     alphaObservationStartDate,
     alphaDeviationZ,
     drawdownFromHigh90dPct,
+    adoptionStage,
+    adoptionStageRationale,
   };
+}
+
+function ecosystemMissingAdoptionColumns(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("no such column") &&
+    (lower.includes("adoption_stage") || lower.includes("adoption_stage_rationale"))
+  );
 }
 
 async function fetchEnrichedThemeEcosystem(
@@ -726,15 +743,34 @@ async function fetchEnrichedThemeEcosystem(
   options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem[]> {
   try {
-    const rs = await db.execute({
-      sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
-                   company_name, field, role, is_major_player, observation_started_at
-            FROM theme_ecosystem_members
-            WHERE theme_id = ?
-            ORDER BY field ASC, ticker ASC`,
-      args: [themeId],
-    });
-    const rows = rs.rows as unknown as Record<string, unknown>[];
+    let rows: Record<string, unknown>[];
+    try {
+      const rs = await db.execute({
+        sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                     company_name, field, role, is_major_player, observation_started_at,
+                     adoption_stage, adoption_stage_rationale
+              FROM theme_ecosystem_members
+              WHERE theme_id = ?
+              ORDER BY field ASC, ticker ASC`,
+        args: [themeId],
+      });
+      rows = rs.rows as unknown as Record<string, unknown>[];
+    } catch (e) {
+      if (!ecosystemMissingAdoptionColumns(e)) throw e;
+      const rs = await db.execute({
+        sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                     company_name, field, role, is_major_player, observation_started_at
+              FROM theme_ecosystem_members
+              WHERE theme_id = ?
+              ORDER BY field ASC, ticker ASC`,
+        args: [themeId],
+      });
+      rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+        ...r,
+        adoption_stage: null,
+        adoption_stage_rationale: null,
+      }));
+    }
     const tResearch0 = perf?.enabled ? Date.now() : 0;
     const researchTargets = rows
       .map((r) => {

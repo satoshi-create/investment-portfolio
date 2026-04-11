@@ -1,7 +1,11 @@
+"use client";
+
 import React from "react";
-import { Layers } from "lucide-react";
+import { FileSpreadsheet, Layers } from "lucide-react";
 
 import type { HoldingDailySnapshotRow, TickerInstrumentKind } from "@/src/types/investment";
+import { HOLDING_SNAPSHOT_CSV_COLUMNS, holdingSnapshotsToCsvRows } from "@/src/lib/csv-dashboard-presets";
+import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
 import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
@@ -50,25 +54,44 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
-      <div className="p-5 border-b border-border bg-card/60 flex items-start gap-2">
-        <Layers size={16} className="text-violet-400 shrink-0 mt-0.5" />
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-            Holding snapshots (銘柄×日)
-          </h3>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            Record snapshot 実行時に `holding_daily_snapshots` へ保存された最新スライス
-            {snapshotDate ? (
-              <span className="text-muted-foreground/90 font-mono"> · UTC {snapshotDate}</span>
-            ) : null}
-            {bench != null && bench > 0 ? (
-              <span className="text-muted-foreground/90">
-                {" "}
-                · VOO {bench.toFixed(2)} · FX {fx?.toFixed(0) ?? "—"}
-              </span>
-            ) : null}
-          </p>
+      <div className="p-5 border-b border-border bg-card/60 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2 min-w-0">
+          <Layers size={16} className="text-violet-400 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+              Holding snapshots (銘柄×日)
+            </h3>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Record snapshot 実行時に `holding_daily_snapshots` へ保存された最新スライス
+              {snapshotDate ? (
+                <span className="text-muted-foreground/90 font-mono"> · UTC {snapshotDate}</span>
+              ) : null}
+              {bench != null && bench > 0 ? (
+                <span className="text-muted-foreground/90">
+                  {" "}
+                  · VOO {bench.toFixed(2)} · FX {fx?.toFixed(0) ?? "—"}
+                </span>
+              ) : null}
+            </p>
+          </div>
         </div>
+        {rows.length > 0 ? (
+          <button
+            type="button"
+            onClick={() =>
+              exportToCSV(
+                holdingSnapshotsToCsvRows(rows),
+                portfolioCsvFileName("holding_snapshots"),
+                HOLDING_SNAPSHOT_CSV_COLUMNS,
+              )
+            }
+            className="inline-flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/50 transition-all"
+            title="表示中の銘柄スナップショット行を CSV でダウンロード"
+          >
+            <FileSpreadsheet size={14} />
+            CSV
+          </button>
+        ) : null}
       </div>
       {rows.length === 0 ? (
         <p className="px-5 py-8 text-sm text-muted-foreground">

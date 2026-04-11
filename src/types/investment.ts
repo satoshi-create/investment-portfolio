@@ -175,6 +175,9 @@ export type InvestmentThemeRecord = {
   createdAt: string;
 };
 
+/** 技術普及キャズム上の位置（`theme_ecosystem_members.adoption_stage`）。 */
+export type AdoptionStage = "innovator" | "early_adopter" | "chasm" | "early_majority" | "late_majority";
+
 /** テーマ・エコシステムのウォッチリスト 1 銘柄（保有問わず観測）。 */
 export type ThemeEcosystemWatchItem = {
   id: string;
@@ -219,6 +222,10 @@ export type ThemeEcosystemWatchItem = {
   alphaDeviationZ: number | null;
   /** 約90営業日の終値高値対比（現在価）。算出不可は null */
   drawdownFromHigh90dPct: number | null;
+  /** 技術普及ステージ。未設定・旧 DB は null */
+  adoptionStage: AdoptionStage | null;
+  /** ステージ判断の根拠（ツールチップ優先）。未設定は null */
+  adoptionStageRationale: string | null;
 };
 
 /** テーマ起点正規化後の累積 Alpha（日次超過の合計、パーセントポイント）。 */

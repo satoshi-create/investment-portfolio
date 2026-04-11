@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Crosshair, Layers, TrendingUp } from "lucide-react";
+import { Crosshair, FileSpreadsheet, Layers, TrendingUp } from "lucide-react";
 
 import type {
   InvestmentThemeRecord,
@@ -10,8 +10,21 @@ import type {
   ThemeDetailData,
   ThemeEcosystemWatchItem,
 } from "@/src/types/investment";
+import {
+  ADOPTION_STAGE_META,
+  adoptionStageRank,
+  adoptionStageTooltip,
+  isPostChasmStage,
+  parseAdoptionStage,
+  summarizeThemeAdoptionMaturity,
+} from "@/src/lib/adoption-stage";
 import { isCumulativeSeriesTrendUpward } from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
+import {
+  THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS,
+  themeEcosystemWatchlistToCsvRows,
+} from "@/src/lib/csv-dashboard-presets";
+import { exportToCSV, themeEcosystemWatchlistCsvFileName } from "@/src/lib/csv-export";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
@@ -103,6 +116,15 @@ function normalizeThemeDetailResponse(rest: Omit<ThemeDetailJson, "userId" | "er
             typeof item.drawdownFromHigh90dPct === "number" && Number.isFinite(item.drawdownFromHigh90dPct)
               ? item.drawdownFromHigh90dPct
               : null,
+          adoptionStage: parseAdoptionStage(
+            (item as Record<string, unknown>).adoptionStage ?? (item as Record<string, unknown>).adoption_stage,
+          ),
+          adoptionStageRationale: (() => {
+            const a = (item as Record<string, unknown>).adoptionStageRationale;
+            const b = (item as Record<string, unknown>).adoption_stage_rationale;
+            const s = typeof a === "string" && a.trim().length > 0 ? a.trim() : typeof b === "string" ? b.trim() : "";
+            return s.length > 0 ? s : null;
+          })(),
         }))
       : [],
     cumulativeAlphaSeries: Array.isArray(rest.cumulativeAlphaSeries) ? rest.cumulativeAlphaSeries : [],
@@ -119,6 +141,45 @@ function normalizeThemeDetailResponse(rest: Omit<ThemeDetailJson, "userId" | "er
 
 function fieldLabelOf(e: ThemeEcosystemWatchItem): string {
   return e.field.trim() || "その他";
+}
+
+function ChasmMeterVisual({ stage }: { stage: ThemeEcosystemWatchItem["adoptionStage"] }) {
+  const r = adoptionStageRank(stage);
+  const active = r ?? 0;
+  return (
+    <div className="flex items-center gap-0.5" aria-hidden>
+      {[1, 2, 3, 4, 5].map((step) => (
+        <div
+          key={step}
+          className={`h-2 w-2.5 rounded-sm ${
+            step <= active ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.45)]" : "bg-slate-800"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function EcosystemAdoptionCell({ e }: { e: ThemeEcosystemWatchItem }) {
+  const st = e.adoptionStage;
+  const meta = st ? ADOPTION_STAGE_META[st] : null;
+  const tip = adoptionStageTooltip(st, e.adoptionStageRationale, e.observationNotes);
+  if (!st || !meta) {
+    return (
+      <span className="text-xs text-slate-600" title={tip}>
+        —
+      </span>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1.5 max-w-[7.5rem] cursor-help" title={tip}>
+      <span className="text-xl leading-none" aria-hidden>
+        {meta.icon}
+      </span>
+      <ChasmMeterVisual stage={st} />
+      <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400 leading-tight">{meta.labelJa}</span>
+    </div>
+  );
 }
 
 function extractGeopoliticalPotential(observationNotes: string | null | undefined): string | null {
@@ -144,6 +205,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [ecoSortDir, setEcoSortDir] = useState<"asc" | "desc">("desc");
   const [ecoShowValueCols, setEcoShowValueCols] = useState(false);
   const [patrolOn, setPatrolOn] = useState(false);
+  /** アーリーマジョリティ以降のみ（キャズム超え・割安性フィルターと AND） */
+  const [postChasmOnly, setPostChasmOnly] = useState(false);
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -208,15 +271,29 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   }, [patrolOn]);
 
   const ecosystemFiltered = useMemo(() => {
-    if (!patrolOn) return ecosystem;
-    return ecosystem.filter((e) => {
+    let out = ecosystem;
+    if (postChasmOnly) {
+      out = out.filter((e) => isPostChasmStage(e.adoptionStage));
+    }
+    if (!patrolOn) return out;
+    return out.filter((e) => {
       const z = e.alphaDeviationZ;
       const dd = e.drawdownFromHigh90dPct;
       const coldAlpha = z != null && z <= -1.5;
       const deepDrawdown = dd != null && dd <= -12;
       return coldAlpha || deepDrawdown;
     });
-  }, [ecosystem, patrolOn]);
+  }, [ecosystem, patrolOn, postChasmOnly]);
+
+  const themeAdoptionMaturity = useMemo(
+    () => summarizeThemeAdoptionMaturity(ecosystem.map((e) => e.adoptionStage)),
+    [ecosystem],
+  );
+
+  const quoripsWatch = useMemo(
+    () => ecosystem.find((e) => String(e.ticker).trim() === "4894"),
+    [ecosystem],
+  );
 
   const ecosystemSorted = useMemo(() => {
     const dir = ecoSortDir === "asc" ? 1 : -1;
@@ -268,6 +345,14 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   function ecoSortMark(k: typeof ecoSortKey) {
     if (k !== ecoSortKey) return "";
     return ecoSortDir === "asc" ? " ▲" : " ▼";
+  }
+
+  function handleEcosystemCsvDownload() {
+    exportToCSV(
+      themeEcosystemWatchlistToCsvRows(ecosystemSorted, themeLabel),
+      themeEcosystemWatchlistCsvFileName(themeLabel),
+      THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS,
+    );
   }
 
   return (
@@ -343,6 +428,36 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
               </div>
             </section>
 
+            {ecosystem.length > 0 ? (
+              <section
+                aria-label="テーマ普及成熟度"
+                className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/90 p-5 md:p-6"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/90 mb-2">
+                  Technology adoption · テーマ成熟度
+                </p>
+                <p className="text-lg font-bold text-slate-100 leading-snug">{themeAdoptionMaturity.headline}</p>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">{themeAdoptionMaturity.detail}</p>
+                {quoripsWatch?.adoptionStage === "chasm" ? (
+                  <div className="mt-4 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-400/95 mb-1">
+                      クオリプス（4894）× キャズム
+                    </p>
+                    <p className="text-sm text-slate-300 leading-relaxed">
+                      再生医療（iPS 心筋等）は臨床・規制・製造の峡谷に位置しやすく、
+                      <span className="text-cyan-300/95 font-semibold"> 日次 Alpha（Z・累積トレンドのズレ）</span>
+                      がイベントで動きやすい。割安パトロールと併せ、冷え込み＝期待調整のサインとして読むと直感的です。
+                    </p>
+                    {quoripsWatch.adoptionStageRationale ? (
+                      <p className="text-[11px] text-slate-500 mt-2 leading-relaxed border-t border-slate-800/80 pt-2">
+                        {quoripsWatch.adoptionStageRationale}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             {stocks.length > 0 ? (
               <InventoryTable
                 stocks={stocks}
@@ -398,6 +513,28 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         >
                           割安パトロール
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setPostChasmOnly((p) => !p)}
+                          className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
+                            postChasmOnly
+                              ? "text-emerald-400 border-emerald-500/50 bg-emerald-500/10"
+                              : "text-slate-500 border-slate-700 hover:bg-slate-800/60"
+                          }`}
+                          title="アーリーマジョリティ・レイトマジョリティのみ（キャズムより先＝普及が進んだ層）"
+                        >
+                          キャズム超え
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleEcosystemCsvDownload}
+                          disabled={ecosystemSorted.length === 0}
+                          className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 border border-slate-700 px-3 py-2 rounded-lg hover:bg-slate-800/60 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                          title="表示中の行（フィルター・並び順反映）を UTF-8 BOM 付き CSV でダウンロード"
+                        >
+                          <FileSpreadsheet size={14} className="shrink-0" />
+                          CSVダウンロード
+                        </button>
                       </div>
                       <p className="text-[10px] font-mono text-slate-600 text-right flex flex-wrap items-center justify-end gap-2">
                         {hydratingFull ? (
@@ -405,8 +542,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                             Alpha・Research 読込中…
                           </span>
                         ) : null}
-                        <span>
-                          {patrolOn
+                          <span>
+                          {patrolOn || postChasmOnly
                             ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
                             : `計 ${ecosystem.length} 銘柄`}
                         </span>
@@ -432,6 +569,12 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                             Research{ecoSortMark("research")}
                           </th>
                           <th className="px-6 py-4 text-left whitespace-nowrap">江戸的役割</th>
+                          <th
+                            className="px-6 py-4 text-left whitespace-nowrap"
+                            title="ロジャーズの普及曲線（5 段階）。ホバーで根拠"
+                          >
+                            キャズム
+                          </th>
                           {ecoShowValueCols ? (
                             <>
                               <th
@@ -474,13 +617,17 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/50">
-                        {ecosystemSorted.length === 0 && patrolOn ? (
+                        {ecosystemSorted.length === 0 && (patrolOn || postChasmOnly) ? (
                           <tr>
                             <td
-                              colSpan={ecoShowValueCols ? 8 : 6}
+                              colSpan={ecoShowValueCols ? 9 : 7}
                               className="px-6 py-8 text-center text-sm text-slate-500"
                             >
-                              割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。
+                              {postChasmOnly && !patrolOn
+                                ? "キャズム超え（アーリー／レイトマジョリティ）に該当する銘柄がありません。DB の adoption_stage を設定してください。"
+                                : patrolOn && !postChasmOnly
+                                  ? "割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。"
+                                  : "フィルター条件に合う銘柄がありません（割安パトロール ＋ キャズム超え）。"}
                             </td>
                           </tr>
                         ) : null}
@@ -506,7 +653,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                     {field}
                                   </td>
                                   <td
-                                    colSpan={ecoShowValueCols ? 7 : 5}
+                                    colSpan={ecoShowValueCols ? 8 : 6}
                                     className="border-b border-slate-800 bg-slate-950/90 px-6 py-2"
                                     aria-hidden
                                   />
@@ -633,6 +780,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                 ) : (
                                   <span className="text-xs text-slate-600">—</span>
                                 )}
+                              </td>
+                              <td className="px-6 py-4 align-top">
+                                <EcosystemAdoptionCell e={e} />
                               </td>
                               {ecoShowValueCols ? (
                                 <>

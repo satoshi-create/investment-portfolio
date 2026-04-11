@@ -189,6 +189,8 @@ CREATE TABLE theme_ecosystem_members (
   role TEXT,
   is_major_player INTEGER NOT NULL DEFAULT 0,
   observation_started_at TEXT,
+  adoption_stage TEXT,
+  adoption_stage_rationale TEXT,
   FOREIGN KEY (theme_id) REFERENCES investment_themes(id) ON DELETE CASCADE,
   UNIQUE (theme_id, ticker)
 );
