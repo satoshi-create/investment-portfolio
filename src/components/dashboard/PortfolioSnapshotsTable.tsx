@@ -50,7 +50,14 @@ function marketSummary(indicators: PortfolioDailySnapshotRow["marketIndicators"]
   return parts.length > 0 ? parts.join(" · ") : `${indicators.length} 指標`;
 }
 
-const COL_COUNT = 12;
+const COL_COUNT = 14;
+
+function jpyPnlCellClass(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return "text-slate-500";
+  if (v > 0) return "text-emerald-400";
+  if (v < 0) return "text-rose-400";
+  return "text-slate-400";
+}
 
 export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshotRow[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -64,7 +71,10 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
             Portfolio snapshots
           </h3>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            DB テーブル portfolio_daily_snapshots + market_glance_snapshots（新しい順・同日は上書き）
+            portfolio_daily_snapshots + market_glance_snapshots。合計損益・コストは{" "}
+            <span className="font-mono text-muted-foreground/90">total_profit</span> /{" "}
+            <span className="font-mono text-muted-foreground/90">cost_basis</span>（トップの Total profit / Cost basis
+            と同義）
           </p>
         </div>
       </div>
@@ -75,7 +85,7 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[1020px]">
+          <table className="w-full text-left text-sm min-w-[1240px]">
             <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th className={`px-4 py-3 whitespace-nowrap min-w-[6.5rem] ${stickyThFirst}`}>日付 (UTC)</th>
@@ -87,6 +97,18 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
                 </th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">評価額 (円)</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">含み損益 (円)</th>
+                <th
+                  className="px-4 py-3 text-right whitespace-nowrap"
+                  title="DB: total_profit。ダッシュ Total profit と同じ（含み損益＋確定損益）"
+                >
+                  合計損益 (円)
+                </th>
+                <th
+                  className="px-4 py-3 text-right whitespace-nowrap"
+                  title="DB: cost_basis。ダッシュ Cost basis と同じ（各銘柄 評価額−含み の合計）"
+                >
+                  コスト (円)
+                </th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">平均 α</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">PF 前日比</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">BM 前日比</th>
@@ -132,6 +154,18 @@ export function PortfolioSnapshotsTable({ rows }: { rows: PortfolioDailySnapshot
                         }`}
                       >
                         {r.totalUnrealizedPnlJpy != null ? jpyFmt.format(r.totalUnrealizedPnlJpy) : "—"}
+                      </td>
+                      <td
+                        className={`px-4 py-2.5 text-right font-mono text-xs font-medium ${jpyPnlCellClass(r.totalProfitJpy)}`}
+                        title={r.totalProfitJpy != null ? `total_profit: ${r.totalProfitJpy}` : "total_profit 未記録（015 未適用または旧行）"}
+                      >
+                        {r.totalProfitJpy != null ? jpyFmt.format(r.totalProfitJpy) : "—"}
+                      </td>
+                      <td
+                        className="px-4 py-2.5 text-right font-mono text-slate-200 text-xs"
+                        title={r.costBasisJpy != null ? `cost_basis: ${r.costBasisJpy}` : "cost_basis 未記録（015 未適用または旧行）"}
+                      >
+                        {r.costBasisJpy != null ? jpyFmt.format(r.costBasisJpy) : "—"}
                       </td>
                       <td className={`px-4 py-2.5 text-right font-mono text-xs ${pctClass(r.portfolioAvgAlpha)}`}>
                         {fmtPct(r.portfolioAvgAlpha)}

@@ -1,10 +1,6 @@
 import type { Client } from "@libsql/client";
 
-import {
-  quoteCurrencyForDashboardWeights,
-  roundAlphaMetric,
-  SIGNAL_BENCHMARK_TICKER,
-} from "@/src/lib/alpha-logic";
+import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { getDashboardData } from "@/src/lib/dashboard-data";
@@ -58,19 +54,6 @@ function parseMarketGlancePayload(raw: unknown): MarketIndicator[] | undefined {
   } catch {
     return undefined;
   }
-}
-
-/** 取得単価×数量×換算係数を円建てコストに（ダッシュの評価額換算と整合）。 */
-function holdingCostBasisJpy(st: Stock, fxUsdJpy: number): number {
-  const ap = st.avgAcquisitionPrice;
-  if (ap == null || !Number.isFinite(ap) || ap <= 0) return 0;
-  if (!Number.isFinite(st.quantity) || st.quantity <= 0) return 0;
-  const f = st.valuationFactor > 0 ? st.valuationFactor : 1;
-  const base = st.quantity * ap * f;
-  const ccy = quoteCurrencyForDashboardWeights(st.ticker);
-  if (ccy === "JPY") return base;
-  if (!Number.isFinite(fxUsdJpy) || fxUsdJpy <= 0) return 0;
-  return base * fxUsdJpy;
 }
 
 function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): PortfolioDailySnapshotRow {
@@ -391,7 +374,9 @@ export async function recordPortfolioDailySnapshot(
       : USD_JPY_RATE_FALLBACK;
   const totalMv = dash.totalMarketValue;
   const totalPnlJpy = dash.stocks.reduce((s, st) => s + (Number.isFinite(st.unrealizedPnlJpy) ? st.unrealizedPnlJpy : 0), 0);
-  const totalCostBasisJpy = dash.stocks.reduce((s, st) => s + holdingCostBasisJpy(st, fxUsdJpyApplied), 0);
+  /** ダッシュ `summary` と同一（含み+確定 / 評価額−含みの合計コスト） */
+  const snapshotTotalProfitJpy = dash.summary.totalProfitJpy;
+  const snapshotCostBasisJpy = dash.summary.totalCostBasisJpy;
   const avgAlpha = dash.summary.portfolioAverageAlpha;
 
   const prevRs = await db.execute({
@@ -474,8 +459,8 @@ export async function recordPortfolioDailySnapshot(
         benchmarkChangeAtRecord,
         totalMv,
         totalPnlJpy,
-        totalPnlJpy,
-        totalCostBasisJpy,
+        snapshotTotalProfitJpy,
+        snapshotCostBasisJpy,
         avgAlpha,
         portfolioReturnVsPrev,
         benchmarkReturnVsPrev,

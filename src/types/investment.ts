@@ -261,9 +261,9 @@ export type PortfolioDailySnapshotRow = {
   benchmarkChangePct: number | null;
   totalMarketValueJpy: number;
   totalUnrealizedPnlJpy: number | null;
-  /** `total_profit`（合計含み損益・円）。未移行 DB では null */
+  /** `total_profit`＝記録時 `DashboardSummary.totalProfitJpy`（含み+確定）。未移行 DB では null */
   totalProfitJpy: number | null;
-  /** `cost_basis`（総取得コスト・円）。未移行 DB では null */
+  /** `cost_basis`＝記録時 `DashboardSummary.totalCostBasisJpy`（各銘柄 評価額−含み の合計）。未移行 DB では null */
   costBasisJpy: number | null;
   portfolioAvgAlpha: number | null;
   portfolioReturnVsPrevPct: number | null;

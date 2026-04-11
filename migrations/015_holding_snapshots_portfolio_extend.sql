@@ -1,5 +1,5 @@
 -- holding_snapshots: 日次スナップショット時の銘柄別メトリクス（軽量クエリ用）
--- portfolio_daily_snapshots: 合計含み損益・総取得コスト（円）
+-- portfolio_daily_snapshots: total_profit / cost_basis は getDashboardData の summary と同一意味
 -- Apply: turso db shell <db> < migrations/015_holding_snapshots_portfolio_extend.sql
 
 PRAGMA foreign_keys = ON;
