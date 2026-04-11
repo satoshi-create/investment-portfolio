@@ -84,6 +84,42 @@ function ThemeMetaBlock({ theme, themeName }: { theme: InvestmentThemeRecord | n
 
 type ThemeDetailJson = ThemeDetailData & { userId?: string; error?: string };
 
+function normalizeThemeDetailResponse(rest: Omit<ThemeDetailJson, "userId" | "error">): ThemeDetailData {
+  return {
+    ...rest,
+    ecosystem: Array.isArray(rest.ecosystem)
+      ? rest.ecosystem.map((item) => ({
+          ...item,
+          observationStartedAt:
+            typeof item.observationStartedAt === "string" && item.observationStartedAt.length >= 10
+              ? item.observationStartedAt.slice(0, 10)
+              : null,
+          alphaObservationStartDate:
+            typeof item.alphaObservationStartDate === "string" && item.alphaObservationStartDate.length >= 10
+              ? item.alphaObservationStartDate.slice(0, 10)
+              : null,
+          alphaDeviationZ:
+            typeof item.alphaDeviationZ === "number" && Number.isFinite(item.alphaDeviationZ)
+              ? item.alphaDeviationZ
+              : null,
+          drawdownFromHigh90dPct:
+            typeof item.drawdownFromHigh90dPct === "number" && Number.isFinite(item.drawdownFromHigh90dPct)
+              ? item.drawdownFromHigh90dPct
+              : null,
+        }))
+      : [],
+    cumulativeAlphaSeries: Array.isArray(rest.cumulativeAlphaSeries) ? rest.cumulativeAlphaSeries : [],
+    structuralAlphaTotalPct:
+      typeof rest.structuralAlphaTotalPct === "number" && Number.isFinite(rest.structuralAlphaTotalPct)
+        ? rest.structuralAlphaTotalPct
+        : null,
+    cumulativeAlphaAnchorDate:
+      typeof rest.cumulativeAlphaAnchorDate === "string" && rest.cumulativeAlphaAnchorDate.length > 0
+        ? rest.cumulativeAlphaAnchorDate
+        : null,
+  } as ThemeDetailData;
+}
+
 function fieldLabelOf(e: ThemeEcosystemWatchItem): string {
   return e.field.trim() || "その他";
 }
@@ -101,6 +137,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [data, setData] = useState<ThemeDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** fast=1 後、フル API で Alpha/Research 等を埋めている間 */
+  const [hydratingFull, setHydratingFull] = useState(false);
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
   const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(null);
   const [ecoSortKey, setEcoSortKey] = useState<
@@ -113,51 +151,35 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
     setError(null);
+    setHydratingFull(false);
+    const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}`;
     try {
-      const res = await fetch(
-        `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}&fast=1`,
-        { cache: "no-store", signal },
-      );
-      const json = (await res.json()) as ThemeDetailJson;
-      if (!res.ok) {
+      const resFast = await fetch(`${baseUrl}&fast=1`, { cache: "no-store", signal });
+      const jsonFast = (await resFast.json()) as ThemeDetailJson;
+      if (!resFast.ok) {
         setData(null);
-        setError(json.error ?? `HTTP ${res.status}`);
+        setError(jsonFast.error ?? `HTTP ${resFast.status}`);
         return;
       }
-      const { userId: _u, error: _e, ...rest } = json;
-      setData({
-        ...rest,
-        ecosystem: Array.isArray(rest.ecosystem)
-          ? rest.ecosystem.map((item) => ({
-              ...item,
-              observationStartedAt:
-                typeof item.observationStartedAt === "string" && item.observationStartedAt.length >= 10
-                  ? item.observationStartedAt.slice(0, 10)
-                  : null,
-              alphaObservationStartDate:
-                typeof item.alphaObservationStartDate === "string" && item.alphaObservationStartDate.length >= 10
-                  ? item.alphaObservationStartDate.slice(0, 10)
-                  : null,
-              alphaDeviationZ:
-                typeof item.alphaDeviationZ === "number" && Number.isFinite(item.alphaDeviationZ)
-                  ? item.alphaDeviationZ
-                  : null,
-              drawdownFromHigh90dPct:
-                typeof item.drawdownFromHigh90dPct === "number" && Number.isFinite(item.drawdownFromHigh90dPct)
-                  ? item.drawdownFromHigh90dPct
-                  : null,
-            }))
-          : [],
-        cumulativeAlphaSeries: Array.isArray(rest.cumulativeAlphaSeries) ? rest.cumulativeAlphaSeries : [],
-        structuralAlphaTotalPct:
-          typeof rest.structuralAlphaTotalPct === "number" && Number.isFinite(rest.structuralAlphaTotalPct)
-            ? rest.structuralAlphaTotalPct
-            : null,
-        cumulativeAlphaAnchorDate:
-          typeof rest.cumulativeAlphaAnchorDate === "string" && rest.cumulativeAlphaAnchorDate.length > 0
-            ? rest.cumulativeAlphaAnchorDate
-            : null,
-      } as ThemeDetailData);
+      const { userId: _u, error: _e, ...restFast } = jsonFast;
+      if (signal.aborted) return;
+      setData(normalizeThemeDetailResponse(restFast));
+      setLoading(false);
+
+      setHydratingFull(true);
+      try {
+        const resFull = await fetch(baseUrl, { cache: "no-store", signal });
+        const jsonFull = (await resFull.json()) as ThemeDetailJson;
+        if (signal.aborted) return;
+        if (!resFull.ok) {
+          console.warn("[theme-detail] full fetch failed:", jsonFull.error ?? resFull.status);
+          return;
+        }
+        const { userId: __u, error: __e, ...restFull } = jsonFull;
+        setData(normalizeThemeDetailResponse(restFull));
+      } finally {
+        setHydratingFull(false);
+      }
     } catch (e) {
       if (signal.aborted || (e instanceof Error && e.name === "AbortError")) return;
       setData(null);
@@ -380,10 +402,17 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           割安パトロール
                         </button>
                       </div>
-                      <p className="text-[10px] font-mono text-slate-600 text-right">
-                        {patrolOn
-                          ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
-                          : `計 ${ecosystem.length} 銘柄`}
+                      <p className="text-[10px] font-mono text-slate-600 text-right flex flex-wrap items-center justify-end gap-2">
+                        {hydratingFull ? (
+                          <span className="text-cyan-400/90 font-sans font-bold normal-case tracking-normal animate-pulse">
+                            Alpha・Research 読込中…
+                          </span>
+                        ) : null}
+                        <span>
+                          {patrolOn
+                            ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
+                            : `計 ${ecosystem.length} 銘柄`}
+                        </span>
                       </p>
                     </div>
                   </div>
