@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Crosshair, FileSpreadsheet, Layers, Search, TrendingUp } from "lucide-react";
+import { Crosshair, FileSpreadsheet, Layers, Search, TrendingUp, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 
 import type {
   InvestmentThemeRecord,
@@ -20,6 +21,7 @@ import {
 } from "@/src/lib/adoption-stage";
 import { isCumulativeSeriesTrendUpward } from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
+import { cn } from "@/src/lib/cn";
 import {
   THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS,
   themeEcosystemWatchlistToCsvRows,
@@ -29,6 +31,8 @@ import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/Ecosyst
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
+import { Button } from "@/src/components/ui/button";
+import { Input } from "@/src/components/ui/input";
 import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
@@ -215,6 +219,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   /** アーリーマジョリティ以降のみ（キャズム超え・割安性フィルターと AND） */
   const [postChasmOnly, setPostChasmOnly] = useState(false);
   const [ecosystemSearchQuery, setEcosystemSearchQuery] = useState("");
+  const [addTicker, setAddTicker] = useState("");
+  const [addImportance, setAddImportance] = useState<"standard" | "major">("standard");
+  const [addRole, setAddRole] = useState("");
+  const [addSubmitting, setAddSubmitting] = useState(false);
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -257,6 +265,27 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     }
   }, [themeLabel]);
 
+  const refetchThemeDetailQuiet = useCallback(async (signal: AbortSignal) => {
+    const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}`;
+    setHydratingFull(true);
+    try {
+      const resFull = await fetch(baseUrl, { cache: "no-store", signal });
+      const jsonFull = (await resFull.json()) as ThemeDetailJson;
+      if (signal.aborted) return;
+      if (!resFull.ok) {
+        toast.error(jsonFull.error ?? `再読み込みに失敗しました（${resFull.status}）`);
+        return;
+      }
+      const { userId: __u, error: __e, ...restFull } = jsonFull;
+      setData(normalizeThemeDetailResponse(restFull));
+    } catch (e) {
+      if (signal.aborted || (e instanceof Error && e.name === "AbortError")) return;
+      toast.error(e instanceof Error ? e.message : "再読み込みに失敗しました");
+    } finally {
+      if (!signal.aborted) setHydratingFull(false);
+    }
+  }, [themeLabel]);
+
   useEffect(() => {
     const ac = new AbortController();
     void load(ac.signal);
@@ -273,6 +302,70 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const ecosystem = data?.ecosystem ?? [];
   const cumulativeSeries = data?.cumulativeAlphaSeries ?? [];
   const themeStructuralTrendUp = useMemo(() => isCumulativeSeriesTrendUpward(cumulativeSeries), [cumulativeSeries]);
+
+  const ecosystemTickersUpper = useMemo(
+    () => new Set(ecosystem.map((e) => e.ticker.trim().toUpperCase())),
+    [ecosystem],
+  );
+  const addTickerDuplicate =
+    addTicker.trim().length > 0 && ecosystemTickersUpper.has(addTicker.trim().toUpperCase());
+
+  const handleAddEcosystemMember = useCallback(
+    async (ev: React.FormEvent) => {
+      ev.preventDefault();
+      if (!theme?.id || addSubmitting) return;
+      const t = addTicker.trim();
+      if (!t || addTickerDuplicate) return;
+      setAddSubmitting(true);
+      const ac = new AbortController();
+      try {
+        const res = await fetch("/api/theme-ecosystem/member", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: DEFAULT_USER_ID,
+            themeId: theme.id,
+            ticker: t,
+            isMajorPlayer: addImportance === "major",
+            role: addRole.trim() || null,
+          }),
+        });
+        let json: { error?: string; code?: string } = {};
+        try {
+          json = (await res.json()) as { error?: string; code?: string };
+        } catch {
+          /* ignore */
+        }
+        if (!res.ok) {
+          if (res.status === 409 || json.code === "DUPLICATE_TICKER") {
+            toast.error("この銘柄は既にこのテーマに登録されています");
+          } else {
+            toast.error(json.error ?? "追加に失敗しました");
+          }
+          return;
+        }
+        toast.success("エコシステムに追加しました");
+        setAddTicker("");
+        setAddRole("");
+        setAddImportance("standard");
+        await refetchThemeDetailQuiet(ac.signal);
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        toast.error(e instanceof Error ? e.message : "追加に失敗しました");
+      } finally {
+        setAddSubmitting(false);
+      }
+    },
+    [
+      theme?.id,
+      addTicker,
+      addRole,
+      addImportance,
+      addTickerDuplicate,
+      addSubmitting,
+      refetchThemeDetailQuiet,
+    ],
+  );
 
   useEffect(() => {
     if (patrolOn) setEcoShowValueCols(true);
@@ -480,6 +573,106 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 onTradeNew={() => openTradeForm(null)}
                 themeStructuralTrendUp={themeStructuralTrendUp}
               />
+            ) : null}
+
+            {theme?.id ? (
+              <section
+                aria-labelledby="theme-ecosystem-add-heading"
+                className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 md:p-6 space-y-4"
+              >
+                <div className="flex items-start gap-2">
+                  <UserPlus size={16} className="text-amber-500/90 shrink-0 mt-0.5" aria-hidden />
+                  <div>
+                    <h2
+                      id="theme-ecosystem-add-heading"
+                      className="text-xs font-bold text-slate-400 uppercase tracking-widest"
+                    >
+                      Ecosystem · 銘柄を追加
+                    </h2>
+                    <p className="text-[10px] text-slate-600 mt-0.5">
+                      Ticker・Importance・Role を登録してウォッチリストへ追加します（同一テーマ内の ticker 重複は不可）
+                    </p>
+                  </div>
+                </div>
+                <form onSubmit={handleAddEcosystemMember} className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end">
+                    <div className="space-y-1.5 w-full md:w-[7.5rem] shrink-0">
+                      <label
+                        htmlFor="eco-add-ticker"
+                        className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
+                      >
+                        Ticker
+                      </label>
+                      <Input
+                        id="eco-add-ticker"
+                        value={addTicker}
+                        onChange={(e) => setAddTicker(e.target.value)}
+                        placeholder="例: AAPL"
+                        aria-invalid={addTickerDuplicate}
+                        className={cn(
+                          "font-mono",
+                          addTickerDuplicate ? "border-rose-500/80 focus-visible:ring-rose-500/40" : undefined,
+                        )}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="space-y-1.5 w-full md:w-[11rem] shrink-0">
+                      <label
+                        htmlFor="eco-add-importance"
+                        className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
+                      >
+                        Importance
+                      </label>
+                      <select
+                        id="eco-add-importance"
+                        value={addImportance}
+                        onChange={(e) => setAddImportance(e.target.value === "major" ? "major" : "standard")}
+                        className={cn(
+                          "flex h-9 w-full rounded-md border border-slate-700 bg-slate-950/80 px-3 py-1 text-sm text-slate-200 shadow-sm",
+                          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50 focus-visible:border-cyan-500/40",
+                        )}
+                      >
+                        <option value="standard">通常</option>
+                        <option value="major">メジャー（Major）</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5 w-full md:min-w-[12rem] md:flex-1 min-w-0">
+                      <label
+                        htmlFor="eco-add-role"
+                        className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
+                      >
+                        Role
+                      </label>
+                      <Input
+                        id="eco-add-role"
+                        value={addRole}
+                        onChange={(e) => setAddRole(e.target.value)}
+                        placeholder="江戸的役割・メモ"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="w-full md:w-auto shrink-0">
+                      <Button
+                        type="submit"
+                        disabled={!addTicker.trim() || addTickerDuplicate || addSubmitting}
+                        className="w-full md:w-auto px-5 h-9"
+                      >
+                        {addSubmitting ? "追加中…" : "追加"}
+                      </Button>
+                    </div>
+                  </div>
+                  {addTickerDuplicate ? (
+                    <p className="text-xs text-rose-400" role="alert">
+                      この銘柄は既にこのテーマに登録されています
+                    </p>
+                  ) : null}
+                  {ecosystem.length === 0 ? (
+                    <p className="text-[11px] text-slate-600">
+                      まだウォッチリストに銘柄がありません。追加すると下のエコシステム表が表示されます。
+                    </p>
+                  ) : null}
+                </form>
+              </section>
             ) : null}
 
             {ecosystem.length > 0 ? (
