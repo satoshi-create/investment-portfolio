@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Crosshair, FileSpreadsheet, Layers, TrendingUp } from "lucide-react";
+import { Crosshair, FileSpreadsheet, Layers, Search, TrendingUp } from "lucide-react";
 
 import type {
   InvestmentThemeRecord,
@@ -66,6 +66,13 @@ function ecoOpportunityRow(e: ThemeEcosystemWatchItem, themeUp: boolean): boolea
   if (!themeUp) return false;
   const z = e.alphaDeviationZ;
   return z != null && Number.isFinite(z) && z <= -1.5;
+}
+
+function ecosystemMatchesSearchQuery(e: ThemeEcosystemWatchItem, raw: string): boolean {
+  const n = raw.trim().toLowerCase();
+  if (n.length === 0) return true;
+  const hay = [e.companyName, e.ticker, e.role, e.observationNotes ?? ""];
+  return hay.some((s) => s.toLowerCase().includes(n));
 }
 
 function ThemeMetaBlock({ theme, themeName }: { theme: InvestmentThemeRecord | null; themeName: string }) {
@@ -207,6 +214,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [patrolOn, setPatrolOn] = useState(false);
   /** アーリーマジョリティ以降のみ（キャズム超え・割安性フィルターと AND） */
   const [postChasmOnly, setPostChasmOnly] = useState(false);
+  const [ecosystemSearchQuery, setEcosystemSearchQuery] = useState("");
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -275,15 +283,20 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     if (postChasmOnly) {
       out = out.filter((e) => isPostChasmStage(e.adoptionStage));
     }
-    if (!patrolOn) return out;
-    return out.filter((e) => {
-      const z = e.alphaDeviationZ;
-      const dd = e.drawdownFromHigh90dPct;
-      const coldAlpha = z != null && z <= -1.5;
-      const deepDrawdown = dd != null && dd <= -12;
-      return coldAlpha || deepDrawdown;
-    });
-  }, [ecosystem, patrolOn, postChasmOnly]);
+    if (patrolOn) {
+      out = out.filter((e) => {
+        const z = e.alphaDeviationZ;
+        const dd = e.drawdownFromHigh90dPct;
+        const coldAlpha = z != null && z <= -1.5;
+        const deepDrawdown = dd != null && dd <= -12;
+        return coldAlpha || deepDrawdown;
+      });
+    }
+    if (ecosystemSearchQuery.trim().length > 0) {
+      out = out.filter((e) => ecosystemMatchesSearchQuery(e, ecosystemSearchQuery));
+    }
+    return out;
+  }, [ecosystem, patrolOn, postChasmOnly, ecosystemSearchQuery]);
 
   const themeAdoptionMaturity = useMemo(
     () => summarizeThemeAdoptionMaturity(ecosystem.map((e) => e.adoptionStage)),
@@ -487,8 +500,24 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2 shrink-0">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex flex-col items-end gap-2 shrink-0 w-full sm:w-auto">
+                      <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+                        <label className="relative flex items-center min-w-[12rem] flex-1 sm:flex-initial sm:max-w-[16rem]">
+                          <span className="sr-only">エコシステム検索</span>
+                          <Search
+                            size={14}
+                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none shrink-0"
+                            aria-hidden
+                          />
+                          <input
+                            type="search"
+                            value={ecosystemSearchQuery}
+                            onChange={(ev) => setEcosystemSearchQuery(ev.target.value)}
+                            placeholder="銘柄・役割・ノートで検索"
+                            className="w-full rounded-lg border border-slate-700 bg-slate-950/80 pl-8 pr-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/40"
+                            autoComplete="off"
+                          />
+                        </label>
                         <button
                           type="button"
                           onClick={() => setEcoShowValueCols((v) => !v)}
@@ -543,7 +572,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           </span>
                         ) : null}
                           <span>
-                          {patrolOn || postChasmOnly
+                          {patrolOn || postChasmOnly || ecosystemSearchQuery.trim().length > 0
                             ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
                             : `計 ${ecosystem.length} 銘柄`}
                         </span>
@@ -617,17 +646,20 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/50">
-                        {ecosystemSorted.length === 0 && (patrolOn || postChasmOnly) ? (
+                        {ecosystemSorted.length === 0 &&
+                        (patrolOn || postChasmOnly || ecosystemSearchQuery.trim().length > 0) ? (
                           <tr>
                             <td
                               colSpan={ecoShowValueCols ? 9 : 7}
                               className="px-6 py-8 text-center text-sm text-slate-500"
                             >
-                              {postChasmOnly && !patrolOn
-                                ? "キャズム超え（アーリー／レイトマジョリティ）に該当する銘柄がありません。DB の adoption_stage を設定してください。"
-                                : patrolOn && !postChasmOnly
-                                  ? "割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。"
-                                  : "フィルター条件に合う銘柄がありません（割安パトロール ＋ キャズム超え）。"}
+                              {ecosystemSearchQuery.trim().length > 0
+                                ? "該当する構造が見つかりません"
+                                : postChasmOnly && !patrolOn
+                                  ? "キャズム超え（アーリー／レイトマジョリティ）に該当する銘柄がありません。DB の adoption_stage を設定してください。"
+                                  : patrolOn && !postChasmOnly
+                                    ? "割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。"
+                                    : "フィルター条件に合う銘柄がありません（割安パトロール ＋ キャズム超え）。"}
                             </td>
                           </tr>
                         ) : null}
