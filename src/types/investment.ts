@@ -73,7 +73,10 @@ export interface Stock {
   priceSource: "live" | "close";
   /** 価格の基準時刻（ISO 8601）。ライブ時は quote のタイムスタンプ、日次時はその営業日の目安。未取得は null */
   lastUpdatedAt: string | null;
-  /** `alpha_history` 最新行の終値（無ければ null） */
+  /**
+   * 評価・含み損益用の単価。日本投信が `provider_symbol` で別銘柄（例: ETF）を参照しているときは
+   * プロキシ株価ではなく 1 口あたり円（平均取得と alpha 系列のアンカーで換算）。
+   */
   currentPrice: number | null;
   /** 直近日次 Alpha の約30営業日ベース Z（負ほど直近が平均より冷えている）。算出不可は null */
   alphaDeviationZ: number | null;

@@ -91,6 +91,59 @@ function latestCloseFromSeries(series: AlphaPoint[]): number | null {
   return null;
 }
 
+/** 系列の先頭（最古）の有効終値。`alpha_history` が recorded_at 昇順で来る前提。 */
+function firstCloseFromSeries(series: AlphaPoint[]): number | null {
+  for (let i = 0; i < series.length; i++) {
+    const c = series[i]!.close;
+    if (c != null && Number.isFinite(c) && c > 0) return c;
+  }
+  return null;
+}
+
+function normalizeProviderSymbolKey(s: string): string {
+  return s.trim().toUpperCase();
+}
+
+/**
+ * 日本投信（数字ティッカー）が、同一銘柄の `.T` 等ではない Yahoo シンボル（例: 2244.T の ETF）で
+ * 価格を取っているとき true。評価は「口」単位で行い、プロキシ株価をそのまま口数に掛けない。
+ */
+function isJpTrustAlienYahooProvider(ticker: string, providerSymbol: string | null): boolean {
+  if (classifyTickerInstrument(ticker) !== "JP_INVESTMENT_TRUST") return false;
+  if (providerSymbol == null) return false;
+  const p = providerSymbol.trim();
+  if (p.length === 0) return false;
+  const t = ticker.trim();
+  const defaults = new Set(
+    [`${t}.T`, `${t}.OK`, t.toUpperCase()].map((x) => normalizeProviderSymbolKey(x)),
+  );
+  return !defaults.has(normalizeProviderSymbolKey(p));
+}
+
+/**
+ * プロキシ（ETF 等）の株価を、投信 1 口あたり円に換算。
+ * アンカーは alpha 系列の最古終値（プロキシの初回観測）とし、平均取得単価をその時点の NAV/口の近似としてスケールする。
+ */
+function effectiveJpyPricePerTrustUnit(input: {
+  alienProxy: boolean;
+  avgPerUnitJpy: number | null;
+  proxyQuotePrice: number | null;
+  series: AlphaPoint[];
+}): number | null {
+  const q = input.proxyQuotePrice;
+  if (q == null || !Number.isFinite(q) || q <= 0) return null;
+  if (!input.alienProxy) return q;
+  const avg = input.avgPerUnitJpy;
+  if (avg != null && Number.isFinite(avg) && avg > 0) {
+    const anchor = firstCloseFromSeries(input.series);
+    if (anchor != null && Number.isFinite(anchor) && anchor > 0) {
+      return avg * (q / anchor);
+    }
+    return avg;
+  }
+  return q;
+}
+
 /** Latest and previous valid closes (chronological: prev then latest) for day-over-day %. */
 function lastTwoClosesFromSeries(series: AlphaPoint[]): { prevClose: number; latestClose: number } | null {
   const found: number[] = [];
@@ -381,10 +434,27 @@ function buildDraftsFromHoldingRows(
     const hybrid = hybridPriceByHoldingKey.get(liveKey);
     const fromHybrid =
       hybrid != null && Number.isFinite(hybrid.price) && hybrid.price > 0 ? hybrid : null;
-    const currentPrice =
+    const proxyQuotePrice =
       fromHybrid != null ? fromHybrid.price : seriesClose;
+    const avgAcquisitionPrice = parseAvgAcquisitionPrice(row.avg_acquisition_price);
+    const alienProxy = isJpTrustAlienYahooProvider(ticker, providerSymbol);
+    const valuationUnitPriceJpy = effectiveJpyPricePerTrustUnit({
+      alienProxy,
+      avgPerUnitJpy: avgAcquisitionPrice,
+      proxyQuotePrice,
+      series,
+    });
+    const currentPrice =
+      valuationUnitPriceJpy != null && Number.isFinite(valuationUnitPriceJpy) && valuationUnitPriceJpy > 0
+        ? valuationUnitPriceJpy
+        : proxyQuotePrice;
     const alphaDeviationZ = computeAlphaDeviationZScore(alphaHistory);
-    const drawdownFromHigh90dPct = computePriceDrawdownFromHighPercent(closesForDrawdown, currentPrice);
+    const drawdownFromHigh90dPct = computePriceDrawdownFromHighPercent(
+      closesForDrawdown,
+      proxyQuotePrice != null && Number.isFinite(proxyQuotePrice) && proxyQuotePrice > 0
+        ? proxyQuotePrice
+        : currentPrice,
+    );
     const priceSource: "live" | "close" = fromHybrid != null ? fromHybrid.source : "close";
     const lastUpdatedAt: string | null = fromHybrid != null ? fromHybrid.asOf : null;
     const qty = Number(row.quantity);
@@ -417,7 +487,6 @@ function buildDraftsFromHoldingRows(
       const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
       return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
     })() : null;
-    const avgAcquisitionPrice = parseAvgAcquisitionPrice(row.avg_acquisition_price);
     const { local: unrealizedPnlLocal, percent: unrealizedPnlPercent } = computeUnrealizedPnlLocal(
       currentPrice,
       avgAcquisitionPrice,
