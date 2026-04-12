@@ -281,6 +281,12 @@ export function InventoryTable({
                                   name: stock.name || undefined,
                                   ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
                                   sector: stock.sector ?? stock.secondaryTag,
+                                  quantityDefault: 1,
+                                  ...(stock.currentPrice != null &&
+                                  Number.isFinite(stock.currentPrice) &&
+                                  stock.currentPrice > 0
+                                    ? { unitPrice: stock.currentPrice }
+                                    : {}),
                                 })
                               }
                               className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-0.5 rounded-md hover:bg-accent-cyan/10"

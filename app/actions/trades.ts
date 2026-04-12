@@ -23,6 +23,8 @@ export type ExecuteTradeActionInput = {
   structureTheme?: string;
   /** `structure_tags` 2 番目および `holdings.sector` */
   structureSector?: string;
+  /** `investment_themes.id`（任意、`trade_history.theme_id`） */
+  themeId?: string | null;
   /** 取引理由・反省（任意、`trade_history.reason`） */
   reason?: string;
 };
@@ -33,6 +35,22 @@ export type ExecuteTradeActionResult = {
   tradeId?: string;
   holdingId?: string;
 };
+
+/** 取引入力用: ユーザーの `investment_themes` 一覧（名前順） */
+export async function listInvestmentThemesForUser(userId?: string): Promise<{ id: string; name: string }[]> {
+  if (!isDbConfigured()) return [];
+  try {
+    const uid = userId && userId.length > 0 ? userId : defaultProfileUserId();
+    const db = getDb();
+    const rs = await db.execute({
+      sql: `SELECT id, name FROM investment_themes WHERE user_id = ? ORDER BY name ASC`,
+      args: [uid],
+    });
+    return rs.rows.map((row) => ({ id: String(row.id), name: String(row.name) }));
+  } catch {
+    return [];
+  }
+}
 
 function normalizeAccount(raw: string | undefined): string {
   const t = (raw ?? "特定").trim();
@@ -68,6 +86,7 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
     categoryForNewHolding: category,
     structureTheme: input.structureTheme?.trim() ?? "",
     structureSector: input.structureSector?.trim() ?? "",
+    themeId: input.themeId != null && String(input.themeId).trim().length > 0 ? String(input.themeId).trim() : null,
     reason: reasonRaw.length > 0 ? reasonRaw : undefined,
   };
 

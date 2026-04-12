@@ -463,7 +463,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 stocks={stocks}
                 totalHoldings={stocks.length}
                 averageAlpha={data.themeAverageAlpha}
-                onTrade={(init) => openTradeForm(init)}
+                onTrade={(init) => openTradeForm({ ...init, themeId: theme?.id ?? init.themeId })}
                 onTradeNew={() => openTradeForm(null)}
                 themeStructuralTrendUp={themeStructuralTrendUp}
               />
@@ -855,6 +855,13 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                           ticker: e.isUnlisted && e.proxyTicker ? e.proxyTicker : e.ticker,
                                           name: e.companyName || undefined,
                                           theme: themeLabel,
+                                          themeId: theme?.id,
+                                          quantityDefault: 1,
+                                          ...(e.currentPrice != null &&
+                                          Number.isFinite(e.currentPrice) &&
+                                          e.currentPrice > 0
+                                            ? { unitPrice: e.currentPrice }
+                                            : {}),
                                         })
                                       }
                                       className="text-[9px] font-bold uppercase tracking-wide text-cyan-400 border border-cyan-500/40 px-2 py-0.5 rounded-md hover:bg-cyan-500/10"

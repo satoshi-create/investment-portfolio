@@ -216,8 +216,13 @@ CREATE TABLE trade_history (
   realized_pnl_jpy REAL NOT NULL,
   provider_symbol TEXT,
   reason TEXT,
-  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+  theme_id TEXT,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  FOREIGN KEY (theme_id) REFERENCES investment_themes(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_trade_history_user_date
   ON trade_history(user_id, trade_date DESC);
+
+CREATE INDEX idx_trade_history_theme_id
+  ON trade_history(theme_id);

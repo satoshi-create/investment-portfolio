@@ -27,6 +27,8 @@ export type ExecuteTradeParams = {
   /** `structure_tags` の [0]=テーマ、[1]=セクター として保存 */
   structureTheme: string;
   structureSector: string;
+  /** `investment_themes.id`（任意・`trade_history.theme_id`） */
+  themeId?: string | null;
   /** 取引理由・反省（任意・DB `trade_history.reason`） */
   reason?: string;
 };
@@ -108,6 +110,27 @@ async function resolveSignalsForHolding(tx: Transaction, holdingId: string): Pro
   });
 }
 
+async function resolveThemeBinding(
+  tx: Transaction,
+  userId: string,
+  themeId: string | null | undefined,
+  structureThemeFallback: string,
+): Promise<{ ok: true; themeId: string | null; themeNameForTags: string } | { ok: false; message: string }> {
+  const tid = themeId != null && String(themeId).trim().length > 0 ? String(themeId).trim() : null;
+  if (tid == null) {
+    return { ok: true, themeId: null, themeNameForTags: structureThemeFallback.trim() };
+  }
+  const rs = await tx.execute({
+    sql: `SELECT id, name FROM investment_themes WHERE id = ? AND user_id = ? LIMIT 1`,
+    args: [tid, userId],
+  });
+  if (rs.rows.length === 0) {
+    return { ok: false, message: "選択した構造投資テーマが見つかりません。" };
+  }
+  const name = String(rs.rows[0]!.name);
+  return { ok: true, themeId: tid, themeNameForTags: name };
+}
+
 export async function executeTradeInTransaction(
   tx: Transaction,
   p: ExecuteTradeParams,
@@ -138,12 +161,18 @@ export async function executeTradeInTransaction(
     return { ok: false, message: "金額の計算に失敗しました。単価・数量を確認してください。" };
   }
 
-  const structureTagsJson = structureTagsJsonFromThemeSector(p.structureTheme ?? "", p.structureSector ?? "");
+  const themeBind = await resolveThemeBinding(tx, p.userId, p.themeId, p.structureTheme ?? "");
+  if (!themeBind.ok) return { ok: false, message: themeBind.message };
+  const structureTagsJson = structureTagsJsonFromThemeSector(
+    themeBind.themeNameForTags,
+    p.structureSector ?? "",
+  );
   const sectorColumn =
     p.structureSector != null && String(p.structureSector).trim().length > 0
       ? String(p.structureSector).trim()
       : null;
   const reasonStored = normalizeTradeReason(p.reason);
+  const tradeThemeId = themeBind.themeId;
 
   if (p.side === "BUY") {
     const existing = await selectHolding(tx, p.userId, ticker);
@@ -200,8 +229,8 @@ export async function executeTradeInTransaction(
     await tx.execute({
       sql: `INSERT INTO trade_history (
               id, user_id, trade_date, ticker, name, market, account_name, side,
-              quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, reason, provider_symbol
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+              quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, reason, theme_id, provider_symbol
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       args: [
         tradeId,
         p.userId,
@@ -218,6 +247,7 @@ export async function executeTradeInTransaction(
         feesJpy,
         realizedPnlJpy,
         reasonStored,
+        tradeThemeId,
       ],
     });
 
@@ -249,8 +279,8 @@ export async function executeTradeInTransaction(
   await tx.execute({
     sql: `INSERT INTO trade_history (
             id, user_id, trade_date, ticker, name, market, account_name, side,
-            quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, reason, provider_symbol
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+            quantity, cost_jpy, proceeds_jpy, fee, fee_currency, fees_jpy, realized_pnl_jpy, reason, theme_id, provider_symbol
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SELL', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
     args: [
       tradeId,
       p.userId,
@@ -267,6 +297,7 @@ export async function executeTradeInTransaction(
       feesJpy,
       Math.round(realizedPnlJpy),
       reasonStored,
+      tradeThemeId,
     ],
   });
 
@@ -310,6 +341,13 @@ export async function executeTradeWithClient(db: Client, p: ExecuteTradeParams):
       return {
         ok: false,
         message: "trade_history に reason 列がありません。migrations/016_trade_history_reason.sql を適用してください。",
+      };
+    }
+    if (msg.toLowerCase().includes("no such column") && msg.toLowerCase().includes("theme_id")) {
+      return {
+        ok: false,
+        message:
+          "trade_history に theme_id 列がありません。migrations/018_trade_history_theme_id.sql を適用してください。",
       };
     }
     return { ok: false, message: msg };

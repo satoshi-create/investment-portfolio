@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useId, useMemo, useState, useTransition } from "react";
+import React, { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { X } from "lucide-react";
 
-import { executeTradeAction } from "@/app/actions/trades";
+import { executeTradeAction, listInvestmentThemesForUser } from "@/app/actions/trades";
 import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
 import { calculateMonexUsFee } from "@/src/lib/fees";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
@@ -11,10 +11,16 @@ import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 export type TradeEntryInitial = {
   ticker: string;
   name?: string;
-  /** structure_tags の先頭（テーマ） */
+  /** structure_tags の先頭（テーマ）。ドロップダウン未選択時の手入力にも使用 */
   theme?: string;
+  /** `investment_themes.id`（テーマページなど） */
+  themeId?: string;
   /** structure_tags の 2 番目および holdings.sector */
   sector?: string;
+  /** 現在値（米株=USD/株、投信等=円） */
+  unitPrice?: number | null;
+  /** 数量の初期値（既定 1） */
+  quantityDefault?: number;
 };
 
 type Props = {
@@ -37,6 +43,13 @@ function todayYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
+function formatInitialUnitPriceLocal(ticker: string, price: number): string {
+  const kind = classifyTickerInstrument(ticker.trim());
+  if (!Number.isFinite(price) || price <= 0) return "";
+  if (kind === "JP_INVESTMENT_TRUST") return String(Math.round(price));
+  return price.toFixed(2);
+}
+
 export function TradeEntryForm({
   userId,
   open,
@@ -50,7 +63,7 @@ export function TradeEntryForm({
 
   return (
     <TradeEntryFormInner
-      key={initial?.ticker ?? "__new__"}
+      key={`${initial?.ticker ?? "__new__"}|${initial?.unitPrice ?? ""}|${initial?.theme ?? ""}|${initial?.themeId ?? ""}|${initial?.quantityDefault ?? ""}`}
       userId={userId}
       initial={initial}
       onClose={onClose}
@@ -75,8 +88,19 @@ function TradeEntryFormInner({
   const [ticker, setTicker] = useState(initial?.ticker ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
-  const [quantity, setQuantity] = useState("1");
-  const [unitPrice, setUnitPrice] = useState("");
+  const [quantity, setQuantity] = useState(() => {
+    const q = initial?.quantityDefault;
+    if (q != null && Number.isFinite(q) && q > 0) return String(q);
+    return "1";
+  });
+  const [unitPrice, setUnitPrice] = useState(() =>
+    initial?.ticker &&
+    initial?.unitPrice != null &&
+    Number.isFinite(initial.unitPrice) &&
+    initial.unitPrice > 0
+      ? formatInitialUnitPriceLocal(initial.ticker, initial.unitPrice)
+      : "",
+  );
   const [autoFee, setAutoFee] = useState(true);
   const [manualFeeLocal, setManualFeeLocal] = useState("");
   const [tradeDate, setTradeDate] = useState(todayYmd());
@@ -84,7 +108,38 @@ function TradeEntryFormInner({
   const [category, setCategory] = useState<"Core" | "Satellite">("Satellite");
   const [structureTheme, setStructureTheme] = useState(initial?.theme ?? "");
   const [structureSector, setStructureSector] = useState(initial?.sector ?? "");
+  const [selectedThemeId, setSelectedThemeId] = useState(initial?.themeId?.trim() ?? "");
+  const [themeOptions, setThemeOptions] = useState<{ id: string; name: string }[]>([]);
   const [tradeReason, setTradeReason] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void listInvestmentThemesForUser(userId).then((rows) => {
+      if (!cancelled) setThemeOptions(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (themeOptions.length === 0) return;
+    const tid = initial?.themeId?.trim();
+    if (tid && themeOptions.some((t) => t.id === tid)) {
+      setSelectedThemeId(tid);
+      const row = themeOptions.find((t) => t.id === tid);
+      if (row) setStructureTheme(row.name);
+      return;
+    }
+    const th = initial?.theme?.trim();
+    if (th) {
+      const m = themeOptions.find((t) => t.name.trim() === th);
+      if (m) {
+        setSelectedThemeId(m.id);
+        setStructureTheme(m.name);
+      }
+    }
+  }, [themeOptions, initial?.themeId, initial?.theme, initial?.ticker]);
 
   const isJp = useMemo(() => classifyTickerInstrument(ticker) === "JP_INVESTMENT_TRUST", [ticker]);
   const isUs = useMemo(() => classifyTickerInstrument(ticker) === "US_EQUITY", [ticker]);
@@ -171,6 +226,7 @@ function TradeEntryFormInner({
         categoryForNewHolding: category,
         structureTheme: structureTheme.trim(),
         structureSector: structureSector.trim(),
+        themeId: selectedThemeId.trim() || undefined,
         reason: tradeReason.trim() || undefined,
       });
       setMessage(res.message);
@@ -254,14 +310,39 @@ function TradeEntryFormInner({
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
-              Theme（構造投資テーマ）
+              構造投資テーマ（DB 紐付け）
             </label>
-            <input
-              value={structureTheme}
-              onChange={(e) => setStructureTheme(e.target.value)}
+            <select
+              value={selectedThemeId}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSelectedThemeId(v);
+                if (v === "") return;
+                const row = themeOptions.find((t) => t.id === v);
+                if (row) setStructureTheme(row.name);
+              }}
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
-              placeholder="例: グロース / 非石油文明"
-            />
+            >
+              <option value="">— 紐付けなし（下の手入力のみ）—</option>
+              {themeOptions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            {selectedThemeId === "" ? (
+              <input
+                value={structureTheme}
+                onChange={(e) => setStructureTheme(e.target.value)}
+                className="w-full mt-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                placeholder="テーマ名（structure_tags 用・例: 非石油文明）"
+              />
+            ) : (
+              <p className="text-[9px] text-slate-600 mt-1">
+                取引は <span className="font-mono text-slate-500">{structureTheme}</span> に記録されます（
+                <span className="font-mono">theme_id</span> + テーマ名）。
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Sector（セクター）</label>
