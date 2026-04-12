@@ -4,7 +4,9 @@ import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { FileSpreadsheet, Search } from "lucide-react";
 
-import type { Stock } from "@/src/types/investment";
+import type { ExpectationCategory, Stock } from "@/src/types/investment";
+import { EXPECTATION_CATEGORY_KEYS, EXPECTATION_CATEGORY_LABEL_JA } from "@/src/types/investment";
+import { expectationCategoryBadgeClass, expectationCategoryBadgeShortJa } from "@/src/lib/expectation-category";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
@@ -55,15 +57,24 @@ export function InventoryTable({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showValueCols, setShowValueCols] = useState(false);
   const [structureFilter, setStructureFilter] = useState("");
+  const [expectationFilter, setExpectationFilter] = useState<"" | "__unset__" | ExpectationCategory>("");
 
   const filteredStocks = useMemo(() => {
     const q = structureFilter.trim().toLowerCase();
-    if (!q) return stocks;
-    return stocks.filter((s) => {
-      const hay = [s.ticker, s.name ?? "", s.tag, s.secondaryTag, s.sector ?? ""].join(" ").toLowerCase();
-      return hay.includes(q);
-    });
-  }, [stocks, structureFilter]);
+    let list = stocks;
+    if (q.length > 0) {
+      list = list.filter((s) => {
+        const hay = [s.ticker, s.name ?? "", s.tag, s.secondaryTag, s.sector ?? ""].join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+    }
+    if (expectationFilter === "__unset__") {
+      list = list.filter((s) => s.expectationCategory == null);
+    } else if (expectationFilter !== "") {
+      list = list.filter((s) => s.expectationCategory === expectationFilter);
+    }
+    return list;
+  }, [stocks, structureFilter, expectationFilter]);
 
   const sortedStocks = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -168,15 +179,37 @@ export function InventoryTable({
             <FileSpreadsheet size={14} className="shrink-0" />
             CSVダウンロード
           </button>
-          <div className="flex items-center gap-3 bg-background px-3 py-1.5 rounded-lg border border-border">
-            <Search size={14} className="text-muted-foreground" />
+          <div className="flex items-center gap-2 bg-background px-3 py-1.5 rounded-lg border border-border">
+            <Search size={14} className="text-muted-foreground shrink-0" />
             <input
               value={structureFilter}
               onChange={(e) => setStructureFilter(e.target.value)}
-              className="bg-transparent border-none outline-none text-xs w-48 text-foreground/90"
+              className="bg-transparent border-none outline-none text-xs w-40 min-w-0 text-foreground/90"
               placeholder="構造で絞り込み…"
               aria-label="構造で絞り込み"
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="inventory-expectation-filter" className="sr-only">
+              期待カテゴリーで絞り込み
+            </label>
+            <select
+              id="inventory-expectation-filter"
+              value={expectationFilter}
+              onChange={(e) =>
+                setExpectationFilter(e.target.value as "" | "__unset__" | ExpectationCategory)
+              }
+              className="bg-background text-[10px] font-bold uppercase tracking-wide text-foreground/90 border border-border rounded-lg px-2 py-2 max-w-[11rem]"
+              aria-label="期待カテゴリーで絞り込み"
+            >
+              <option value="">期待カテゴリー: すべて</option>
+              <option value="__unset__">未設定のみ</option>
+              {EXPECTATION_CATEGORY_KEYS.map((k) => (
+                <option key={k} value={k}>
+                  {EXPECTATION_CATEGORY_LABEL_JA[k]}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -260,6 +293,14 @@ export function InventoryTable({
                             </span>
                           ) : null}
                           <span className="truncate">{stock.ticker}</span>
+                          {stock.expectationCategory ? (
+                            <span
+                              className={`shrink-0 text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(stock.expectationCategory)}`}
+                              title={EXPECTATION_CATEGORY_LABEL_JA[stock.expectationCategory]}
+                            >
+                              {expectationCategoryBadgeShortJa(stock.expectationCategory)}
+                            </span>
+                          ) : null}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
                           <span
@@ -282,6 +323,9 @@ export function InventoryTable({
                                   ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
                                   sector: stock.sector ?? stock.secondaryTag,
                                   quantityDefault: 1,
+                                  ...(stock.expectationCategory != null
+                                    ? { expectationCategory: stock.expectationCategory }
+                                    : {}),
                                   ...(stock.currentPrice != null &&
                                   Number.isFinite(stock.currentPrice) &&
                                   stock.currentPrice > 0
@@ -434,7 +478,7 @@ export function InventoryTable({
               <td className={`px-6 py-3 text-xs font-bold text-foreground/90 min-w-[10rem] max-w-[11rem] ${stickyTdFootFirst}`}>
                 Total: {sortedStocks.length}
                 {sortedStocks.length === 1 ? " item" : " items"}
-                {structureFilter.trim() ? `（全 ${totalHoldings}）` : ""}
+                {structureFilter.trim() || expectationFilter !== "" ? `（全 ${totalHoldings}）` : ""}
               </td>
               <td className="px-6 py-3" />
               {showValueCols ? (

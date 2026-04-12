@@ -27,6 +27,8 @@ export type ExecuteTradeActionInput = {
   themeId?: string | null;
   /** 取引理由・反省（任意、`trade_history.reason`） */
   reason?: string;
+  /** `holdings.expectation_category`（空でクリア。省略時は買い増しで既存維持） */
+  expectationCategory?: string;
 };
 
 export type ExecuteTradeActionResult = {
@@ -88,6 +90,7 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
     structureSector: input.structureSector?.trim() ?? "",
     themeId: input.themeId != null && String(input.themeId).trim().length > 0 ? String(input.themeId).trim() : null,
     reason: reasonRaw.length > 0 ? reasonRaw : undefined,
+    expectationCategory: input.expectationCategory,
   };
 
   const db = getDb();

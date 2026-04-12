@@ -27,6 +27,7 @@ import {
   type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
 import { parseAdoptionStage } from "@/src/lib/adoption-stage";
+import { parseExpectationCategory } from "@/src/lib/expectation-category";
 import {
   aggregateByHoldingSector,
   aggregateByTheme,
@@ -320,6 +321,7 @@ type HoldingQueryRow = {
   account_type: unknown;
   provider_symbol: unknown;
   valuation_factor: unknown;
+  expectation_category?: unknown;
 };
 
 type StockDraft = Omit<Stock, "weight"> & { structureTagsJson: string };
@@ -466,6 +468,7 @@ function buildDraftsFromHoldingRows(
       valuationFactor,
       providerSymbol,
       structureTagsJson: tagsJson,
+      expectationCategory: parseExpectationCategory(row.expectation_category),
     };
   });
 }
@@ -721,6 +724,7 @@ async function enrichEcosystemMemberRow(
     drawdownFromHigh90dPct,
     adoptionStage,
     adoptionStageRationale,
+    expectationCategory: parseExpectationCategory(row["expectation_category"]),
   };
 }
 
@@ -731,6 +735,12 @@ function ecosystemMissingAdoptionColumns(e: unknown): boolean {
     lower.includes("no such column") &&
     (lower.includes("adoption_stage") || lower.includes("adoption_stage_rationale"))
   );
+}
+
+function ecosystemMissingExpectationCategoryColumn(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("expectation_category");
 }
 
 async function fetchEnrichedThemeEcosystem(
@@ -748,7 +758,7 @@ async function fetchEnrichedThemeEcosystem(
       const rs = await db.execute({
         sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
                      company_name, field, role, is_major_player, observation_started_at,
-                     adoption_stage, adoption_stage_rationale
+                     adoption_stage, adoption_stage_rationale, expectation_category
               FROM theme_ecosystem_members
               WHERE theme_id = ?
               ORDER BY field ASC, ticker ASC`,
@@ -756,20 +766,56 @@ async function fetchEnrichedThemeEcosystem(
       });
       rows = rs.rows as unknown as Record<string, unknown>[];
     } catch (e) {
-      if (!ecosystemMissingAdoptionColumns(e)) throw e;
-      const rs = await db.execute({
-        sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
-                     company_name, field, role, is_major_player, observation_started_at
+      if (ecosystemMissingExpectationCategoryColumn(e)) {
+        try {
+          const rs = await db.execute({
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at,
+                         adoption_stage, adoption_stage_rationale
+                  FROM theme_ecosystem_members
+                  WHERE theme_id = ?
+                  ORDER BY field ASC, ticker ASC`,
+            args: [themeId],
+          });
+          rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            expectation_category: null,
+          }));
+        } catch (e2) {
+          if (!ecosystemMissingAdoptionColumns(e2)) throw e2;
+          const rs = await db.execute({
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at
+                  FROM theme_ecosystem_members
+                  WHERE theme_id = ?
+                  ORDER BY field ASC, ticker ASC`,
+            args: [themeId],
+          });
+          rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            adoption_stage: null,
+            adoption_stage_rationale: null,
+            expectation_category: null,
+          }));
+        }
+      } else if (ecosystemMissingAdoptionColumns(e)) {
+        const rs = await db.execute({
+          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                       company_name, field, role, is_major_player, observation_started_at
               FROM theme_ecosystem_members
               WHERE theme_id = ?
               ORDER BY field ASC, ticker ASC`,
-        args: [themeId],
-      });
-      rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
-        ...r,
-        adoption_stage: null,
-        adoption_stage_rationale: null,
-      }));
+          args: [themeId],
+        });
+        rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+          ...r,
+          adoption_stage: null,
+          adoption_stage_rationale: null,
+          expectation_category: null,
+        }));
+      } else {
+        throw e;
+      }
     }
     const tResearch0 = perf?.enabled ? Date.now() : 0;
     const researchTargets = rows
@@ -881,7 +927,7 @@ export async function getThemeDetailData(
     (async () => {
       const t = perf.enabled ? Date.now() : 0;
       const out = await db.execute({
-        sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor
+        sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category
               FROM holdings
               WHERE user_id = ? AND quantity > 0
               ORDER BY ticker`,
@@ -1042,7 +1088,7 @@ export async function getThemeDetailData(
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
   const h = await db.execute({
-    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor
+    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category
           FROM holdings
           WHERE user_id = ? AND quantity > 0
           ORDER BY ticker`,
@@ -1179,7 +1225,7 @@ export async function fetchStocksForUser(db: Client, userId: string): Promise<St
 export async function fetchUnresolvedSignalsForUser(db: Client, userId: string): Promise<Signal[]> {
   const rs = await db.execute({
     sql: `SELECT s.id AS signal_id, s.signal_type, s.alpha_at_signal, s.detected_at,
-                 h.ticker, h.name, h.structure_tags, h.sector, h.provider_symbol, h.category
+                 h.ticker, h.name, h.structure_tags, h.sector, h.provider_symbol, h.category, h.expectation_category
           FROM signals s
           JOIN holdings h ON h.id = s.holding_id
           WHERE h.user_id = ? AND s.is_resolved = 0
@@ -1232,6 +1278,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       detectedAt: row.detected_at != null ? String(row.detected_at) : "",
       providerSymbol:
         row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
+      expectationCategory: parseExpectationCategory(row.expectation_category),
     };
   });
 }

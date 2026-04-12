@@ -5,6 +5,8 @@ import { X } from "lucide-react";
 
 import { executeTradeAction, listInvestmentThemesForUser } from "@/app/actions/trades";
 import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
+import type { ExpectationCategory } from "@/src/types/investment";
+import { EXPECTATION_CATEGORY_KEYS, EXPECTATION_CATEGORY_LABEL_JA } from "@/src/types/investment";
 import { calculateMonexUsFee } from "@/src/lib/fees";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 
@@ -21,6 +23,8 @@ export type TradeEntryInitial = {
   unitPrice?: number | null;
   /** 数量の初期値（既定 1） */
   quantityDefault?: number;
+  /** `holdings.expectation_category` の既存値（取引ボタンから開いたとき） */
+  expectationCategory?: ExpectationCategory | null;
 };
 
 type Props = {
@@ -63,7 +67,7 @@ export function TradeEntryForm({
 
   return (
     <TradeEntryFormInner
-      key={`${initial?.ticker ?? "__new__"}|${initial?.unitPrice ?? ""}|${initial?.theme ?? ""}|${initial?.themeId ?? ""}|${initial?.quantityDefault ?? ""}`}
+      key={`${initial?.ticker ?? "__new__"}|${initial?.unitPrice ?? ""}|${initial?.theme ?? ""}|${initial?.themeId ?? ""}|${initial?.quantityDefault ?? ""}|${initial?.expectationCategory ?? ""}`}
       userId={userId}
       initial={initial}
       onClose={onClose}
@@ -111,6 +115,9 @@ function TradeEntryFormInner({
   const [selectedThemeId, setSelectedThemeId] = useState(initial?.themeId?.trim() ?? "");
   const [themeOptions, setThemeOptions] = useState<{ id: string; name: string }[]>([]);
   const [tradeReason, setTradeReason] = useState("");
+  const [expectationCategory, setExpectationCategory] = useState<string>(() =>
+    initial?.expectationCategory != null ? initial.expectationCategory : "",
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -228,6 +235,7 @@ function TradeEntryFormInner({
         structureSector: structureSector.trim(),
         themeId: selectedThemeId.trim() || undefined,
         reason: tradeReason.trim() || undefined,
+        expectationCategory,
       });
       setMessage(res.message);
       if (res.ok) {
@@ -354,6 +362,26 @@ function TradeEntryFormInner({
             />
             <p className="text-[9px] text-slate-600 mt-1">
               保存時: structure_tags の [0]=Theme、[1]=Sector、かつ sector 列に Sector を保存します。
+            </p>
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+              期待カテゴリー（渡辺フレームワーク）
+            </label>
+            <select
+              value={expectationCategory}
+              onChange={(e) => setExpectationCategory(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+            >
+              <option value="">— 未設定 —</option>
+              {EXPECTATION_CATEGORY_KEYS.map((k) => (
+                <option key={k} value={k}>
+                  {EXPECTATION_CATEGORY_LABEL_JA[k]}（{k}）
+                </option>
+              ))}
+            </select>
+            <p className="text-[9px] text-slate-600 mt-1">
+              買い増し時もこの値が保有に保存されます。「未設定」にすると NULL に更新されます。
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">

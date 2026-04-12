@@ -3,6 +3,7 @@ import type { Client, Transaction } from "@libsql/core/api";
 import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { fetchUsdJpyRate } from "@/src/lib/price-service";
+import { parseExpectationCategory } from "@/src/lib/expectation-category";
 import { structureTagsJsonFromThemeSector } from "@/src/lib/structure-tags";
 
 export type ExecuteTradeParams = {
@@ -31,6 +32,11 @@ export type ExecuteTradeParams = {
   themeId?: string | null;
   /** 取引理由・反省（任意・DB `trade_history.reason`） */
   reason?: string;
+  /**
+   * `holdings.expectation_category`。undefined のときは買い増しで既存値を維持、新規買いは NULL。
+   * 空文字は NULL にクリア。
+   */
+  expectationCategory?: string;
 };
 
 export type ExecuteTradeResult =
@@ -75,15 +81,24 @@ type HoldingRow = {
   avgAcquisitionPrice: number | null;
   name: string | null;
   accountType: string | null;
+  expectationCategoryDb: string | null;
 };
+
+function normalizeExpectationCategoryInput(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  const t = raw.trim();
+  if (t.length === 0) return null;
+  return parseExpectationCategory(t) != null ? t : null;
+}
 
 async function selectHolding(tx: Transaction, userId: string, ticker: string): Promise<HoldingRow | null> {
   const rs = await tx.execute({
-    sql: `SELECT id, quantity, avg_acquisition_price, name, account_type FROM holdings WHERE user_id = ? AND ticker = ? LIMIT 1`,
+    sql: `SELECT id, quantity, avg_acquisition_price, name, account_type, expectation_category FROM holdings WHERE user_id = ? AND ticker = ? LIMIT 1`,
     args: [userId, ticker],
   });
   if (rs.rows.length === 0) return null;
   const r = rs.rows[0]!;
+  const expRaw = r.expectation_category != null ? String(r.expectation_category).trim() : "";
   return {
     id: String(r.id),
     quantity: Number(r.quantity),
@@ -93,6 +108,7 @@ async function selectHolding(tx: Transaction, userId: string, ticker: string): P
         : null,
     name: r.name != null ? String(r.name) : null,
     accountType: r.account_type != null ? String(r.account_type) : null,
+    expectationCategoryDb: expRaw.length > 0 ? expRaw : null,
   };
 }
 
@@ -185,6 +201,13 @@ export async function executeTradeInTransaction(
     let newQty: number;
     let newAvg: number | null;
 
+    const expectationForNew =
+      p.expectationCategory === undefined ? null : normalizeExpectationCategoryInput(p.expectationCategory);
+    const expectationForExisting =
+      p.expectationCategory === undefined
+        ? existing?.expectationCategoryDb ?? null
+        : normalizeExpectationCategoryInput(p.expectationCategory);
+
     if (existing == null) {
       holdingId = crypto.randomUUID();
       newQty = qty;
@@ -192,8 +215,8 @@ export async function executeTradeInTransaction(
       await tx.execute({
         sql: `INSERT INTO holdings (
                 id, user_id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category,
-                provider_symbol, valuation_factor, account_type, created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, datetime('now'))`,
+                provider_symbol, valuation_factor, account_type, expectation_category, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, datetime('now'))`,
         args: [
           holdingId,
           p.userId,
@@ -205,6 +228,7 @@ export async function executeTradeInTransaction(
           sectorColumn,
           p.categoryForNewHolding,
           p.accountName,
+          expectationForNew,
         ],
       });
     } else {
@@ -220,9 +244,18 @@ export async function executeTradeInTransaction(
       }
       await tx.execute({
         sql: `UPDATE holdings
-              SET quantity = ?, avg_acquisition_price = ?, name = ?, structure_tags = ?, sector = ?
+              SET quantity = ?, avg_acquisition_price = ?, name = ?, structure_tags = ?, sector = ?, expectation_category = ?
               WHERE id = ? AND user_id = ?`,
-        args: [newQty, newAvg, displayName, structureTagsJson, sectorColumn, holdingId, p.userId],
+        args: [
+          newQty,
+          newAvg,
+          displayName,
+          structureTagsJson,
+          sectorColumn,
+          expectationForExisting,
+          holdingId,
+          p.userId,
+        ],
       });
     }
 
@@ -348,6 +381,13 @@ export async function executeTradeWithClient(db: Client, p: ExecuteTradeParams):
         ok: false,
         message:
           "trade_history に theme_id 列がありません。migrations/018_trade_history_theme_id.sql を適用してください。",
+      };
+    }
+    if (msg.toLowerCase().includes("no such column") && msg.toLowerCase().includes("expectation_category")) {
+      return {
+        ok: false,
+        message:
+          "holdings に expectation_category 列がありません。migrations/020_expectation_category.sql を適用してください。",
       };
     }
     return { ok: false, message: msg };

@@ -5,6 +5,7 @@ import type {
   Stock,
   ThemeEcosystemWatchItem,
 } from "@/src/types/investment";
+import { EXPECTATION_CATEGORY_LABEL_JA } from "@/src/types/investment";
 
 import { ADOPTION_STAGE_META } from "@/src/lib/adoption-stage";
 import type { CsvColumnDef } from "@/src/lib/csv-export";
@@ -30,6 +31,8 @@ export function stocksToCsvRows(stocks: Stock[]): Record<string, unknown>[] {
     name: s.name ?? "",
     theme: s.tag ?? "",
     sector: s.sector ?? s.secondaryTag ?? "",
+    expectationCategory:
+      s.expectationCategory != null ? EXPECTATION_CATEGORY_LABEL_JA[s.expectationCategory] : "",
     category: s.category,
     accountType: s.accountType ?? "",
     countryName: s.countryName ?? "",
@@ -58,6 +61,7 @@ export const STOCK_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "name", header: "銘柄名" },
   { key: "theme", header: "構造テーマ" },
   { key: "sector", header: "セクター" },
+  { key: "expectationCategory", header: "期待カテゴリー" },
   { key: "category", header: "Core/Satellite" },
   { key: "accountType", header: "口座" },
   { key: "countryName", header: "市場" },
@@ -224,6 +228,8 @@ export function themeEcosystemWatchlistToCsvRows(
     adoptionStage:
       e.adoptionStage != null ? ADOPTION_STAGE_META[e.adoptionStage].labelJa : "",
     adoptionStageRationale: e.adoptionStageRationale ?? "",
+    expectationCategory:
+      e.expectationCategory != null ? EXPECTATION_CATEGORY_LABEL_JA[e.expectationCategory] : "",
     alphaDeviationZ: e.alphaDeviationZ,
     drawdownFromHigh90dPct: e.drawdownFromHigh90dPct,
     latestCumulativeAlphaPct: e.latestAlpha,
@@ -255,6 +261,7 @@ export const THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "alphaObservationStartDate", header: "累積Alpha系列起点" },
   { key: "adoptionStage", header: "普及ステージ（キャズム）" },
   { key: "adoptionStageRationale", header: "普及ステージ根拠" },
+  { key: "expectationCategory", header: "期待カテゴリー" },
   { key: "alphaDeviationZ", header: "日次Alpha乖離（σ）" },
   { key: "drawdownFromHigh90dPct", header: "90日高値比（%）" },
   { key: "latestCumulativeAlphaPct", header: "累積Alpha（%）" },

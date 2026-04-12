@@ -12,6 +12,18 @@ export interface Holding {
 
 export type HoldingCategory = "Core" | "Satellite";
 
+/** 渡辺フレームワーク相当: 期待の質（`holdings.expectation_category` / `theme_ecosystem_members.expectation_category`）。 */
+export const EXPECTATION_CATEGORY_KEYS = ["Growth", "Recovery", "Quality", "Value", "Heritage"] as const;
+export type ExpectationCategory = (typeof EXPECTATION_CATEGORY_KEYS)[number];
+
+export const EXPECTATION_CATEGORY_LABEL_JA: Record<ExpectationCategory, string> = {
+  Growth: "中小型成長株",
+  Recovery: "業績回復株",
+  Quality: "優良株",
+  Value: "バリュー株",
+  Heritage: "老舗株",
+};
+
 /** テーマまたはセクター軸の評価額シェア（サーバー集計、円ベース）。 */
 export interface StructureTagSlice {
   tag: string;
@@ -90,6 +102,8 @@ export interface Stock {
   valuationFactor: number;
   /** Yahoo Finance 等。未設定時は `ticker` から自動変換（`price-service`）。 */
   providerSymbol?: string | null;
+  /** `holdings.expectation_category`。未設定は null */
+  expectationCategory: ExpectationCategory | null;
 }
 
 export interface Signal extends Stock {
@@ -226,6 +240,8 @@ export type ThemeEcosystemWatchItem = {
   adoptionStage: AdoptionStage | null;
   /** ステージ判断の根拠（ツールチップ優先）。未設定は null */
   adoptionStageRationale: string | null;
+  /** `theme_ecosystem_members.expectation_category`。未設定は null */
+  expectationCategory: ExpectationCategory | null;
 };
 
 /** テーマ起点正規化後の累積 Alpha（日次超過の合計、パーセントポイント）。 */

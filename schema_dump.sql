@@ -94,6 +94,10 @@ CREATE TABLE "holdings" (
   `provider_symbol` text,
   `valuation_factor` real DEFAULT 1 NOT NULL,
   `sector` text,
+  `expectation_category` text CHECK (
+    expectation_category IS NULL
+    OR expectation_category IN ('Growth', 'Recovery', 'Quality', 'Value', 'Heritage')
+  ),
   CONSTRAINT `fk_holdings_user_id_profiles_id_fk` FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`) ON DELETE CASCADE,
   CONSTRAINT "holdings_check_1" CHECK(category IN ('Core','Satellite')),
   CONSTRAINT "holdings_account_type_check" CHECK(account_type IN ('特定','NISA'))
@@ -191,6 +195,10 @@ CREATE TABLE theme_ecosystem_members (
   observation_started_at TEXT,
   adoption_stage TEXT,
   adoption_stage_rationale TEXT,
+  expectation_category TEXT CHECK (
+    expectation_category IS NULL
+    OR expectation_category IN ('Growth', 'Recovery', 'Quality', 'Value', 'Heritage')
+  ),
   FOREIGN KEY (theme_id) REFERENCES investment_themes(id) ON DELETE CASCADE,
   UNIQUE (theme_id, ticker)
 );
