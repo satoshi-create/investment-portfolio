@@ -242,6 +242,15 @@ export type ThemeEcosystemWatchItem = {
   adoptionStageRationale: string | null;
   /** `theme_ecosystem_members.expectation_category`。未設定は null */
   expectationCategory: ExpectationCategory | null;
+
+  /**
+   * Defensive theme extensions (stored as JSON TEXT in SQLite).
+   * - `holder_tags`: ["バークシャー","エル","ロンリード",...]
+   * - `dividend_months`: [1,4,7,10,...]
+   */
+  holderTags: string[];
+  dividendMonths: number[];
+  defensiveStrength: string | null;
 };
 
 /** テーマ起点正規化後の累積 Alpha（日次超過の合計、パーセントポイント）。 */

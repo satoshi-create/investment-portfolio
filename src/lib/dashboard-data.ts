@@ -58,6 +58,37 @@ function asCategory(raw: string): HoldingCategory {
   return raw === "Core" ? "Core" : "Satellite";
 }
 
+function parseJsonTextArray(raw: unknown): string[] {
+  if (raw == null) return [];
+  const s = String(raw).trim();
+  if (s.length === 0) return [];
+  try {
+    const v = JSON.parse(s) as unknown;
+    if (!Array.isArray(v)) return [];
+    return v.map((x) => String(x)).map((x) => x.trim()).filter((x) => x.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonIntArray(raw: unknown): number[] {
+  if (raw == null) return [];
+  const s = String(raw).trim();
+  if (s.length === 0) return [];
+  try {
+    const v = JSON.parse(s) as unknown;
+    if (!Array.isArray(v)) return [];
+    const out: number[] = [];
+    for (const x of v) {
+      const n = Number(x);
+      if (Number.isFinite(n) && n >= 1 && n <= 12) out.push(Math.trunc(n));
+    }
+    return [...new Set(out)].sort((a, b) => a - b);
+  } catch {
+    return [];
+  }
+}
+
 async function fetchAllInvestmentThemes(db: Client, userId: string): Promise<InvestmentThemeRecord[]> {
   try {
     const rs = await db.execute({
@@ -565,6 +596,13 @@ async function enrichEcosystemMemberRow(
       ? String(row["adoption_stage_rationale"]).trim()
       : null;
 
+  const holderTags = parseJsonTextArray(row["holder_tags"]);
+  const dividendMonths = parseJsonIntArray(row["dividend_months"]);
+  const defensiveStrength =
+    row["defensive_strength"] != null && String(row["defensive_strength"]).trim().length > 0
+      ? String(row["defensive_strength"]).trim()
+      : null;
+
   const effectiveTicker = isUnlisted ? (proxyTicker ?? "") : ticker;
   const companyName = row["company_name"] != null ? String(row["company_name"]) : ticker;
   const field = row["field"] != null ? String(row["field"]) : "";
@@ -725,6 +763,9 @@ async function enrichEcosystemMemberRow(
     adoptionStage,
     adoptionStageRationale,
     expectationCategory: parseExpectationCategory(row["expectation_category"]),
+    holderTags,
+    dividendMonths,
+    defensiveStrength,
   };
 }
 
@@ -758,7 +799,8 @@ async function fetchEnrichedThemeEcosystem(
       const rs = await db.execute({
         sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
                      company_name, field, role, is_major_player, observation_started_at,
-                     adoption_stage, adoption_stage_rationale, expectation_category
+                     adoption_stage, adoption_stage_rationale, expectation_category,
+                     holder_tags, dividend_months, defensive_strength
               FROM theme_ecosystem_members
               WHERE theme_id = ?
               ORDER BY field ASC, ticker ASC`,
@@ -771,7 +813,8 @@ async function fetchEnrichedThemeEcosystem(
           const rs = await db.execute({
             sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
                          company_name, field, role, is_major_player, observation_started_at,
-                         adoption_stage, adoption_stage_rationale
+                         adoption_stage, adoption_stage_rationale,
+                         holder_tags, dividend_months, defensive_strength
                   FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
@@ -796,6 +839,9 @@ async function fetchEnrichedThemeEcosystem(
             adoption_stage: null,
             adoption_stage_rationale: null,
             expectation_category: null,
+            holder_tags: "[]",
+            dividend_months: "[]",
+            defensive_strength: null,
           }));
         }
       } else if (ecosystemMissingAdoptionColumns(e)) {
@@ -812,6 +858,9 @@ async function fetchEnrichedThemeEcosystem(
           adoption_stage: null,
           adoption_stage_rationale: null,
           expectation_category: null,
+          holder_tags: "[]",
+          dividend_months: "[]",
+          defensive_strength: null,
         }));
       } else {
         throw e;

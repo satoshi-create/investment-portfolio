@@ -6,7 +6,6 @@ import { Crosshair, FileSpreadsheet, Layers, TrendingUp } from "lucide-react";
 
 import type {
   InvestmentThemeRecord,
-  Stock,
   ThemeDetailData,
   ThemeEcosystemWatchItem,
 } from "@/src/types/investment";
@@ -55,6 +54,14 @@ function pctClass(v: number): string {
 function fmtZsigma(v: number | null): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return `${v > 0 ? "+" : ""}${v.toFixed(2)}σ`;
+}
+
+function mapThemeLabelForQuery(raw: string): { query: string; display: string; slug: string } {
+  const s = raw.trim();
+  if (s === "defensive-stocks") {
+    return { query: "ディフェンシブ銘柄", display: "ディフェンシブ銘柄", slug: "defensive-stocks" };
+  }
+  return { query: s, display: s, slug: s };
 }
 
 function fmtDdCol(v: number | null): string {
@@ -192,6 +199,12 @@ function extractGeopoliticalPotential(observationNotes: string | null | undefine
 }
 
 export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
+  const { query: themeQueryName, display: themeDisplayName } = useMemo(
+    () => mapThemeLabelForQuery(themeLabel),
+    [themeLabel],
+  );
+  const isDefensiveTheme = themeQueryName === "ディフェンシブ銘柄";
+
   const [data, setData] = useState<ThemeDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -212,7 +225,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     setLoading(true);
     setError(null);
     setHydratingFull(false);
-    const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}`;
+    const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeQueryName)}`;
     try {
       const resFast = await fetch(`${baseUrl}&fast=1`, { cache: "no-store", signal });
       const jsonFast = (await resFast.json()) as ThemeDetailJson;
@@ -247,7 +260,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, [themeLabel]);
+  }, [themeQueryName]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -349,10 +362,55 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
 
   function handleEcosystemCsvDownload() {
     exportToCSV(
-      themeEcosystemWatchlistToCsvRows(ecosystemSorted, themeLabel),
-      themeEcosystemWatchlistCsvFileName(themeLabel),
+      themeEcosystemWatchlistToCsvRows(ecosystemSorted, themeDisplayName),
+      themeEcosystemWatchlistCsvFileName(themeDisplayName),
       THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS,
     );
+  }
+
+  function holderBadgeClass(holder: string): string {
+    if (holder === "バークシャー") return "bg-red-100 text-red-800";
+    if (holder === "エル" || holder === "ロンリード") return "bg-blue-100 text-blue-800";
+    return "bg-slate-100 text-slate-800";
+  }
+
+  function dividendCalendar(months: number[]) {
+    const now = new Date();
+    const m = now.getMonth() + 1; // 1..12
+    const set = new Set(months);
+    const isPayMonth = set.has(m);
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0.5">
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((mm) => {
+            const on = set.has(mm);
+            const isThis = mm === m;
+            return (
+              <span
+                key={mm}
+                title={`${mm}月${on ? " 配当" : ""}${isThis ? "（今月）" : ""}`}
+                className={`inline-block h-1.5 w-1.5 rounded-full ${
+                  on ? "bg-emerald-400" : "bg-slate-800"
+                } ${isThis ? "ring-1 ring-slate-500" : ""}`}
+              />
+            );
+          })}
+        </div>
+        {isPayMonth ? (
+          <span className="text-base leading-none" aria-label="Dividend month" title="今月が配当月">
+            ✨
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  function defensiveZClass(z: number | null): string {
+    if (z == null || !Number.isFinite(z)) return "text-slate-500";
+    const az = Math.abs(z);
+    if (az <= 0.75) return "text-emerald-400"; // 平常（0近傍）
+    if (az >= 2.0) return "text-rose-400"; // 石垣の揺らぎ
+    return "text-amber-300"; // 注意域
   }
 
   return (
@@ -371,7 +429,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 <Crosshair size={14} className="text-cyan-500/90" />
                 <span>Structural theme command</span>
               </div>
-              <h1 className="text-3xl font-bold text-white tracking-tight">{themeLabel}</h1>
+              <h1 className="text-3xl font-bold text-white tracking-tight">{themeDisplayName}</h1>
               <p className="text-[11px] text-slate-600 mt-2">
                 <span className="font-mono text-slate-500">{DEFAULT_USER_ID}</span>
                 ・<span className="font-mono">structure_tags[0]</span> がこのテーマ名と一致する保有のみ
@@ -561,14 +619,24 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           >
                             Asset{ecoSortMark("asset")}
                           </th>
-                          <th
-                            className="px-6 py-4 text-left cursor-pointer select-none"
-                            onClick={() => toggleEcoSort("research")}
-                            title="Sort"
-                          >
-                            Research{ecoSortMark("research")}
-                          </th>
-                          <th className="px-6 py-4 text-left whitespace-nowrap">江戸的役割</th>
+                          {isDefensiveTheme ? (
+                            <>
+                              <th className="px-6 py-4 text-left whitespace-nowrap">Holder</th>
+                              <th className="px-6 py-4 text-left whitespace-nowrap">Dividend</th>
+                              <th className="px-6 py-4 text-left whitespace-nowrap">Defensive role</th>
+                            </>
+                          ) : (
+                            <>
+                              <th
+                                className="px-6 py-4 text-left cursor-pointer select-none"
+                                onClick={() => toggleEcoSort("research")}
+                                title="Sort"
+                              >
+                                Research{ecoSortMark("research")}
+                              </th>
+                              <th className="px-6 py-4 text-left whitespace-nowrap">江戸的役割</th>
+                            </>
+                          )}
                           <th
                             className="px-6 py-4 text-left whitespace-nowrap"
                             title="ロジャーズの普及曲線（5 段階）。ホバーで根拠"
@@ -743,44 +811,95 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                   ) : null}
                                 </div>
                               </td>
-                              <td className="px-6 py-4">
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-[10px] font-bold text-slate-400 border border-slate-700 bg-slate-950/40 px-2 py-0.5 rounded-md">
+                              {isDefensiveTheme ? (
+                                <>
+                                  <td className="px-6 py-4">
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {e.holderTags.length > 0 ? (
+                                        e.holderTags.map((h) => (
+                                          <span
+                                            key={h}
+                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${holderBadgeClass(h)}`}
+                                            title={h}
+                                          >
+                                            {h}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="text-xs text-slate-600">—</span>
+                                      )}
+                                    </div>
+                                    <div className="mt-2 md:hidden text-[10px] text-slate-500">
                                       {e.countryName}
-                                    </span>
-                                    {e.nextEarningsDate ? (
-                                      <span
-                                        className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
-                                        title={`次期決算予定日: ${e.nextEarningsDate}`}
-                                      >
-                                        E:{e.daysToEarnings != null ? `D${e.daysToEarnings}` : e.nextEarningsDate}
-                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    {dividendCalendar(e.dividendMonths)}
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="hidden md:block">
+                                      {e.defensiveStrength ? (
+                                        <p className="text-sm font-bold text-slate-100 leading-snug">
+                                          {e.defensiveStrength}
+                                        </p>
+                                      ) : null}
+                                      {e.role ? (
+                                        <p className="text-xs text-slate-400 leading-relaxed mt-1 line-clamp-3" title={e.role}>
+                                          {e.role}
+                                        </p>
+                                      ) : (
+                                        <span className="text-xs text-slate-600">—</span>
+                                      )}
+                                    </div>
+                                    <div className="md:hidden">
+                                      <p className="text-xs font-semibold text-slate-200 leading-snug line-clamp-2" title={e.defensiveStrength ?? e.role}>
+                                        {e.defensiveStrength ?? e.role ?? "—"}
+                                      </p>
+                                    </div>
+                                  </td>
+                                </>
+                              ) : (
+                                <>
+                                  <td className="px-6 py-4">
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] font-bold text-slate-400 border border-slate-700 bg-slate-950/40 px-2 py-0.5 rounded-md">
+                                          {e.countryName}
+                                        </span>
+                                        {e.nextEarningsDate ? (
+                                          <span
+                                            className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
+                                            title={`次期決算予定日: ${e.nextEarningsDate}`}
+                                          >
+                                            E:{e.daysToEarnings != null ? `D${e.daysToEarnings}` : e.nextEarningsDate}
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-500">E:—</span>
+                                        )}
+                                        {e.dividendYieldPercent != null ? (
+                                          <span
+                                            className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
+                                            title={e.annualDividendRate != null ? `年間配当: ${e.annualDividendRate}` : "年間配当: —"}
+                                          >
+                                            Div:{e.dividendYieldPercent.toFixed(2)}%
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-500">Div:—</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    {e.role ? (
+                                      <div className="text-xs text-slate-300 leading-relaxed line-clamp-4" title={e.role}>
+                                        {e.role}
+                                      </div>
                                     ) : (
-                                      <span className="text-[10px] text-slate-500">E:—</span>
+                                      <span className="text-xs text-slate-600">—</span>
                                     )}
-                                    {e.dividendYieldPercent != null ? (
-                                      <span
-                                        className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
-                                        title={e.annualDividendRate != null ? `年間配当: ${e.annualDividendRate}` : "年間配当: —"}
-                                      >
-                                        Div:{e.dividendYieldPercent.toFixed(2)}%
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] text-slate-500">Div:—</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                {e.role ? (
-                                  <div className="text-xs text-slate-300 leading-relaxed line-clamp-4" title={e.role}>
-                                    {e.role}
-                                  </div>
-                                ) : (
-                                  <span className="text-xs text-slate-600">—</span>
-                                )}
-                              </td>
+                                  </td>
+                                </>
+                              )}
                               <td className="px-6 py-4 align-top">
                                 <EcosystemAdoptionCell e={e} />
                               </td>
@@ -788,7 +907,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                 <>
                                   <td
                                     className={`px-6 py-4 text-right font-mono text-xs font-bold ${
-                                      zEco == null
+                                      isDefensiveTheme ? defensiveZClass(zEco) : zEco == null
                                         ? "text-slate-500"
                                         : zEco < -1
                                           ? "text-amber-400"

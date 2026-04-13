@@ -122,31 +122,30 @@ function TradeEntryFormInner({
   useEffect(() => {
     let cancelled = false;
     void listInvestmentThemesForUser(userId).then((rows) => {
-      if (!cancelled) setThemeOptions(rows);
+      if (cancelled) return;
+      setThemeOptions(rows);
+
+      // Resolve initial theme selection once we have options.
+      const tid = initial?.themeId?.trim();
+      if (tid && rows.some((t) => t.id === tid)) {
+        setSelectedThemeId(tid);
+        const row = rows.find((t) => t.id === tid);
+        if (row) setStructureTheme(row.name);
+        return;
+      }
+      const th = initial?.theme?.trim();
+      if (th) {
+        const m = rows.find((t) => t.name.trim() === th);
+        if (m) {
+          setSelectedThemeId(m.id);
+          setStructureTheme(m.name);
+        }
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [userId]);
-
-  useEffect(() => {
-    if (themeOptions.length === 0) return;
-    const tid = initial?.themeId?.trim();
-    if (tid && themeOptions.some((t) => t.id === tid)) {
-      setSelectedThemeId(tid);
-      const row = themeOptions.find((t) => t.id === tid);
-      if (row) setStructureTheme(row.name);
-      return;
-    }
-    const th = initial?.theme?.trim();
-    if (th) {
-      const m = themeOptions.find((t) => t.name.trim() === th);
-      if (m) {
-        setSelectedThemeId(m.id);
-        setStructureTheme(m.name);
-      }
-    }
-  }, [themeOptions, initial?.themeId, initial?.theme, initial?.ticker]);
+  }, [userId, initial?.themeId, initial?.theme]);
 
   const isJp = useMemo(() => classifyTickerInstrument(ticker) === "JP_INVESTMENT_TRUST", [ticker]);
   const isUs = useMemo(() => classifyTickerInstrument(ticker) === "US_EQUITY", [ticker]);
