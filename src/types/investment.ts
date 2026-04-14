@@ -3,8 +3,19 @@ export type AlphaHistory = number[];
 /** Interpretation of `holdings.ticker` for Alpha inputs (see `src/lib/alpha-logic.ts`). */
 export type TickerInstrumentKind = "JP_INVESTMENT_TRUST" | "US_EQUITY";
 
+export type MiningMetadata = {
+  /** 目標とする乖離深度（Zスコア）。 */
+  mining_depth_target?: number | null;
+  /** 構造的アルファの期待値。 */
+  ore_grade_estimate?: number | null;
+  /** 手数料・為替・税などの推定コスト。 */
+  refining_cost_est?: number | null;
+  /** 撤退または精錬（利確）を行う深度。 */
+  exit_condition_depth?: number | null;
+};
+
 /** DB `holdings` row subset for sync / signals context. */
-export interface Holding {
+export interface Holding extends MiningMetadata {
   id: string;
   ticker: string;
   providerSymbol?: string | null;
@@ -43,7 +54,7 @@ export interface CoreSatelliteBreakdown {
   coreGapVsTarget: number;
 }
 
-export interface Stock {
+export interface Stock extends MiningMetadata {
   id: string;
   ticker: string;
   name: string;
@@ -328,7 +339,7 @@ export type ClosedTradeDashboardRow = {
   verdictLabel: string;
   /** `trade_history.reason`（取引時メモ）。未記録・旧行は null */
   reason: string | null;
-};
+} & MiningMetadata;
 
 export type HoldingDailySnapshotRow = {
   id: string;

@@ -114,6 +114,12 @@ function TradeEntryFormInner({
   const [structureSector, setStructureSector] = useState(initial?.sector ?? "");
   const [selectedThemeId, setSelectedThemeId] = useState(initial?.themeId?.trim() ?? "");
   const [themeOptions, setThemeOptions] = useState<{ id: string; name: string }[]>([]);
+  const [miningRationale, setMiningRationale] = useState("");
+  const [miningDepthTarget, setMiningDepthTarget] = useState("");
+  const [exitConditionDepth, setExitConditionDepth] = useState("");
+  const [oreGradeEstimate, setOreGradeEstimate] = useState("");
+  const [refiningCostEst, setRefiningCostEst] = useState("");
+  const [emergencyStopCondition, setEmergencyStopCondition] = useState("");
   const [tradeReason, setTradeReason] = useState("");
   const [expectationCategory, setExpectationCategory] = useState<string>(() =>
     initial?.expectationCategory != null ? initial.expectationCategory : "",
@@ -175,6 +181,29 @@ function TradeEntryFormInner({
   const parsedQty = useMemo(() => Number(quantity.replace(/,/g, "")), [quantity]);
   const parsedUnit = useMemo(() => Number(unitPrice.replace(/,/g, "")), [unitPrice]);
 
+  const parsedMiningDepthTarget = useMemo(() => {
+    const v = Number(miningDepthTarget.replace(/,/g, ""));
+    return Number.isFinite(v) ? v : NaN;
+  }, [miningDepthTarget]);
+  const parsedExitConditionDepth = useMemo(() => {
+    const v = Number(exitConditionDepth.replace(/,/g, ""));
+    return Number.isFinite(v) ? v : NaN;
+  }, [exitConditionDepth]);
+  const parsedOreGradeEstimate = useMemo(() => {
+    const v = Number(oreGradeEstimate.replace(/,/g, ""));
+    return Number.isFinite(v) ? v : NaN;
+  }, [oreGradeEstimate]);
+  const parsedRefiningCostEst = useMemo(() => {
+    const v = Number(refiningCostEst.replace(/,/g, ""));
+    return Number.isFinite(v) ? v : NaN;
+  }, [refiningCostEst]);
+
+  const estimatedNetProfit = useMemo(() => {
+    if (!Number.isFinite(parsedOreGradeEstimate)) return null;
+    if (!Number.isFinite(parsedRefiningCostEst)) return null;
+    return parsedOreGradeEstimate - parsedRefiningCostEst;
+  }, [parsedOreGradeEstimate, parsedRefiningCostEst]);
+
   const estimatedFeeLocal = useMemo(() => {
     if (!autoFee) return null;
     if (!Number.isFinite(parsedQty) || parsedQty <= 0) return null;
@@ -207,6 +236,32 @@ function TradeEntryFormInner({
     return `${base}${jpy} / ${effLabel}`;
   }, [feeCurrency, feeLocalNumber, feesJpyComputed, parsedQty, parsedUnit]);
 
+  const miningChecklistOk = useMemo(() => {
+    if (pending) return false;
+    if (!ticker.trim()) return false;
+    if (!Number.isFinite(parsedQty) || parsedQty <= 0) return false;
+    if (!Number.isFinite(parsedUnit) || parsedUnit <= 0) return false;
+
+    if (miningRationale.trim().length === 0) return false;
+    if (emergencyStopCondition.trim().length === 0) return false;
+    if (!Number.isFinite(parsedMiningDepthTarget)) return false;
+    if (!Number.isFinite(parsedExitConditionDepth)) return false;
+    if (!Number.isFinite(parsedOreGradeEstimate)) return false;
+    if (!Number.isFinite(parsedRefiningCostEst) || parsedRefiningCostEst < 0) return false;
+    return true;
+  }, [
+    emergencyStopCondition,
+    miningRationale,
+    parsedExitConditionDepth,
+    parsedMiningDepthTarget,
+    parsedOreGradeEstimate,
+    parsedQty,
+    parsedRefiningCostEst,
+    parsedUnit,
+    pending,
+    ticker,
+  ]);
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
@@ -216,6 +271,42 @@ function TradeEntryFormInner({
       setMessage("ティッカーを入力してください。");
       return;
     }
+    if (miningRationale.trim().length === 0) {
+      setMessage("採掘根拠を入力してください（採掘マニュアル必須）。");
+      return;
+    }
+    if (!Number.isFinite(parsedMiningDepthTarget)) {
+      setMessage("目標深度（Zスコア）を数値で入力してください。");
+      return;
+    }
+    if (!Number.isFinite(parsedExitConditionDepth)) {
+      setMessage("退出条件深度（Zスコア）を数値で入力してください。");
+      return;
+    }
+    if (emergencyStopCondition.trim().length === 0) {
+      setMessage("緊急停止条件を入力してください（採掘マニュアル必須）。");
+      return;
+    }
+    if (!Number.isFinite(parsedOreGradeEstimate)) {
+      setMessage("Ore Grade（期待Alpha）を数値で入力してください。");
+      return;
+    }
+    if (!Number.isFinite(parsedRefiningCostEst) || parsedRefiningCostEst < 0) {
+      setMessage("推定コストを 0 以上の数値で入力してください。");
+      return;
+    }
+
+    const reasonPayloadLines = [
+      `[MINING] rationale=${miningRationale.trim()}`,
+      `[MINING] mining_depth_target=${parsedMiningDepthTarget}`,
+      `[MINING] exit_condition_depth=${parsedExitConditionDepth}`,
+      `[MINING] ore_grade_estimate=${parsedOreGradeEstimate}`,
+      `[MINING] refining_cost_est=${parsedRefiningCostEst}`,
+      `[MINING] estimated_net_profit=${estimatedNetProfit != null ? estimatedNetProfit : "—"}`,
+      `[MINING] emergency_stop=${emergencyStopCondition.trim()}`,
+      tradeReason.trim().length > 0 ? `[NOTE] ${tradeReason.trim()}` : null,
+    ].filter(Boolean) as string[];
+    const reasonPayload = reasonPayloadLines.join("\n").slice(0, 4000);
     startTransition(async () => {
       const res = await executeTradeAction({
         userId,
@@ -233,7 +324,7 @@ function TradeEntryFormInner({
         structureTheme: structureTheme.trim(),
         structureSector: structureSector.trim(),
         themeId: selectedThemeId.trim() || undefined,
-        reason: tradeReason.trim() || undefined,
+        reason: reasonPayload,
         expectationCategory,
       });
       setMessage(res.message);
@@ -258,7 +349,7 @@ function TradeEntryFormInner({
         aria-modal="true"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-4 py-3">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">取引実行</h2>
+          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">掘削リグ（Drill）</h2>
           <button
             type="button"
             onClick={() => !pending && onClose()}
@@ -269,6 +360,35 @@ function TradeEntryFormInner({
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4 p-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Mining Manual</p>
+                <p className="text-xs text-slate-300 font-mono mt-1">推定純利益 = (期待Alpha - 推定コスト)</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Estimated Net</p>
+                <p
+                  className={`text-sm font-bold font-mono ${
+                    estimatedNetProfit == null
+                      ? "text-slate-500"
+                      : estimatedNetProfit > 0
+                        ? "text-emerald-400"
+                        : estimatedNetProfit < 0
+                          ? "text-rose-400"
+                          : "text-slate-200"
+                  }`}
+                >
+                  {estimatedNetProfit == null
+                    ? "—"
+                    : `${estimatedNetProfit > 0 ? "+" : ""}${estimatedNetProfit.toFixed(2)}`}
+                </p>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-600 mt-2">
+              根拠・目標深度・緊急停止が未入力のときは掘削開始できません。
+            </p>
+          </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">ティッカー</label>
             {initial ? (
@@ -420,6 +540,81 @@ function TradeEntryFormInner({
               <p className="text-[9px] text-slate-600 mt-1">短期 Alpha 狙いは「特定」デフォルト。</p>
             </div>
           </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-3 space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">採掘メタデータ（必須）</p>
+            <div>
+              <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">採掘根拠（なぜこの鉱脈か）</label>
+              <textarea
+                value={miningRationale}
+                onChange={(e) => setMiningRationale(e.target.value)}
+                maxLength={1000}
+                rows={3}
+                required
+                placeholder="構造（需給/制度/技術普及）と、なぜ今が乖離点なのか。反証条件も添える。"
+                className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 min-h-[4.5rem]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">目標深度（Z）</label>
+                <input
+                  value={miningDepthTarget}
+                  onChange={(e) => setMiningDepthTarget(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                  inputMode="decimal"
+                  required
+                  placeholder="例: -2.0"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">退出条件深度（Z）</label>
+                <input
+                  value={exitConditionDepth}
+                  onChange={(e) => setExitConditionDepth(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                  inputMode="decimal"
+                  required
+                  placeholder="例: -0.2"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Ore Grade（期待Alpha）</label>
+                <input
+                  value={oreGradeEstimate}
+                  onChange={(e) => setOreGradeEstimate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                  inputMode="decimal"
+                  required
+                  placeholder="例: 1.20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">推定コスト</label>
+                <input
+                  value={refiningCostEst}
+                  onChange={(e) => setRefiningCostEst(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                  inputMode="decimal"
+                  required
+                  placeholder="例: 0.15"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">緊急停止条件（中止トリガー）</label>
+              <textarea
+                value={emergencyStopCondition}
+                onChange={(e) => setEmergencyStopCondition(e.target.value)}
+                maxLength={1000}
+                rows={3}
+                required
+                placeholder="例: 深度が-0.5σを超えて戻ったら撤退 / 構造仮説が崩れたら即停止 / 決算で前提破壊…"
+                className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 min-h-[4.5rem]"
+              />
+            </div>
+          </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">数量</label>
             <input
@@ -489,18 +684,18 @@ function TradeEntryFormInner({
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
-              取引の理由・反省（任意）
+              採掘ログ（任意・補足）
             </label>
             <textarea
               value={tradeReason}
               onChange={(e) => setTradeReason(e.target.value)}
               maxLength={4000}
               rows={4}
-              placeholder="構造的な変化への対応、パニックへの逆行、テーマとの整合、次に活かすこと…"
+              placeholder="追加の観測メモ（執行条件、心理、学び）。未入力でもOK。"
               className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 min-h-[5rem]"
             />
             <p className="text-[9px] text-slate-600 mt-1">
-              ログの取引履歴で確認できます（最大 4000 文字）。
+              ログの取引履歴に「診断メッセージ風」で保存されます（最大 4000 文字）。
             </p>
           </div>
           {side === "BUY" ? (
@@ -536,10 +731,10 @@ function TradeEntryFormInner({
             </button>
             <button
               type="submit"
-              disabled={pending}
-              className="flex-1 rounded-lg bg-cyan-600/90 py-2.5 text-xs font-bold text-white hover:bg-cyan-500 disabled:opacity-50"
+              disabled={!miningChecklistOk}
+              className="flex-1 rounded-lg bg-cyan-600/90 py-2.5 text-xs font-bold text-white hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {pending ? "実行中…" : "実行"}
+              {pending ? "掘削中…" : "掘削開始"}
             </button>
           </div>
         </form>
