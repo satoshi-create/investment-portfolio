@@ -10,12 +10,25 @@ export class EcosystemMemberDuplicateError extends Error {
   readonly code = "DUPLICATE_TICKER" as const;
 }
 
+export class EcosystemMemberNotFoundError extends Error {
+  readonly code = "MEMBER_NOT_FOUND" as const;
+}
+
 export type AddEcosystemMemberInput = {
   userId: string;
   themeId: string;
   ticker: string;
   role: string | null;
   isMajorPlayer: boolean;
+  companyName?: string | null;
+};
+
+export type UpdateEcosystemMemberInput = {
+  userId: string;
+  themeId: string;
+  memberId: string;
+  role?: string | null;
+  isMajorPlayer?: boolean;
   companyName?: string | null;
 };
 
@@ -61,4 +74,78 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
     }
     throw e;
   }
+}
+
+export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMemberInput): Promise<void> {
+  const memberId = input.memberId.trim();
+  if (!memberId) throw new Error("memberId is required");
+
+  const themeCheck = await db.execute({
+    sql: `SELECT 1 AS ok FROM investment_themes WHERE id = ? AND user_id = ? LIMIT 1`,
+    args: [input.themeId, input.userId],
+  });
+  if (themeCheck.rows.length === 0) {
+    throw new EcosystemMemberAuthError("Theme not found for this user");
+  }
+
+  const memberCheck = await db.execute({
+    sql: `SELECT 1 AS ok FROM theme_ecosystem_members WHERE id = ? AND theme_id = ? LIMIT 1`,
+    args: [memberId, input.themeId],
+  });
+  if (memberCheck.rows.length === 0) {
+    throw new EcosystemMemberNotFoundError("Ecosystem member not found");
+  }
+
+  const nextRole =
+    input.role === undefined ? undefined : input.role != null && input.role.trim().length > 0 ? input.role.trim() : null;
+  const nextCompanyName =
+    input.companyName === undefined
+      ? undefined
+      : input.companyName != null && String(input.companyName).trim().length > 0
+        ? String(input.companyName).trim()
+        : null;
+  const nextMajor = input.isMajorPlayer === undefined ? undefined : input.isMajorPlayer === true ? 1 : 0;
+
+  // Only update the fields that were provided.
+  const sets: string[] = [];
+  const args: (string | number | null)[] = [];
+  if (nextRole !== undefined) {
+    sets.push(`role = ?`);
+    args.push(nextRole);
+  }
+  if (nextCompanyName !== undefined) {
+    sets.push(`company_name = ?`);
+    args.push(nextCompanyName);
+  }
+  if (nextMajor !== undefined) {
+    sets.push(`is_major_player = ?`);
+    args.push(nextMajor);
+  }
+  if (sets.length === 0) return;
+
+  await db.execute({
+    sql: `UPDATE theme_ecosystem_members SET ${sets.join(", ")} WHERE id = ? AND theme_id = ?`,
+    args: [...args, memberId, input.themeId],
+  });
+}
+
+export async function deleteEcosystemMember(
+  db: Client,
+  input: { userId: string; themeId: string; memberId: string },
+): Promise<void> {
+  const memberId = input.memberId.trim();
+  if (!memberId) throw new Error("memberId is required");
+
+  const themeCheck = await db.execute({
+    sql: `SELECT 1 AS ok FROM investment_themes WHERE id = ? AND user_id = ? LIMIT 1`,
+    args: [input.themeId, input.userId],
+  });
+  if (themeCheck.rows.length === 0) {
+    throw new EcosystemMemberAuthError("Theme not found for this user");
+  }
+
+  await db.execute({
+    sql: `DELETE FROM theme_ecosystem_members WHERE id = ? AND theme_id = ?`,
+    args: [memberId, input.themeId],
+  });
 }

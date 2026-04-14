@@ -238,6 +238,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [addCompanyName, setAddCompanyName] = useState<string | null>(null);
   const [addCompanyNameLoading, setAddCompanyNameLoading] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
+  const [ecoEditingId, setEcoEditingId] = useState<string | null>(null);
+  const [ecoEditCompanyName, setEcoEditCompanyName] = useState("");
+  const [ecoEditRole, setEcoEditRole] = useState("");
+  const [ecoEditMajor, setEcoEditMajor] = useState(false);
+  const [ecoEditSaving, setEcoEditSaving] = useState(false);
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -415,6 +420,106 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
       addSubmitting,
       refetchThemeDetailQuiet,
     ],
+  );
+
+  const beginEditEcosystem = useCallback((e: ThemeEcosystemWatchItem) => {
+    setEcoEditingId(e.id);
+    setEcoEditCompanyName((e.companyName ?? "").trim());
+    setEcoEditRole((e.role ?? "").trim());
+    setEcoEditMajor(e.isMajorPlayer === true);
+  }, []);
+
+  const cancelEditEcosystem = useCallback(() => {
+    setEcoEditingId(null);
+    setEcoEditCompanyName("");
+    setEcoEditRole("");
+    setEcoEditMajor(false);
+    setEcoEditSaving(false);
+  }, []);
+
+  const saveEditEcosystem = useCallback(
+    async (memberId: string) => {
+      if (!theme?.id || ecoEditSaving) return;
+      setEcoEditSaving(true);
+      const ac = new AbortController();
+      try {
+        const res = await fetch("/api/theme-ecosystem/member", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: DEFAULT_USER_ID,
+            themeId: theme.id,
+            memberId,
+            companyName: ecoEditCompanyName.trim() || null,
+            role: ecoEditRole.trim() || null,
+            isMajorPlayer: ecoEditMajor,
+          }),
+        });
+        let json: { error?: string } = {};
+        try {
+          json = (await res.json()) as { error?: string };
+        } catch {
+          /* ignore */
+        }
+        if (!res.ok) {
+          toast.error(json.error ?? "更新に失敗しました");
+          return;
+        }
+        toast.success("更新しました");
+        cancelEditEcosystem();
+        await refetchThemeDetailQuiet(ac.signal);
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        toast.error(e instanceof Error ? e.message : "更新に失敗しました");
+      } finally {
+        setEcoEditSaving(false);
+      }
+    },
+    [
+      cancelEditEcosystem,
+      ecoEditCompanyName,
+      ecoEditMajor,
+      ecoEditRole,
+      ecoEditSaving,
+      refetchThemeDetailQuiet,
+      theme?.id,
+    ],
+  );
+
+  const deleteEcoMember = useCallback(
+    async (memberId: string, ticker: string) => {
+      if (!theme?.id) return;
+      if (!confirm(`"${ticker}" をエコシステムから削除しますか？`)) return;
+      const ac = new AbortController();
+      try {
+        const res = await fetch("/api/theme-ecosystem/member", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: DEFAULT_USER_ID,
+            themeId: theme.id,
+            memberId,
+          }),
+        });
+        let json: { error?: string } = {};
+        try {
+          json = (await res.json()) as { error?: string };
+        } catch {
+          /* ignore */
+        }
+        if (!res.ok) {
+          toast.error(json.error ?? "削除に失敗しました");
+          return;
+        }
+        toast.success("削除しました");
+        if (ecoEditingId === memberId) cancelEditEcosystem();
+        await refetchThemeDetailQuiet(ac.signal);
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        toast.error(e instanceof Error ? e.message : "削除に失敗しました");
+      }
+    },
+    [cancelEditEcosystem, ecoEditingId, refetchThemeDetailQuiet, theme?.id],
   );
 
   useEffect(() => {
@@ -690,8 +795,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                   </div>
                 </div>
                 <form onSubmit={handleAddEcosystemMember} className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end">
-                    <div className="space-y-1.5 w-full md:w-[7.5rem] shrink-0">
+                  <div className="grid grid-cols-1 md:grid-cols-[7.5rem_11rem_1fr_auto] gap-4 items-end">
+                    <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-ticker"
                         className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
@@ -710,19 +815,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         )}
                         autoComplete="off"
                       />
-                      <p className="text-[10px] text-slate-600 min-h-[1.1rem]">
-                        {addTickerDuplicate ? (
-                          <span className="text-rose-400">この銘柄は既に登録済み</span>
-                        ) : addCompanyNameLoading ? (
-                          <span className="font-mono text-slate-500">Resolving name…</span>
-                        ) : addCompanyName ? (
-                          <span className="text-slate-400">{addCompanyName}</span>
-                        ) : (
-                          <span className="font-mono text-slate-700">—</span>
-                        )}
-                      </p>
                     </div>
-                    <div className="space-y-1.5 w-full md:w-[11rem] shrink-0">
+                    <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-importance"
                         className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
@@ -742,7 +836,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         <option value="major">メジャー（Major）</option>
                       </select>
                     </div>
-                    <div className="space-y-1.5 w-full md:min-w-[12rem] md:flex-1 min-w-0">
+                    <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-role"
                         className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
@@ -767,6 +861,17 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                       </Button>
                     </div>
                   </div>
+                  <p className="text-[10px] text-slate-600 min-h-[1.1rem]">
+                    {addTickerDuplicate ? (
+                      <span className="text-rose-400">この銘柄は既に登録済み</span>
+                    ) : addCompanyNameLoading ? (
+                      <span className="font-mono text-slate-500">Resolving name…</span>
+                    ) : addCompanyName ? (
+                      <span className="text-slate-400">{addCompanyName}</span>
+                    ) : (
+                      <span className="font-mono text-slate-700">—</span>
+                    )}
+                  </p>
                   {addTickerDuplicate ? (
                     <p className="text-xs text-rose-400" role="alert">
                       この銘柄は既にこのテーマに登録されています
@@ -1050,6 +1155,62 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                       {e.companyName}
                                     </span>
                                   ) : null}
+                                      {ecoEditingId === e.id ? (
+                                        <div className="mt-2 space-y-2 rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            <div className="space-y-1">
+                                              <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                                                Company
+                                              </p>
+                                              <Input
+                                                value={ecoEditCompanyName}
+                                                onChange={(ev) => setEcoEditCompanyName(ev.target.value)}
+                                                placeholder="企業名（任意）"
+                                                className="h-8 text-xs"
+                                                autoComplete="off"
+                                              />
+                                            </div>
+                                            <div className="space-y-1">
+                                              <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                                                Role
+                                              </p>
+                                              <Input
+                                                value={ecoEditRole}
+                                                onChange={(ev) => setEcoEditRole(ev.target.value)}
+                                                placeholder="役割（任意）"
+                                                className="h-8 text-xs"
+                                                autoComplete="off"
+                                              />
+                                            </div>
+                                          </div>
+                                          <label className="flex items-center gap-2 text-[10px] text-slate-400 select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={ecoEditMajor}
+                                              onChange={(ev) => setEcoEditMajor(ev.target.checked)}
+                                              className="accent-amber-500"
+                                            />
+                                            Major
+                                          </label>
+                                          <div className="flex items-center gap-2">
+                                            <Button
+                                              type="button"
+                                              onClick={() => void saveEditEcosystem(e.id)}
+                                              disabled={ecoEditSaving}
+                                              className="h-8 px-3 text-xs"
+                                            >
+                                              {ecoEditSaving ? "保存中…" : "保存"}
+                                            </Button>
+                                            <button
+                                              type="button"
+                                              onClick={cancelEditEcosystem}
+                                              className="h-8 px-3 rounded-md border border-slate-700 text-xs font-bold text-slate-300 hover:bg-slate-800/60"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : null}
                                   {e.observationNotes ? (() => {
                                     const geo = extractGeopoliticalPotential(e.observationNotes);
                                     return (
@@ -1261,6 +1422,24 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                       Trade
                                     </button>
                                   ) : null}
+                                  <div className="flex items-center gap-1">
+                                    {ecoEditingId !== e.id ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => beginEditEcosystem(e)}
+                                        className="text-[9px] font-bold uppercase tracking-wide text-slate-400 border border-slate-700 px-2 py-0.5 rounded-md hover:bg-slate-800/60"
+                                      >
+                                        Edit
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      onClick={() => void deleteEcoMember(e.id, e.ticker)}
+                                      className="text-[9px] font-bold uppercase tracking-wide text-rose-400 border border-rose-500/40 px-2 py-0.5 rounded-md hover:bg-rose-500/10"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
                                 </div>
                               </td>
                               </tr>
