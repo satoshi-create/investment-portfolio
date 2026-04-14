@@ -695,12 +695,10 @@ async function enrichEcosystemMemberRow(
   const alphaObservationStartDate = cumPoints[0]?.date ?? null;
 
   /**
-   * Last 列:
-   * - Watchlist（非保有）は初回ロード速度優先で DB/系列の終値を使う（live quote は叩かない）
-   * - 保有銘柄のみ live quote を許可（必要なら）
+   * Last 列: エコシステム銘柄も保有と同様、ライブ quote を優先し、失敗時は直近日足終値へフォールバック。
    */
   let displayPrice: number | null = lastClose;
-  if (effectiveTicker.length > 0 && inPortfolio) {
+  if (effectiveTicker.length > 0) {
     const ql = await fetchLiveQuoteSnapshot(effectiveTicker, null);
     if (ql != null && Number.isFinite(ql.price) && ql.price > 0) {
       displayPrice = ql.price;
