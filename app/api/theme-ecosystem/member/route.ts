@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { addMemberToEcosystem, EcosystemMemberAuthError, EcosystemMemberDuplicateError } from "@/src/lib/add-ecosystem-member";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { getDb, isDbConfigured } from "@/src/lib/db";
+import { fetchCompanyNameForTicker } from "@/src/lib/price-service";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ type Body = {
   ticker?: string;
   role?: string | null;
   isMajorPlayer?: boolean;
+  companyName?: string | null;
 };
 
 export async function POST(request: Request) {
@@ -34,6 +36,8 @@ export async function POST(request: Request) {
   const ticker = typeof body.ticker === "string" ? body.ticker.trim() : "";
   const role = body.role == null ? null : typeof body.role === "string" ? body.role : null;
   const isMajorPlayer = body.isMajorPlayer === true;
+  const companyName =
+    body.companyName == null ? null : typeof body.companyName === "string" ? body.companyName.trim() : null;
 
   if (!themeId) {
     return NextResponse.json({ error: "themeId is required" }, { status: 400 });
@@ -43,7 +47,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    await addMemberToEcosystem(getDb(), { userId, themeId, ticker, role, isMajorPlayer });
+    const resolvedName = companyName && companyName.length > 0 ? companyName : await fetchCompanyNameForTicker(ticker);
+    await addMemberToEcosystem(getDb(), { userId, themeId, ticker, role, isMajorPlayer, companyName: resolvedName });
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof EcosystemMemberAuthError) {

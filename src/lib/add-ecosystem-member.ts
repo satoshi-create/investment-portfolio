@@ -16,6 +16,7 @@ export type AddEcosystemMemberInput = {
   ticker: string;
   role: string | null;
   isMajorPlayer: boolean;
+  companyName?: string | null;
 };
 
 /**
@@ -36,6 +37,8 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
   }
 
   const role = input.role != null && input.role.trim().length > 0 ? input.role.trim() : null;
+  const companyName =
+    input.companyName != null && String(input.companyName).trim().length > 0 ? String(input.companyName).trim() : null;
 
   try {
     await db.execute({
@@ -46,9 +49,9 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
       ) VALUES (
         ?, ?, ?,
         0, NULL, NULL, NULL, NULL,
-        NULL, NULL, ?, ?, NULL
+        ?, NULL, ?, ?, NULL
       )`,
-      args: [randomUUID(), input.themeId, ticker, role, input.isMajorPlayer ? 1 : 0],
+      args: [randomUUID(), input.themeId, ticker, companyName, role, input.isMajorPlayer ? 1 : 0],
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

@@ -23,6 +23,28 @@ const yahooFinance = new YahooFinance({
 
 export type PriceBar = { date: string; close: number };
 
+export async function fetchCompanyNameForTicker(
+  ticker: string,
+  providerSymbol?: string | null,
+): Promise<string | null> {
+  const t = ticker.trim();
+  if (t.length === 0) return null;
+  const sym = toYahooFinanceSymbol(t, providerSymbol ?? null);
+  if (!sym) return null;
+  try {
+    const qs = await yahooFinance.quoteSummary(sym, { modules: ["price"] });
+    type YahooPriceModule = { shortName?: unknown; longName?: unknown };
+    type YahooQuoteSummaryPriceShape = { price?: YahooPriceModule };
+    const p = (qs as unknown as YahooQuoteSummaryPriceShape).price ?? null;
+    const shortName = typeof p?.shortName === "string" ? p.shortName.trim() : "";
+    const longName = typeof p?.longName === "string" ? p.longName.trim() : "";
+    const name = shortName || longName;
+    return name.length > 0 ? name : null;
+  } catch {
+    return null;
+  }
+}
+
 export type EquityResearchSnapshot = {
   ticker: string;
   /** YYYY-MM-DD */

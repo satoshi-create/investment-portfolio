@@ -235,6 +235,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [addTicker, setAddTicker] = useState("");
   const [addImportance, setAddImportance] = useState<"standard" | "major">("standard");
   const [addRole, setAddRole] = useState("");
+  const [addCompanyName, setAddCompanyName] = useState<string | null>(null);
+  const [addCompanyNameLoading, setAddCompanyNameLoading] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
 
   const load = useCallback(async (signal: AbortSignal) => {
@@ -323,6 +325,38 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const addTickerDuplicate =
     addTicker.trim().length > 0 && ecosystemTickersUpper.has(addTicker.trim().toUpperCase());
 
+  useEffect(() => {
+    const raw = addTicker.trim();
+    if (!raw || addTickerDuplicate) {
+      setAddCompanyName(null);
+      setAddCompanyNameLoading(false);
+      return;
+    }
+    const ac = new AbortController();
+    const t = setTimeout(() => {
+      setAddCompanyNameLoading(true);
+      void fetch(`/api/ticker-name?ticker=${encodeURIComponent(raw)}`, { cache: "no-store", signal: ac.signal })
+        .then(async (res) => {
+          const json = (await res.json()) as { companyName?: string | null };
+          if (!res.ok) {
+            setAddCompanyName(null);
+            return;
+          }
+          const name = typeof json.companyName === "string" ? json.companyName.trim() : "";
+          setAddCompanyName(name.length > 0 ? name : null);
+        })
+        .catch((e) => {
+          if (e instanceof Error && e.name === "AbortError") return;
+          setAddCompanyName(null);
+        })
+        .finally(() => setAddCompanyNameLoading(false));
+    }, 350);
+    return () => {
+      clearTimeout(t);
+      ac.abort();
+    };
+  }, [addTicker, addTickerDuplicate]);
+
   const handleAddEcosystemMember = useCallback(
     async (ev: React.FormEvent) => {
       ev.preventDefault();
@@ -341,6 +375,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             ticker: t,
             isMajorPlayer: addImportance === "major",
             role: addRole.trim() || null,
+            companyName: addCompanyName,
           }),
         });
         let json: { error?: string; code?: string } = {};
@@ -361,6 +396,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         setAddTicker("");
         setAddRole("");
         setAddImportance("standard");
+        setAddCompanyName(null);
         await refetchThemeDetailQuiet(ac.signal);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
@@ -374,6 +410,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
       addTicker,
       addRole,
       addImportance,
+      addCompanyName,
       addTickerDuplicate,
       addSubmitting,
       refetchThemeDetailQuiet,
@@ -673,6 +710,17 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         )}
                         autoComplete="off"
                       />
+                      <p className="text-[10px] text-slate-600 min-h-[1.1rem]">
+                        {addTickerDuplicate ? (
+                          <span className="text-rose-400">この銘柄は既に登録済み</span>
+                        ) : addCompanyNameLoading ? (
+                          <span className="font-mono text-slate-500">Resolving name…</span>
+                        ) : addCompanyName ? (
+                          <span className="text-slate-400">{addCompanyName}</span>
+                        ) : (
+                          <span className="font-mono text-slate-700">—</span>
+                        )}
+                      </p>
                     </div>
                     <div className="space-y-1.5 w-full md:w-[11rem] shrink-0">
                       <label
