@@ -1,12 +1,13 @@
-# 米国株クローズ後〜翌朝向け: 日本時間 08:00 付近（UTC 23:00）
-# Secrets: SNAPSHOT_BASE_URL（例 https://your-app.vercel.app）, BACKFILL_API_KEY（本番と同一）
+# 米国株 RTH 終了直後（UTC 月〜金 21:30）— vercel.json の /api/backfill Cron と同じ想定。
+# Vercel デプロイで CRON_SECRET 済みなら本ワークフローは不要。
+# Secrets: SNAPSHOT_BASE_URL（例 https://your-app.vercel.app）, BACKFILL_API_KEY（本番の CRON_SECRET または専用キーと同一可）
 # 任意: SNAPSHOT_USER_ID（未設定時は defaultProfileUserId）
 
 name: Daily portfolio snapshot
 
 on:
   schedule:
-    - cron: "0 23 * * *"
+    - cron: "30 21 * * 1-5"
   workflow_dispatch:
 
 jobs:

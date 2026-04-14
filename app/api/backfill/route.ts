@@ -13,8 +13,15 @@ function extractApiKey(request: Request): string | null {
   return x?.trim() || null;
 }
 
-function expectedBackfillKey(): string {
-  return (process.env.BACKFILL_API_KEY ?? process.env.CRON_SNAPSHOT_SECRET ?? "").trim();
+/** Any of these Bearer values authorize snapshot writes (Vercel Cron uses CRON_SECRET). */
+function authorizedBackfillSecrets(): string[] {
+  const raw = [
+    process.env.BACKFILL_API_KEY,
+    process.env.CRON_SNAPSHOT_SECRET,
+    process.env.CRON_SECRET,
+  ];
+  const trimmed = raw.map((s) => (typeof s === "string" ? s.trim() : "")).filter((s) => s.length > 0);
+  return [...new Set(trimmed)];
 }
 
 async function handle(request: Request) {
@@ -25,16 +32,22 @@ async function handle(request: Request) {
     );
   }
 
-  const secret = expectedBackfillKey();
-  if (!secret) {
-    return NextResponse.json(
-      { error: "BACKFILL_API_KEY is not configured", hint: "Set BACKFILL_API_KEY (or CRON_SNAPSHOT_SECRET) in the deployment environment" },
-      { status: 503 },
-    );
-  }
-
+  const secrets = authorizedBackfillSecrets();
   const provided = extractApiKey(request);
-  if (!provided || provided !== secret) {
+
+  if (secrets.length === 0) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json(
+        {
+          error: "No snapshot API secret configured",
+          hint:
+            "Production: set CRON_SECRET (Vercel Cron sends Authorization: Bearer CRON_SECRET) and/or BACKFILL_API_KEY or CRON_SNAPSHOT_SECRET for curl/GitHub Actions.",
+        },
+        { status: 503 },
+      );
+    }
+    /* Local dev: allow without secret when none configured */
+  } else if (!provided || !secrets.includes(provided)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
