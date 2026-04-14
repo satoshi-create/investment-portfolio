@@ -2,7 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Crosshair, FileSpreadsheet, Layers, TrendingUp } from "lucide-react";
+import { Crosshair, FileSpreadsheet, Layers, Search, TrendingUp, XCircle } from "lucide-react";
+
+import { Input } from "@/src/components/ui/input";
 
 import type {
   InvestmentThemeRecord,
@@ -107,6 +109,14 @@ function normalizeThemeDetailResponse(rest: Omit<ThemeDetailJson, "userId" | "er
     ecosystem: Array.isArray(rest.ecosystem)
       ? rest.ecosystem.map((item) => ({
           ...item,
+          holderTags: Array.isArray(item.holderTags) ? item.holderTags.map((h) => String(h)) : [],
+          dividendMonths: Array.isArray(item.dividendMonths)
+            ? item.dividendMonths.map((m) => Number(m)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 12)
+            : [],
+          defensiveStrength:
+            item.defensiveStrength != null && String(item.defensiveStrength).trim().length > 0
+              ? String(item.defensiveStrength).trim()
+              : null,
           observationStartedAt:
             typeof item.observationStartedAt === "string" && item.observationStartedAt.length >= 10
               ? item.observationStartedAt.slice(0, 10)
@@ -198,6 +208,25 @@ function extractGeopoliticalPotential(observationNotes: string | null | undefine
   return null;
 }
 
+/** Case-insensitive: ticker, company, role, defensive strength, holders, field（セクター名・製紙など） */
+function ecosystemMemberMatchesSearch(e: ThemeEcosystemWatchItem, rawQuery: string): boolean {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return true;
+  const holders = (e.holderTags ?? []).join(" ").toLowerCase();
+  const haystack = [
+    e.ticker,
+    e.companyName,
+    e.role,
+    e.defensiveStrength ?? "",
+    e.field,
+    e.observationNotes ?? "",
+    holders,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
 export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const { query: themeQueryName, display: themeDisplayName } = useMemo(
     () => mapThemeLabelForQuery(themeLabel),
@@ -220,6 +249,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [patrolOn, setPatrolOn] = useState(false);
   /** アーリーマジョリティ以降のみ（キャズム超え・割安性フィルターと AND） */
   const [postChasmOnly, setPostChasmOnly] = useState(false);
+  const [ecoSearchTerm, setEcoSearchTerm] = useState("");
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -298,6 +328,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     });
   }, [ecosystem, patrolOn, postChasmOnly]);
 
+  const ecosystemSearchFiltered = useMemo(
+    () => ecosystemFiltered.filter((e) => ecosystemMemberMatchesSearch(e, ecoSearchTerm)),
+    [ecosystemFiltered, ecoSearchTerm],
+  );
+
   const themeAdoptionMaturity = useMemo(
     () => summarizeThemeAdoptionMaturity(ecosystem.map((e) => e.adoptionStage)),
     [ecosystem],
@@ -328,7 +363,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         ? e.drawdownFromHigh90dPct
         : null;
 
-    const arr = [...ecosystemFiltered];
+    const arr = [...ecosystemSearchFiltered];
     arr.sort((a, b) => {
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
       if (ecoSortKey === "alpha") return dir * cmpNum(a.latestAlpha, b.latestAlpha);
@@ -345,7 +380,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
       return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
     });
     return arr;
-  }, [ecosystemFiltered, ecoSortDir, ecoSortKey]);
+  }, [ecosystemSearchFiltered, ecoSortDir, ecoSortKey]);
 
   function toggleEcoSort(next: typeof ecoSortKey) {
     if (next === ecoSortKey) setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -530,7 +565,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             {ecosystem.length > 0 ? (
               <section aria-labelledby="theme-ecosystem-heading">
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-                  <div className="p-5 border-b border-slate-800 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between bg-slate-900/50">
+                  <div className="p-5 border-b border-slate-800 bg-slate-900/50 space-y-4">
                     <div className="flex items-start gap-2 min-w-0">
                       <Layers size={16} className="text-amber-500/90 shrink-0 mt-0.5" />
                       <div>
@@ -545,8 +580,36 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2 shrink-0">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
+
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-3">
+                      <div className="relative flex-1 min-w-0 max-w-xl">
+                        <Search
+                          size={16}
+                          className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-slate-500"
+                          aria-hidden
+                        />
+                        <Input
+                          type="search"
+                          value={ecoSearchTerm}
+                          onChange={(ev) => setEcoSearchTerm(ev.target.value)}
+                          placeholder="銘柄名、ティッカー、または役割で検索..."
+                          className="h-9 pl-9 pr-9"
+                          aria-label="エコシステム銘柄を検索"
+                          autoComplete="off"
+                        />
+                        {ecoSearchTerm.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setEcoSearchTerm("")}
+                            className="absolute right-2 top-1/2 z-[1] -translate-y-1/2 rounded-md p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+                            title="検索をクリア"
+                            aria-label="検索をクリア"
+                          >
+                            <XCircle size={18} />
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 lg:justify-end shrink-0">
                         <button
                           type="button"
                           onClick={() => setEcoShowValueCols((v) => !v)}
@@ -594,19 +657,20 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           CSVダウンロード
                         </button>
                       </div>
-                      <p className="text-[10px] font-mono text-slate-600 text-right flex flex-wrap items-center justify-end gap-2">
-                        {hydratingFull ? (
-                          <span className="text-cyan-400/90 font-sans font-bold normal-case tracking-normal animate-pulse">
-                            Alpha・Research 読込中…
-                          </span>
-                        ) : null}
-                          <span>
-                          {patrolOn || postChasmOnly
-                            ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
-                            : `計 ${ecosystem.length} 銘柄`}
-                        </span>
-                      </p>
                     </div>
+
+                    <p className="text-[10px] font-mono text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {hydratingFull ? (
+                        <span className="text-cyan-400/90 font-sans font-bold normal-case tracking-normal animate-pulse">
+                          Alpha・Research 読込中…
+                        </span>
+                      ) : null}
+                      <span>
+                        {ecoSearchTerm.trim() || patrolOn || postChasmOnly
+                          ? `表示 ${ecosystemSorted.length} / フィルター後 ${ecosystemFiltered.length} / 全 ${ecosystem.length} 銘柄`
+                          : `計 ${ecosystem.length} 銘柄`}
+                      </span>
+                    </p>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -685,7 +749,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/50">
-                        {ecosystemSorted.length === 0 && (patrolOn || postChasmOnly) ? (
+                        {ecosystemSorted.length === 0 &&
+                        ecosystemFiltered.length === 0 &&
+                        (patrolOn || postChasmOnly) ? (
                           <tr>
                             <td
                               colSpan={ecoShowValueCols ? 9 : 7}
@@ -696,6 +762,16 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                 : patrolOn && !postChasmOnly
                                   ? "割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。"
                                   : "フィルター条件に合う銘柄がありません（割安パトロール ＋ キャズム超え）。"}
+                            </td>
+                          </tr>
+                        ) : null}
+                        {ecosystemSorted.length === 0 && ecoSearchTerm.trim() && ecosystemFiltered.length > 0 ? (
+                          <tr>
+                            <td
+                              colSpan={ecoShowValueCols ? 9 : 7}
+                              className="px-6 py-8 text-center text-sm text-slate-500"
+                            >
+                              該当する仲間（銘柄）は見つかりませんでした
                             </td>
                           </tr>
                         ) : null}
