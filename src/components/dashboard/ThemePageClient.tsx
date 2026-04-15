@@ -313,6 +313,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     [themeLabel],
   );
   const isDefensiveTheme = themeQueryName === "ディフェンシブ銘柄";
+  const [holderFilter, setHolderFilter] = useState<string[]>([]);
 
   const [data, setData] = useState<ThemeDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -453,6 +454,61 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     () => isThemeStructuralTrendPositiveUp(themeStructuralTrendSeries),
     [themeStructuralTrendSeries],
   );
+
+  const defensiveHolders = useMemo(() => {
+    if (!isDefensiveTheme) return [];
+    const set = new Set<string>();
+    for (const e of ecosystem) {
+      for (const h of e.holderTags ?? []) {
+        const s = String(h).trim();
+        if (s) set.add(s);
+      }
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [ecosystem, isDefensiveTheme]);
+
+  const holderFilterSet = useMemo(
+    () => new Set(holderFilter.map((h) => h.trim()).filter(Boolean)),
+    [holderFilter],
+  );
+
+  const defensiveHolderStats = useMemo(() => {
+    if (!isDefensiveTheme) return null;
+    const base = ecosystem.filter((e) => {
+      if (holderFilterSet.size === 0) return true;
+      return (e.holderTags ?? []).some((h) =>
+        holderFilterSet.has(String(h).trim()),
+      );
+    });
+    const alphas = base
+      .map((e) =>
+        e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? e.latestAlpha : null,
+      )
+      .filter((x): x is number => x != null);
+    const zs = base
+      .map((e) =>
+        e.alphaDeviationZ != null && Number.isFinite(e.alphaDeviationZ) ? e.alphaDeviationZ : null,
+      )
+      .filter((x): x is number => x != null);
+    const yields = base
+      .map((e) =>
+        e.dividendYieldPercent != null && Number.isFinite(e.dividendYieldPercent) ? e.dividendYieldPercent : null,
+      )
+      .filter((x): x is number => x != null);
+
+    const avg = (arr: number[]) =>
+      arr.length === 0
+        ? null
+        : Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100;
+
+    return {
+      count: base.length,
+      inPortfolio: base.filter((e) => e.inPortfolio).length,
+      avgLatestAlpha: avg(alphas),
+      avgDeviationZ: avg(zs),
+      avgDividendYield: avg(yields),
+    };
+  }, [ecosystem, holderFilterSet, isDefensiveTheme]);
 
   const ecosystemTickersUpper = useMemo(
     () => new Set(ecosystem.map((e) => e.ticker.trim().toUpperCase())),
@@ -681,8 +737,13 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         ecosystemMatchesSearchQuery(e, ecosystemSearchQuery),
       );
     }
+    if (isDefensiveTheme && holderFilterSet.size > 0) {
+      out = out.filter((e) =>
+        (e.holderTags ?? []).some((h) => holderFilterSet.has(String(h).trim())),
+      );
+    }
     return out;
-  }, [ecosystem, patrolOn, postChasmOnly, ecosystemSearchQuery]);
+  }, [ecosystem, patrolOn, postChasmOnly, ecosystemSearchQuery, holderFilterSet, isDefensiveTheme]);
 
   const themeAdoptionMaturity = useMemo(
     () => summarizeThemeAdoptionMaturity(ecosystem.map((e) => e.adoptionStage)),
@@ -1200,6 +1261,112 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           CSVダウンロード
                         </button>
                       </div>
+                      {isDefensiveTheme && defensiveHolders.length > 0 ? (
+                        <div className="mt-3 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                              HOLDER フィルター（複数選択）
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setHolderFilter([])}
+                              disabled={holderFilter.length === 0}
+                              className="text-[10px] font-bold uppercase tracking-wide text-slate-500 border border-slate-700 px-2 py-1 rounded-md hover:bg-slate-800/60 transition-colors disabled:opacity-40"
+                            >
+                              クリア
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {defensiveHolders.map((h) => {
+                              const on = holderFilterSet.has(h);
+                              return (
+                                <button
+                                  key={h}
+                                  type="button"
+                                  onClick={() =>
+                                    setHolderFilter((cur) =>
+                                      cur.includes(h) ? cur.filter((x) => x !== h) : [...cur, h],
+                                    )
+                                  }
+                                  className={cn(
+                                    "text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-full border transition-colors",
+                                    on
+                                      ? "text-rose-100 border-rose-400/40 bg-rose-500/15"
+                                      : "text-slate-400 border-slate-700 bg-slate-900/30 hover:bg-slate-800/60",
+                                  )}
+                                >
+                                  {h}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {defensiveHolderStats ? (
+                            <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">
+                                Slice stats
+                              </p>
+                              <div className="text-[11px] font-mono text-slate-400 flex flex-wrap gap-x-5 gap-y-1">
+                                <span>
+                                  件数{" "}
+                                  <span className="text-slate-200 font-bold tabular-nums">
+                                    {defensiveHolderStats.count}
+                                  </span>{" "}
+                                  / PF{" "}
+                                  <span className="text-slate-200 font-bold tabular-nums">
+                                    {defensiveHolderStats.inPortfolio}
+                                  </span>
+                                </span>
+                                <span>
+                                  平均 Cumα{" "}
+                                  <span
+                                    className={cn(
+                                      "font-bold tabular-nums",
+                                      defensiveHolderStats.avgLatestAlpha != null
+                                        ? defensiveHolderStats.avgLatestAlpha > 0
+                                          ? "text-emerald-300"
+                                          : defensiveHolderStats.avgLatestAlpha < 0
+                                            ? "text-rose-300"
+                                            : "text-slate-300"
+                                        : "text-slate-500",
+                                    )}
+                                  >
+                                    {defensiveHolderStats.avgLatestAlpha != null
+                                      ? `${defensiveHolderStats.avgLatestAlpha > 0 ? "+" : ""}${defensiveHolderStats.avgLatestAlpha.toFixed(2)}%`
+                                      : "—"}
+                                  </span>
+                                </span>
+                                <span>
+                                  平均 Z{" "}
+                                  <span
+                                    className={cn(
+                                      "font-bold tabular-nums",
+                                      defensiveHolderStats.avgDeviationZ != null
+                                        ? defensiveHolderStats.avgDeviationZ <= -1.0
+                                          ? "text-amber-300"
+                                          : defensiveHolderStats.avgDeviationZ >= 1.0
+                                            ? "text-emerald-300"
+                                            : "text-slate-300"
+                                        : "text-slate-500",
+                                    )}
+                                  >
+                                    {defensiveHolderStats.avgDeviationZ != null
+                                      ? `${defensiveHolderStats.avgDeviationZ > 0 ? "+" : ""}${defensiveHolderStats.avgDeviationZ.toFixed(2)}σ`
+                                      : "—"}
+                                  </span>
+                                </span>
+                                <span>
+                                  平均 Div{" "}
+                                  <span className="text-slate-200 font-bold tabular-nums">
+                                    {defensiveHolderStats.avgDividendYield != null
+                                      ? `${defensiveHolderStats.avgDividendYield.toFixed(2)}%`
+                                      : "—"}
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <p className="text-[10px] font-mono text-slate-600 text-right flex flex-wrap items-center justify-end gap-2">
                         {hydratingFull ? (
                           <span className="text-cyan-400/90 font-sans font-bold normal-case tracking-normal animate-pulse">

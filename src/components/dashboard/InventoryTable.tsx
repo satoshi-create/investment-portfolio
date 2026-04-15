@@ -214,7 +214,7 @@ export function InventoryTable({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
+        <table className="w-full text-left text-xs lg:text-sm">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
             <tr>
               <th
@@ -270,6 +270,18 @@ export function InventoryTable({
               >
                 Position{sortMark("position")}
               </th>
+              <th
+                className="px-4 py-4 text-right whitespace-nowrap sticky right-[5.75rem] z-10 bg-background border-l border-border/60"
+                title="現在値（Price）"
+              >
+                Price
+              </th>
+              <th
+                className="px-4 py-4 text-right whitespace-nowrap sticky right-0 z-10 bg-background"
+                title="取引"
+              >
+                Trade
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
@@ -313,31 +325,6 @@ export function InventoryTable({
                           >
                             {stock.accountType ?? "特定"}
                           </span>
-                          {onTrade ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onTrade({
-                                  ticker: stock.ticker,
-                                  name: stock.name || undefined,
-                                  ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
-                                  sector: stock.sector ?? stock.secondaryTag,
-                                  quantityDefault: 1,
-                                  ...(stock.expectationCategory != null
-                                    ? { expectationCategory: stock.expectationCategory }
-                                    : {}),
-                                  ...(stock.currentPrice != null &&
-                                  Number.isFinite(stock.currentPrice) &&
-                                  stock.currentPrice > 0
-                                    ? { unitPrice: stock.currentPrice }
-                                    : {}),
-                                })
-                              }
-                              className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-0.5 rounded-md hover:bg-accent-cyan/10"
-                            >
-                              Trade
-                            </button>
-                          ) : null}
                         </div>
                       </div>
                       {stock.name ? (
@@ -373,7 +360,11 @@ export function InventoryTable({
                         )}
                         {stock.dividendYieldPercent != null ? (
                           <span
-                            className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
+                            className={`text-[10px] font-bold border px-2 py-0.5 rounded-md ${
+                              stock.dividendYieldPercent >= 3
+                                ? "text-amber-200 border-amber-500/40 bg-amber-500/10"
+                                : "text-foreground/90 border-border bg-card/60"
+                            }`}
                             title={
                               stock.annualDividendRate != null
                                 ? `年間配当: ${stock.annualDividendRate}`
@@ -385,6 +376,14 @@ export function InventoryTable({
                         ) : (
                           <span className="text-[10px] text-muted-foreground">Div:—</span>
                         )}
+                        {stock.dividendYieldPercent != null && stock.dividendYieldPercent >= 3 ? (
+                          <span
+                            className="text-[10px] font-bold text-amber-200 border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 rounded-md"
+                            title="高配当（Div% >= 3）"
+                          >
+                            還流
+                          </span>
+                        ) : null}
                       </div>
                       <span className="text-[10px] text-muted-foreground">
                         {stock.accountType ?? "特定"}
@@ -437,27 +436,6 @@ export function InventoryTable({
                   <td className="px-6 py-4 text-right">
                     <div className="flex flex-col items-end gap-0.5">
                       <span className="font-mono text-foreground/90 font-bold">{stock.quantity}</span>
-                      {stock.currentPrice != null && stock.currentPrice > 0 ? (
-                        <span className="text-[9px] text-muted-foreground font-mono inline-flex items-center gap-1 flex-wrap justify-end">
-                          <span>
-                            @ {stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}
-                          </span>
-                          {stock.priceSource === "live" && stock.lastUpdatedAt ? (
-                            <span
-                              className="inline-flex items-center gap-0.5"
-                              title={`Live（Yahoo quote）\n${new Date(stock.lastUpdatedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`}
-                            >
-                              <span
-                                className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 motion-safe:animate-pulse"
-                                aria-hidden
-                              />
-                              <span className="text-[7px] font-bold uppercase tracking-wide text-emerald-400/90">
-                                Live
-                              </span>
-                            </span>
-                          ) : null}
-                        </span>
-                      ) : null}
                       <span className="text-[9px] text-muted-foreground font-bold tracking-tighter">
                         {stock.marketValue > 0 ? `${jpyFmt.format(stock.marketValue)}（推定）` : "—"}
                       </span>
@@ -468,6 +446,55 @@ export function InventoryTable({
                         {stock.weight > 0 ? `${stock.weight.toFixed(1)}% wt` : stock.marketValue > 0 ? "0% wt" : "—"}
                       </span>
                     </div>
+                  </td>
+                  <td className="px-4 py-4 text-right sticky right-[5.75rem] z-10 bg-background group-hover:bg-muted/60 border-l border-border/60">
+                    <div className="flex flex-col items-end gap-0.5 min-w-[5.75rem]">
+                      <span className="font-mono text-foreground/90 font-bold tabular-nums">
+                        {stock.currentPrice != null && stock.currentPrice > 0
+                          ? stock.countryName === "日本"
+                            ? `¥${stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}`
+                            : `$${stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}`
+                          : "—"}
+                      </span>
+                      {stock.priceSource === "live" && stock.lastUpdatedAt ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[9px] text-muted-foreground font-mono"
+                          title={`Live（Yahoo quote）\n${new Date(stock.lastUpdatedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 motion-safe:animate-pulse" aria-hidden />
+                          <span className="text-[7px] font-bold uppercase tracking-wide text-emerald-400/90">Live</span>
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-right sticky right-0 z-10 bg-background group-hover:bg-muted/60 min-w-[5.75rem]">
+                    {onTrade ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onTrade({
+                            ticker: stock.ticker,
+                            name: stock.name || undefined,
+                            ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
+                            sector: stock.sector ?? stock.secondaryTag,
+                            quantityDefault: 1,
+                            ...(stock.expectationCategory != null
+                              ? { expectationCategory: stock.expectationCategory }
+                              : {}),
+                            ...(stock.currentPrice != null &&
+                            Number.isFinite(stock.currentPrice) &&
+                            stock.currentPrice > 0
+                              ? { unitPrice: stock.currentPrice }
+                              : {}),
+                          })
+                        }
+                        className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-1 rounded-md hover:bg-accent-cyan/10"
+                      >
+                        Trade
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">—</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -494,6 +521,8 @@ export function InventoryTable({
                 Portfolio
               </td>
               <td className="px-6 py-3" />
+              <td className="px-4 py-3 sticky right-[5.75rem] z-10 bg-card/90 border-l border-border/60" />
+              <td className="px-4 py-3 sticky right-0 z-10 bg-card/90" />
             </tr>
           </tfoot>
         </table>
