@@ -193,30 +193,24 @@ function parseInstrumentKind(raw: string): TickerInstrumentKind {
   return raw === "JP_INVESTMENT_TRUST" ? "JP_INVESTMENT_TRUST" : "US_EQUITY";
 }
 
-/** Latest `snapshot_date` rows for user (one patrol “slice”). */
+/**
+ * ユーザーの `holding_daily_snapshots` をすべて返す（ログ画面・CSV 用）。
+ * `snapshotDate` は行のうち最新のカレンダー日（`ORDER BY snapshot_date DESC` の先頭行と一致）。
+ */
 export async function fetchHoldingDailySnapshotsLatestForUser(
   db: Client,
   userId: string,
 ): Promise<{ snapshotDate: string | null; rows: HoldingDailySnapshotRow[] }> {
   try {
-    const maxRs = await db.execute({
-      sql: `SELECT MAX(snapshot_date) AS d FROM holding_daily_snapshots WHERE user_id = ?`,
-      args: [userId],
-    });
-    const d = maxRs.rows[0]?.d;
-    if (d == null || String(d).length === 0) {
-      return { snapshotDate: null, rows: [] };
-    }
-    const snapshotDate = String(d);
     const rs = await db.execute({
       sql: `SELECT id, user_id, holding_id, snapshot_date, recorded_at, ticker, name, instrument_kind,
                    category, secondary_tag, quantity, valuation_factor, avg_acquisition_price, close_price,
                    market_value_jpy, unrealized_pnl_jpy, unrealized_pnl_pct, day_change_pct,
                    benchmark_ticker, benchmark_close, fx_usd_jpy
             FROM holding_daily_snapshots
-            WHERE user_id = ? AND snapshot_date = ?
-            ORDER BY ticker ASC`,
-      args: [userId, snapshotDate],
+            WHERE user_id = ?
+            ORDER BY snapshot_date DESC, ticker ASC`,
+      args: [userId],
     });
     const rows: HoldingDailySnapshotRow[] = rs.rows.map((row) => ({
       id: String(row.id),
@@ -241,6 +235,7 @@ export async function fetchHoldingDailySnapshotsLatestForUser(
       benchmarkClose: numOrNull(row.benchmark_close),
       fxUsdJpy: Number(row.fx_usd_jpy),
     }));
+    const snapshotDate = rows.length > 0 ? rows[0]!.snapshotDate : null;
     return { snapshotDate, rows };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

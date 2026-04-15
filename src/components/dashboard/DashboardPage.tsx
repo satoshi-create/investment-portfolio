@@ -164,7 +164,7 @@ export function DashboardPage() {
   if (!clientReady) {
     return (
       <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
-        <div className="max-w-6xl mx-auto space-y-6" aria-busy="true">
+        <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-6" aria-busy="true">
           <div className="h-28 rounded-2xl border border-border bg-muted/20 animate-pulse" />
           <div className="h-24 rounded-2xl border border-border bg-muted/20 animate-pulse" />
           <div className="h-64 rounded-2xl border border-border bg-muted/20 animate-pulse" />
@@ -175,7 +175,7 @@ export function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
         {/* Initial load skeleton (keeps layout stable even when offline/slow). */}
         {loading && data == null ? (
           <div className="space-y-4" aria-busy="true">

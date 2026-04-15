@@ -8,6 +8,7 @@ import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic
 import { getDb } from "@/src/lib/db";
 import { fetchHoldingsWithProviderForUser } from "@/src/lib/holdings-queries";
 import type { HoldingPriceInput } from "@/src/lib/price-service";
+import { signalsDebug } from "@/src/lib/signals-debug";
 import type { Holding } from "@/src/types/investment";
 
 export { SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
@@ -69,9 +70,25 @@ export async function generateSignalsForUser(
   userId: string,
   db: Client = getDb(),
 ): Promise<GenerateSignalsResult> {
+  signalsDebug("generateSignalsForUser start", {
+    userId,
+    benchmark: SIGNAL_BENCHMARK_TICKER,
+  });
+
   const reconcile = await reconcileAlphaHistoryForUser(userId, db);
 
+  signalsDebug("reconcileAlphaHistoryForUser done", {
+    rowsBackfilled: reconcile.rowsBackfilled,
+    backfilledTickers: reconcile.backfilledTickers,
+    linkedCount: reconcile.linkedTickers.length,
+  });
+
   const holdings = await fetchHoldingsWithProviderForUser(db, userId);
+
+  signalsDebug("holdings loaded", {
+    count: holdings.length,
+    tickers: holdings.map((x) => x.ticker),
+  });
 
   const details: GenerateSignalsDetail[] = [];
   let inserted = 0;
@@ -86,17 +103,41 @@ export async function generateSignalsForUser(
       args: [userId, h.ticker, SIGNAL_BENCHMARK_TICKER],
     });
 
-    if (alphaRs.rows.length === 0) continue;
+    if (alphaRs.rows.length === 0) {
+      signalsDebug("skip holding: no alpha_history rows", {
+        holdingId,
+        ticker: h.ticker,
+        userId,
+        benchmark: SIGNAL_BENCHMARK_TICKER,
+      });
+      continue;
+    }
 
     const chronological = [...alphaRs.rows].reverse();
     const alphas = chronological.map((r) => Number(r.alpha_value));
     const latestRecordedAt = String(chronological[chronological.length - 1].recorded_at);
     const dateYmd = latestRecordedAt.slice(0, 10);
 
+    const points = chronological.map((r) => ({
+      recorded_at: String(r.recorded_at),
+      alpha_value: Number(r.alpha_value),
+    }));
+    signalsDebug("alpha tail (chronological)", { ticker: h.ticker, holdingId, dateYmd, points });
+
     if (alphas.length >= 3) {
       const last3 = alphas.slice(-3);
-      if (last3.every((a) => a < 0)) {
-        if (!(await signalExistsForDay(db, holdingId, "WARN", dateYmd))) {
+      const warnRule = last3.every((a) => a < 0);
+      signalsDebug("WARN rule", {
+        ticker: h.ticker,
+        last3,
+        warnRule,
+        note: "requires all three strictly < 0",
+      });
+      if (warnRule) {
+        const exists = await signalExistsForDay(db, holdingId, "WARN", dateYmd);
+        if (exists) {
+          signalsDebug("WARN skipped: already exists for calendar day", { ticker: h.ticker, dateYmd });
+        } else {
           await insertSignal(
             db,
             holdingId,
@@ -106,22 +147,44 @@ export async function generateSignalsForUser(
           );
           inserted += 1;
           details.push({ holdingId, type: "WARN" });
+          signalsDebug("inserted WARN", { ticker: h.ticker, dateYmd });
         }
       }
+    } else {
+      signalsDebug("WARN not evaluated: fewer than 3 alpha points", {
+        ticker: h.ticker,
+        n: alphas.length,
+      });
     }
 
     if (alphas.length >= 2) {
       const prev = alphas[alphas.length - 2]!;
       const cur = alphas[alphas.length - 1]!;
-      if (prev < 0 && cur > 0) {
-        if (!(await signalExistsForDay(db, holdingId, "BUY", dateYmd))) {
+      const buyRule = prev < 0 && cur > 0;
+      signalsDebug("BUY rule", {
+        ticker: h.ticker,
+        prev,
+        cur,
+        buyRule,
+        note: "prev day alpha < 0 and latest > 0",
+      });
+      if (buyRule) {
+        const exists = await signalExistsForDay(db, holdingId, "BUY", dateYmd);
+        if (exists) {
+          signalsDebug("BUY skipped: already exists for calendar day", { ticker: h.ticker, dateYmd });
+        } else {
           await insertSignal(db, holdingId, "BUY", roundAlphaMetric(cur), dateYmd);
           inserted += 1;
           details.push({ holdingId, type: "BUY" });
+          signalsDebug("inserted BUY", { ticker: h.ticker, dateYmd });
         }
       }
+    } else {
+      signalsDebug("BUY not evaluated: fewer than 2 alpha points", { ticker: h.ticker, n: alphas.length });
     }
   }
+
+  signalsDebug("generateSignalsForUser end", { inserted, details });
 
   return { inserted, details, reconcile };
 }

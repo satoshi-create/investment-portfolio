@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { FileSpreadsheet, Layers } from "lucide-react";
 
 import type { HoldingDailySnapshotRow, TickerInstrumentKind } from "@/src/types/investment";
@@ -49,8 +49,13 @@ type Props = {
 };
 
 export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
-  const bench = rows[0]?.benchmarkClose;
-  const fx = rows[0]?.fxUsdJpy;
+  const distinctSnapshotDays = useMemo(
+    () => new Set(rows.map((r) => r.snapshotDate)).size,
+    [rows],
+  );
+  const singleDayOnly = distinctSnapshotDays <= 1;
+  const bench = singleDayOnly ? rows[0]?.benchmarkClose : undefined;
+  const fx = singleDayOnly ? rows[0]?.fxUsdJpy : undefined;
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
@@ -62,9 +67,18 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
               Holding snapshots (銘柄×日)
             </h3>
             <p className="text-[10px] text-muted-foreground mt-1">
-              Record snapshot 実行時に `holding_daily_snapshots` へ保存された最新スライス
+              Record snapshot 実行時に `holding_daily_snapshots` へ保存された全期間の行（
+              {rows.length > 0 ? (
+                <>
+                  <span className="font-mono text-muted-foreground/90">{distinctSnapshotDays}</span> 日分 ·{" "}
+                  {rows.length} 行
+                </>
+              ) : (
+                "0 行"
+              )}
+              ）
               {snapshotDate ? (
-                <span className="text-muted-foreground/90 font-mono"> · UTC {snapshotDate}</span>
+                <span className="text-muted-foreground/90 font-mono"> · 最新 UTC {snapshotDate}</span>
               ) : null}
               {bench != null && bench > 0 ? (
                 <span className="text-muted-foreground/90">
@@ -86,7 +100,7 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
               )
             }
             className="inline-flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/50 transition-all"
-            title="表示中の銘柄スナップショット行を CSV でダウンロード"
+            title="記録されたすべてのスナップショット日の行を CSV でダウンロード（スナップショット日付列あり）"
           >
             <FileSpreadsheet size={14} />
             CSV
@@ -100,12 +114,13 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[1050px]">
+          <table className="w-full text-left text-sm min-w-[1120px]">
             <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyThFirst}`}>
                   銘柄 / コード
                 </th>
+                <th className="px-4 py-3 whitespace-nowrap font-mono text-[10px]">スナップショット日</th>
                 <th className="px-4 py-3 whitespace-nowrap">市場</th>
                 <th className="px-4 py-3 whitespace-nowrap">業界</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">数量</th>
@@ -128,6 +143,9 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
                       </span>
                       <span className="text-[10px] font-mono text-slate-500">{r.ticker}</span>
                     </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-400 text-xs font-mono whitespace-nowrap" title={r.recordedAt}>
+                    {r.snapshotDate}
                   </td>
                   <td className="px-4 py-2.5 text-slate-400 text-xs">{marketLabel(r.instrumentKind)}</td>
                   <td className="px-4 py-2.5 text-slate-400 text-xs max-w-[120px] truncate" title={r.secondaryTag}>

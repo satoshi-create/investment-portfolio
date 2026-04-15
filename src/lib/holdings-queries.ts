@@ -2,10 +2,10 @@ import type { Client } from "@libsql/client";
 
 import type { Holding } from "@/src/types/investment";
 
-/** Holdings for `userId` including `provider_symbol` (Yahoo / alpha sync). */
+/** Active holdings (`quantity > 0`) for `userId`, including `provider_symbol` (Yahoo / alpha sync). */
 export async function fetchHoldingsWithProviderForUser(db: Client, userId: string): Promise<Holding[]> {
   const rs = await db.execute({
-    sql: `SELECT id, ticker, provider_symbol FROM holdings WHERE user_id = ? ORDER BY ticker`,
+    sql: `SELECT id, ticker, provider_symbol FROM holdings WHERE user_id = ? AND quantity > 0 ORDER BY ticker`,
     args: [userId],
   });
   return rs.rows.map((row) => ({

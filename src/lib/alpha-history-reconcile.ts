@@ -8,6 +8,7 @@ import {
 } from "@/src/lib/alpha-logic";
 import { linkAlphaHistoryHoldingForTicker, upsertAlphaHistoryRow } from "@/src/lib/db-operations";
 import { fetchHoldingsWithProviderForUser } from "@/src/lib/holdings-queries";
+import { signalsDebug } from "@/src/lib/signals-debug";
 import type { PriceBar } from "@/src/lib/price-service";
 import { fetchPriceHistory } from "@/src/lib/price-service";
 import type { Holding } from "@/src/types/investment";
@@ -16,6 +17,11 @@ import type { Holding } from "@/src/types/investment";
 const MIN_TOTAL_ALPHA_ROWS = 20;
 /** Rough proxy for “missing ~30 trading days” of recent coverage (~40 calendar days in SQL). */
 const MIN_RECENT_ALPHA_ROWS = 12;
+/**
+ * If the newest `alpha_history` bar is older than this many **calendar days** (UTC) behind “today”,
+ * still run Yahoo backfill. Otherwise row-count thresholds alone can leave history frozen (see signals-debug).
+ */
+const STALE_ALPHA_CALENDAR_LAG_DAYS = 5;
 
 function sharedSortedDates(stockBars: PriceBar[], vooBars: PriceBar[]): string[] {
   const vooSet = new Set(vooBars.map((b) => b.date));
@@ -75,10 +81,41 @@ async function countAlphaHistoryRecent(
   return Number(rs.rows[0]?.c ?? 0);
 }
 
-function needsBackfill(total: number, recent: number): boolean {
+async function getLatestAlphaHistoryYmd(
+  db: Client,
+  userId: string,
+  ticker: string,
+  benchmark: string,
+): Promise<string | null> {
+  const rs = await db.execute({
+    sql: `SELECT MAX(substr(recorded_at, 1, 10)) AS ymd FROM alpha_history
+          WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?`,
+    args: [userId, ticker, benchmark],
+  });
+  const raw = rs.rows[0]?.ymd;
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : s.length >= 10 ? s.slice(0, 10) : null;
+}
+
+/** True when the latest daily bar is too far behind wall-clock (UTC calendar days). */
+function isAlphaHistoryWallClockStale(latestYmd: string | null): boolean {
+  if (latestYmd == null || latestYmd.length < 10) return true;
+  const y = Number(latestYmd.slice(0, 4));
+  const m = Number(latestYmd.slice(5, 7)) - 1;
+  const d = Number(latestYmd.slice(8, 10));
+  const latestUtc = Date.UTC(y, m, d);
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const diffDays = (todayUtc - latestUtc) / (24 * 60 * 60 * 1000);
+  return diffDays > STALE_ALPHA_CALENDAR_LAG_DAYS;
+}
+
+function needsBackfill(total: number, recent: number, latestYmd: string | null): boolean {
   if (total === 0) return true;
   if (total < MIN_TOTAL_ALPHA_ROWS) return true;
   if (recent < MIN_RECENT_ALPHA_ROWS) return true;
+  if (isAlphaHistoryWallClockStale(latestYmd)) return true;
   return false;
 }
 
@@ -100,7 +137,15 @@ export async function backfillAlphaHistoryForTicker(
   const stockBars = await fetchPriceHistory(args.ticker, days, args.providerSymbol ?? null);
   const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
   const shared = sharedSortedDates(stockBars, vooBars);
-  if (shared.length < 2) return 0;
+  if (shared.length < 2) {
+    signalsDebug("backfillAlphaHistoryForTicker: insufficient overlapping dates", {
+      ticker: args.ticker,
+      stockBars: stockBars.length,
+      vooBars: vooBars.length,
+      sharedDates: shared.length,
+    });
+    return 0;
+  }
 
   let written = 0;
   for (let i = 1; i < shared.length; i++) {
@@ -186,7 +231,8 @@ export async function reconcileAlphaHistoryForWatchlistTickers(
     try {
       const total = await countAlphaHistoryTotal(db, userId, t.ticker, SIGNAL_BENCHMARK_TICKER);
       const recent = await countAlphaHistoryRecent(db, userId, t.ticker, SIGNAL_BENCHMARK_TICKER);
-      if (!needsBackfill(total, recent)) continue;
+      const latestYmd = await getLatestAlphaHistoryYmd(db, userId, t.ticker, SIGNAL_BENCHMARK_TICKER);
+      if (!needsBackfill(total, recent, latestYmd)) continue;
 
       if (!vooBars) {
         vooBars = await fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, days, null);
@@ -216,7 +262,7 @@ export type ReconcileAlphaHistoryResult = {
 
 /**
  * For each holding: set `holding_id` on all matching `alpha_history` rows (re-link after re-add),
- * then backfill from Yahoo when history is empty or too thin vs recent window.
+ * then backfill from Yahoo when history is empty, too thin vs recent window, or stale vs wall-clock.
  */
 export async function reconcileAlphaHistoryForUser(
   userId: string,
@@ -230,6 +276,13 @@ export async function reconcileAlphaHistoryForUser(
 
   const days = options?.days ?? Math.max(5, Math.min(120, Math.floor(Number(process.env.BACKFILL_DAYS ?? "30") || 30)));
 
+  signalsDebug("reconcileAlphaHistoryForUser start", {
+    userId,
+    holdingCount: holdings.length,
+    backfillWindowDays: days,
+    benchmark: SIGNAL_BENCHMARK_TICKER,
+  });
+
   let vooBars: PriceBar[] | null = null;
 
   for (const h of holdings) {
@@ -238,17 +291,40 @@ export async function reconcileAlphaHistoryForUser(
 
     const total = await countAlphaHistoryTotal(db, userId, h.ticker, SIGNAL_BENCHMARK_TICKER);
     const recent = await countAlphaHistoryRecent(db, userId, h.ticker, SIGNAL_BENCHMARK_TICKER);
-    if (!needsBackfill(total, recent)) continue;
+    const latestYmd = await getLatestAlphaHistoryYmd(db, userId, h.ticker, SIGNAL_BENCHMARK_TICKER);
+    const need = needsBackfill(total, recent, latestYmd);
+    signalsDebug("reconcile holding", {
+      ticker: h.ticker,
+      holdingId: h.id,
+      alphaHistoryTotal: total,
+      alphaHistoryRecent40d: recent,
+      alphaHistoryLatestYmd: latestYmd,
+      wallClockStale: isAlphaHistoryWallClockStale(latestYmd),
+      staleAfterCalendarDays: STALE_ALPHA_CALENDAR_LAG_DAYS,
+      needsBackfill: need,
+    });
+    if (!need) continue;
 
     if (!vooBars) {
       vooBars = await fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, days, null);
+      signalsDebug("fetched VOO bars for reconcile", { count: vooBars.length, days });
     }
-    if (vooBars.length < 2) break;
+    if (vooBars.length < 2) {
+      signalsDebug("reconcile aborted: VOO history too short", { vooBarCount: vooBars.length });
+      break;
+    }
 
     const n = await backfillOneHolding(db, userId, h, vooBars, days);
     rowsBackfilled += n;
     if (n > 0) backfilledTickers.push(h.ticker);
+    signalsDebug("backfillOneHolding result", { ticker: h.ticker, rowsWritten: n });
   }
+
+  signalsDebug("reconcileAlphaHistoryForUser end", {
+    rowsBackfilled,
+    backfilledTickers,
+    linkedTickers: linkedTickers.length,
+  });
 
   return { linkedTickers, backfilledTickers, rowsBackfilled };
 }

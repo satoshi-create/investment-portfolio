@@ -68,7 +68,7 @@ export function LogsPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
           <div>
             <Link

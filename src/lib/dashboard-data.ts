@@ -1385,7 +1385,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
                  h.ticker, h.name, h.structure_tags, h.sector, h.provider_symbol, h.category, h.expectation_category
           FROM signals s
           JOIN holdings h ON h.id = s.holding_id
-          WHERE h.user_id = ? AND s.is_resolved = 0
+          WHERE h.user_id = ? AND h.quantity > 0 AND s.is_resolved = 0
           ORDER BY s.detected_at DESC
           LIMIT 50`,
     args: [userId],

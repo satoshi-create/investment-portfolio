@@ -897,7 +897,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-8">
         <header className="border-b border-slate-800 pb-8">
           <Link
             href="/"
