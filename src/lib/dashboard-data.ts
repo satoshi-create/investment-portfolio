@@ -703,9 +703,10 @@ async function enrichEcosystemMemberRow(
 
   /**
    * Last 列: エコシステム銘柄も保有と同様、ライブ quote を優先し、失敗時は直近日足終値へフォールバック。
+   * fast スケルトンでは外部 I/O を避け、DB/既存 Alpha 由来の lastClose のみ（大量ティッカーでタイムアウトしにくくする）。
    */
   let displayPrice: number | null = lastClose;
-  if (effectiveTicker.length > 0) {
+  if (effectiveTicker.length > 0 && !fast) {
     const ql = await fetchLiveQuoteSnapshot(effectiveTicker, null);
     if (ql != null && Number.isFinite(ql.price) && ql.price > 0) {
       displayPrice = ql.price;
@@ -899,7 +900,7 @@ async function fetchEnrichedThemeEcosystem(
      * Yahoo Finance 等の外部 I/O がボトルネックになりやすいので、適度な並列度で回す。
      * 一部失敗してもページ全体を止めない（Promise.allSettled 相当）。
      */
-    const CONCURRENCY = 6;
+    const CONCURRENCY = fast ? 10 : 8;
     const results: (ThemeEcosystemWatchItem | null)[] = new Array(rows.length).fill(null);
     let nextIdx = 0;
     let failed = 0;
@@ -1141,12 +1142,12 @@ export async function getThemeDetailData(
     }
   } else if (ecosystem.length > 0) {
     const ecoAlphaTargets = alphaWatchTargetsFromEcosystemMembers(ecosystem);
-    if (ecoAlphaTargets.length > 0) {
+    if (!fast && ecoAlphaTargets.length > 0) {
       const tBf = perf.enabled ? Date.now() : 0;
       try {
         const r = await reconcileAlphaHistoryForWatchlistTickers(db, userId, ecoAlphaTargets, {
-          delayMs: 150,
-          maxTickers: 24,
+          delayMs: 40,
+          maxTickers: 48,
         });
         if (perf.enabled && perf.requestId) {
           console.log(

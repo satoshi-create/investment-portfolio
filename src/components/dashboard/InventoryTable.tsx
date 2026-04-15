@@ -213,8 +213,8 @@ export function InventoryTable({
           </div>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs lg:text-sm">
+      <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
+        <table className="w-full min-w-[760px] text-left text-xs lg:text-sm">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
             <tr>
               <th
@@ -271,13 +271,13 @@ export function InventoryTable({
                 Position{sortMark("position")}
               </th>
               <th
-                className="px-4 py-4 text-right whitespace-nowrap sticky right-[5.75rem] z-10 bg-background border-l border-border/60"
+                className="px-4 py-4 text-right whitespace-nowrap bg-background md:sticky md:right-[5.75rem] md:z-10 md:border-l md:border-border/60"
                 title="現在値（Price）"
               >
                 Price
               </th>
               <th
-                className="px-4 py-4 text-right whitespace-nowrap sticky right-0 z-10 bg-background"
+                className="px-4 py-4 text-right whitespace-nowrap bg-background md:sticky md:right-0 md:z-10"
                 title="取引"
               >
                 Trade
@@ -447,7 +447,7 @@ export function InventoryTable({
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-right sticky right-[5.75rem] z-10 bg-background group-hover:bg-muted/60 border-l border-border/60">
+                  <td className="px-4 py-4 text-right bg-card md:sticky md:right-[5.75rem] md:z-10 md:bg-background group-hover:bg-muted/60 md:border-l md:border-border/60">
                     <div className="flex flex-col items-end gap-0.5 min-w-[5.75rem]">
                       <span className="font-mono text-foreground/90 font-bold tabular-nums">
                         {stock.currentPrice != null && stock.currentPrice > 0
@@ -467,7 +467,7 @@ export function InventoryTable({
                       ) : null}
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-right sticky right-0 z-10 bg-background group-hover:bg-muted/60 min-w-[5.75rem]">
+                  <td className="px-4 py-4 text-right bg-card md:sticky md:right-0 md:z-10 md:bg-background group-hover:bg-muted/60 min-w-[5.75rem]">
                     {onTrade ? (
                       <button
                         type="button"
@@ -521,8 +521,8 @@ export function InventoryTable({
                 Portfolio
               </td>
               <td className="px-6 py-3" />
-              <td className="px-4 py-3 sticky right-[5.75rem] z-10 bg-card/90 border-l border-border/60" />
-              <td className="px-4 py-3 sticky right-0 z-10 bg-card/90" />
+              <td className="px-4 py-3 bg-card/90 md:sticky md:right-[5.75rem] md:z-10 md:border-l md:border-border/60" />
+              <td className="px-4 py-3 bg-card/90 md:sticky md:right-0 md:z-10" />
             </tr>
           </tfoot>
         </table>

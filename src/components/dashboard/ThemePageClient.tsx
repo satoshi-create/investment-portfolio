@@ -361,7 +361,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         const resFast = await fetchWithTimeout(`${baseUrl}&fast=1`, {
           cache: "no-store",
           signal,
-        }, { timeoutMs: 8000 });
+        }, { timeoutMs: 20_000 });
         const jsonFast = (await resFast.json()) as ThemeDetailJson;
         if (!resFast.ok) {
           // Keep previous snapshot if any; don't blank the screen.
@@ -375,7 +375,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
 
         setHydratingFull(true);
         try {
-          const resFull = await fetchWithTimeout(baseUrl, { cache: "no-store", signal }, { timeoutMs: 8000 });
+          const resFull = await fetchWithTimeout(baseUrl, { cache: "no-store", signal }, { timeoutMs: 55_000 });
           const jsonFull = (await resFull.json()) as ThemeDetailJson;
           if (signal.aborted) return;
           if (!resFull.ok) {
@@ -419,10 +419,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
 
   const refetchThemeDetailQuiet = useCallback(
     async (signal: AbortSignal) => {
-      const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}`;
+      const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeQueryName)}`;
       setHydratingFull(true);
       try {
-        const resFull = await fetchWithTimeout(baseUrl, { cache: "no-store", signal }, { timeoutMs: 8000 });
+        const resFull = await fetchWithTimeout(baseUrl, { cache: "no-store", signal }, { timeoutMs: 55_000 });
         const jsonFull = (await resFull.json()) as ThemeDetailJson;
         if (signal.aborted) return;
         if (!resFull.ok) {
@@ -447,7 +447,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         if (!signal.aborted) setHydratingFull(false);
       }
     },
-    [themeLabel],
+    [themeQueryName],
   );
 
   useEffect(() => {
