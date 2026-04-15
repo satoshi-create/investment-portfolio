@@ -1,0 +1,247 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, CalendarDays, X } from "lucide-react";
+
+import { cn } from "@/src/lib/cn";
+import type { MarketEventRecord } from "@/src/types/market-events";
+
+function utcTodayYmd(): string {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Monday .. Sunday (UTC) containing `ymd`. */
+function isoWeekRangeUtcContaining(ymd: string): { start: string; end: string } {
+  const base = ymd.length >= 10 ? ymd.slice(0, 10) : utcTodayYmd();
+  const d = new Date(`${base}T12:00:00Z`);
+  const dow = d.getUTCDay();
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  d.setUTCDate(d.getUTCDate() + mondayOffset);
+  const start = formatUtcYmd(d);
+  d.setUTCDate(d.getUTCDate() + 6);
+  const end = formatUtcYmd(d);
+  return { start, end };
+}
+
+function formatUtcYmd(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function categoryBadgeClass(category: string): string {
+  const c = category.trim();
+  if (c === "Macro") return "border-sky-500/35 bg-sky-500/10 text-sky-300";
+  if (c === "Earnings") return "border-violet-500/35 bg-violet-500/10 text-violet-200";
+  if (c === "CentralBank") return "border-emerald-500/35 bg-emerald-500/10 text-emerald-200";
+  if (c === "Geopolitics") return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+  return "border-border bg-muted/40 text-muted-foreground";
+}
+
+function formatWeekLabel(start: string, end: string): string {
+  return `${start.replace(/-/g, "/")} 〜 ${end.replace(/-/g, "/")}（UTC 週）`;
+}
+
+export function EventCalendarModal({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [events, setEvents] = useState<MarketEventRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [fetchErr, setFetchErr] = useState<string | null>(null);
+
+  const today = useMemo(() => utcTodayYmd(), []);
+  const week = useMemo(() => isoWeekRangeUtcContaining(today), [today]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setFetchErr(null);
+    try {
+      const res = await fetch("/api/events", { cache: "no-store" });
+      const json = (await res.json()) as { events?: MarketEventRecord[]; error?: string };
+      if (!res.ok) {
+        setFetchErr(json.error ?? `HTTP ${res.status}`);
+        setEvents([]);
+        return;
+      }
+      setEvents(Array.isArray(json.events) ? json.events : []);
+    } catch (e) {
+      setFetchErr(e instanceof Error ? e.message : "読み込みに失敗しました");
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void load();
+  }, [open, load]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onOpenChange]);
+
+  const { thisWeek, other } = useMemo(() => {
+    const tw: MarketEventRecord[] = [];
+    const ot: MarketEventRecord[] = [];
+    for (const e of events) {
+      const d = e.event_date.slice(0, 10);
+      if (d >= week.start && d <= week.end) tw.push(e);
+      else ot.push(e);
+    }
+    const sortEv = (a: MarketEventRecord, b: MarketEventRecord) =>
+      a.event_date.localeCompare(b.event_date) || b.importance - a.importance;
+    tw.sort(sortEv);
+    ot.sort(sortEv);
+    return { thisWeek: tw, other: ot };
+  }, [events, week.start, week.end]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
+      role="presentation"
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
+        aria-label="カレンダーを閉じる"
+        onClick={() => onOpenChange(false)}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="koyomi-title"
+        className="relative z-10 flex max-h-[min(82dvh,40rem)] w-[min(100%,28rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl min-h-0 sm:max-w-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+          <div className="min-w-0 space-y-1">
+            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Patrol · 先読み</p>
+            <h2 id="koyomi-title" className="text-base font-bold tracking-tight text-foreground sm:text-lg">
+              市場の暦 (Koyomi) - 潮目の先読み
+            </h2>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              10分パトロールの最初に、今週のイベントでボラとフローを想像する。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation"
+            aria-label="閉じる"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4 [-webkit-overflow-scrolling:touch]">
+          {loading ? (
+            <p className="text-sm text-muted-foreground">読み込み中…</p>
+          ) : fetchErr ? (
+            <p className="text-sm text-destructive">{fetchErr}</p>
+          ) : events.length === 0 ? (
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              イベントがまだありません。管理者は{" "}
+              <span className="font-mono text-xs">migrations/023_market_events.sql</span> を適用してください。
+            </p>
+          ) : (
+            <div className="space-y-6">
+              <section aria-labelledby="koyomi-week-heading">
+                <div className="flex items-center gap-2 mb-2">
+                  <CalendarDays className="h-4 w-4 text-accent-cyan shrink-0" aria-hidden />
+                  <h3 id="koyomi-week-heading" className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    今週
+                  </h3>
+                </div>
+                <p className="text-[10px] font-mono text-muted-foreground mb-3">{formatWeekLabel(week.start, week.end)}</p>
+                {thisWeek.length === 0 ? (
+                  <p className="text-xs text-muted-foreground border border-dashed border-border rounded-lg px-3 py-2">
+                    今週の掲載イベントはありません（掲載範囲外の日付の可能性があります）。
+                  </p>
+                ) : (
+                  <ul className="space-y-2 border-l-2 border-accent-cyan/40 pl-3 ml-1">
+                    {thisWeek.map((e) => (
+                      <EventRow key={e.id} e={e} />
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section aria-labelledby="koyomi-ahead-heading">
+                <h3 id="koyomi-ahead-heading" className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  前後の潮目（同じ掲載ウィンドウ内）
+                </h3>
+                {other.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">今週以外の予定はありません。</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {other.map((e) => (
+                      <EventRow key={e.id} e={e} />
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventRow({ e }: { e: MarketEventRecord }) {
+  const hi = e.importance >= 3;
+  const d = e.event_date.slice(0, 10);
+  return (
+    <li
+      className={cn(
+        "rounded-lg border px-3 py-2.5 transition-colors",
+        hi ? "border-rose-500/40 bg-rose-500/5" : "border-border bg-card/50",
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2 gap-y-1">
+        <time dateTime={d} className={cn("font-mono text-[11px] tabular-nums shrink-0", hi ? "text-rose-200 font-bold" : "text-muted-foreground")}>
+          {d}
+        </time>
+        <span
+          className={cn(
+            "inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+            categoryBadgeClass(e.category),
+          )}
+        >
+          {e.category}
+        </span>
+        {hi ? (
+          <span className="inline-flex items-center gap-0.5 text-rose-400" title="高重要度">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="text-[9px] font-bold uppercase">High</span>
+          </span>
+        ) : e.importance === 2 ? (
+          <span className="text-[9px] font-semibold text-muted-foreground uppercase">Med</span>
+        ) : (
+          <span className="text-[9px] text-muted-foreground/80 uppercase">Low</span>
+        )}
+      </div>
+      <p className={cn("mt-1 text-sm leading-snug", hi ? "font-bold text-foreground" : "text-foreground/90")}>{e.title}</p>
+      {e.description ? (
+        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{e.description}</p>
+      ) : null}
+    </li>
+  );
+}

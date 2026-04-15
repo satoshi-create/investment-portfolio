@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { LineChart, Target, X } from "lucide-react";
 
+import { EventCalendarModal } from "@/src/components/dashboard/EventCalendarModal";
 import { MarketBar } from "@/src/components/dashboard/MarketBar";
 import { StatBox } from "@/src/components/dashboard/StatBox";
 import { ThemeToggle } from "@/src/components/dashboard/ThemeToggle";
@@ -38,6 +39,7 @@ export function DashboardHeader({
   marketIndicators,
 }: Props) {
   const [marketOpen, setMarketOpen] = useState(false);
+  const [koyomiOpen, setKoyomiOpen] = useState(false);
   const alphaFmt = formatAlphaPercent(totalAlpha);
   const daySpreadPct =
     portfolioAvgDayChangePct != null &&
@@ -108,17 +110,29 @@ export function DashboardHeader({
         <div className="flex flex-row flex-wrap justify-start gap-x-8 gap-y-4 md:justify-end items-end shrink-0 min-w-0 w-full md:w-auto">
           {/* スマホ: Market glance を Alpha の上（小さめ）。md+: ボタン左・Alpha 右 */}
           <div className="flex w-full min-w-0 flex-col gap-1.5 md:w-auto md:flex-row md:items-end md:gap-3">
-            <button
-              type="button"
-              onClick={() => setMarketOpen(true)}
-              className="order-1 w-fit shrink-0 self-start inline-flex items-center gap-1 rounded-md border border-border bg-card/60 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:mb-0.5 md:gap-1.5 md:self-end md:rounded-lg md:px-3 md:py-2 md:text-[10px]"
-              aria-haspopup="dialog"
-              aria-expanded={marketOpen}
-            >
-              <LineChart className="h-3 w-3 shrink-0 text-muted-foreground md:h-3.5 md:w-3.5" aria-hidden />
-              Market glance
-            </button>
-            <div className="order-2 min-w-0">
+            <div className="order-1 flex flex-wrap items-center gap-1.5 self-start md:self-end md:mb-0.5 md:gap-2">
+              <button
+                type="button"
+                onClick={() => setMarketOpen(true)}
+                className="w-fit shrink-0 inline-flex items-center gap-1 rounded-md border border-border bg-card/60 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:gap-1.5 md:rounded-lg md:px-3 md:py-2 md:text-[10px]"
+                aria-haspopup="dialog"
+                aria-expanded={marketOpen}
+              >
+                <LineChart className="h-3 w-3 shrink-0 text-muted-foreground md:h-3.5 md:w-3.5" aria-hidden />
+                Market glance
+              </button>
+              <button
+                type="button"
+                onClick={() => setKoyomiOpen(true)}
+                className="w-fit shrink-0 inline-flex items-center gap-1 rounded-md border border-border bg-card/60 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:gap-1.5 md:rounded-lg md:px-3 md:py-2 md:text-[10px]"
+                aria-haspopup="dialog"
+                aria-expanded={koyomiOpen}
+              >
+                <span aria-hidden>📅</span>
+                イベント（暦）
+              </button>
+            </div>
+            <div className="order-2 min-w-0 basis-full md:basis-auto">
               <StatBox
                 label="Portfolio avg Alpha"
                 value={alphaFmt.text}
@@ -195,6 +209,8 @@ export function DashboardHeader({
           </div>
         </div>
       ) : null}
+
+      <EventCalendarModal open={koyomiOpen} onOpenChange={setKoyomiOpen} />
     </header>
   );
 }
