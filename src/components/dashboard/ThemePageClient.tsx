@@ -42,6 +42,7 @@ import {
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
+import { StatBox } from "@/src/components/dashboard/StatBox";
 import {
   TradeEntryForm,
   type TradeEntryInitial,
@@ -234,6 +235,15 @@ function normalizeThemeDetailResponse(
       typeof rest.themeStructuralTrendStartDate === "string" &&
       rest.themeStructuralTrendStartDate.length > 0
         ? rest.themeStructuralTrendStartDate.slice(0, 10)
+        : null,
+    isNonLinearExplosion:
+      (rest as Record<string, unknown>).isNonLinearExplosion === true ||
+      (rest as Record<string, unknown>).is_non_linear_explosion === true,
+    timeCompressionSpeedX:
+      typeof (rest as Record<string, unknown>).timeCompressionSpeedX ===
+        "number" &&
+      Number.isFinite((rest as Record<string, unknown>).timeCompressionSpeedX)
+        ? ((rest as Record<string, unknown>).timeCompressionSpeedX as number)
         : null,
   } as ThemeDetailData;
 }
@@ -450,6 +460,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const theme = data?.theme ?? null;
   const ecosystem = data?.ecosystem ?? [];
   const themeStructuralTrendSeries = data?.themeStructuralTrendSeries ?? [];
+  const isNonLinearExplosion = data?.isNonLinearExplosion === true;
+  const timeCompressionSpeedX = data?.timeCompressionSpeedX ?? null;
   const themeStructuralTrendUp = useMemo(
     () => isThemeStructuralTrendPositiveUp(themeStructuralTrendSeries),
     [themeStructuralTrendSeries],
@@ -928,11 +940,28 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
           <>
             <ThemeMetaBlock theme={theme} themeName={themeLabel} />
 
+            {isNonLinearExplosion ? (
+              <section
+                aria-label="Phase shift alert"
+                className="rounded-2xl border border-fuchsia-500/25 bg-gradient-to-br from-fuchsia-500/10 via-slate-900/50 to-slate-950/70 p-5 md:p-6 shadow-[0_0_34px_rgba(217,70,239,0.10)]"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-fuchsia-300/95 mb-2">
+                  Structural anomaly · Phase Shift
+                </p>
+                <p className="text-lg font-bold text-slate-100 leading-snug">
+                  異常事態（構造的飛躍）: ノンリニア加速を検知
+                </p>
+                <p className="text-[11px] text-slate-400 mt-2 leading-relaxed max-w-3xl">
+                  興奮は歓迎。ただし規律は維持。対数ビューで「一直線の突破」を確認し、ポジションサイズとリスクを再点検してください。
+                </p>
+              </section>
+            ) : null}
+
             <section aria-labelledby="theme-performance-heading">
               <h2 id="theme-performance-heading" className="sr-only">
                 Performance summary
               </h2>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
                   <p className="text-[9px] font-bold uppercase text-slate-500 flex items-center gap-1">
                     <TrendingUp size={12} className="opacity-70" />
@@ -972,6 +1001,18 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                     {fmtPct(data.themeAverageAlpha)}
                   </p>
                 </div>
+                {isNonLinearExplosion && timeCompressionSpeedX != null ? (
+                  <div className="rounded-xl border border-fuchsia-500/25 bg-gradient-to-br from-fuchsia-500/10 via-slate-900/60 to-slate-950/70 px-4 py-4 shadow-[0_0_26px_rgba(217,70,239,0.12)]">
+                    <StatBox
+                      label="Time Compression"
+                      value={`${timeCompressionSpeedX.toFixed(1)}x Speed`}
+                      valueColor="text-fuchsia-200"
+                      subLabel={`通常の${Math.round(timeCompressionSpeedX)}年分を1年で走破中`}
+                    />
+                  </div>
+                ) : (
+                  <div className="hidden lg:block" aria-hidden />
+                )}
               </div>
             </section>
 
@@ -1034,6 +1075,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 totalPct={data.themeStructuralTrendTotalPct}
                 lookbackDays={THEME_STRUCTURAL_TREND_LOOKBACK_DAYS}
                 startDateLabel={data.themeStructuralTrendStartDate}
+                isNonLinearExplosion={isNonLinearExplosion}
               />
             ) : null}
 

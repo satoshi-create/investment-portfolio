@@ -37,6 +37,39 @@ function isOpportunityRow(s: Stock, themeStructuralTrendUp: boolean): boolean {
   return z != null && z <= -1.5;
 }
 
+type ExplosionStats = { z: number; mRecent: number; n: number } | null;
+
+function computeExplosionStats(alphaHistory: number[]): ExplosionStats {
+  const xs = alphaHistory.filter((x) => Number.isFinite(x));
+  const n = xs.length;
+  if (n < 12) return null;
+
+  // Variable windows so it still works for short histories.
+  const recent = Math.min(7, Math.max(5, Math.floor(n / 4)));
+  const prev = Math.min(30, n - recent);
+  if (prev < 10) return null;
+
+  const recentSlice = xs.slice(-recent);
+  const prevSlice = xs.slice(-(recent + prev), -recent);
+  if (recentSlice.length < 5 || prevSlice.length < 10) return null;
+
+  const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / Math.max(1, arr.length);
+  const mRecent = mean(recentSlice);
+  const mPrev = mean(prevSlice);
+
+  let varAcc = 0;
+  for (const x of prevSlice) {
+    const d = x - mPrev;
+    varAcc += d * d;
+  }
+  const stdPrev = prevSlice.length >= 2 ? Math.sqrt(varAcc / (prevSlice.length - 1)) : 0;
+  if (!Number.isFinite(stdPrev) || stdPrev < 0.02) return null;
+
+  const z = (mRecent - mPrev) / stdPrev;
+  if (!Number.isFinite(z)) return null;
+  return { z, mRecent, n };
+}
+
 export function InventoryTable({
   stocks,
   totalHoldings,
@@ -58,6 +91,28 @@ export function InventoryTable({
   const [showValueCols, setShowValueCols] = useState(false);
   const [structureFilter, setStructureFilter] = useState("");
   const [expectationFilter, setExpectationFilter] = useState<"" | "__unset__" | ExpectationCategory>("");
+
+  const explosionDriverIds = useMemo(() => {
+    const scored = stocks
+      .map((s) => {
+        const st = computeExplosionStats(s.alphaHistory);
+        return st ? { id: s.id, st } : null;
+      })
+      .filter((x): x is { id: string; st: NonNullable<ExplosionStats> } => x != null);
+
+    const primary = scored.filter((x) => x.st.z >= 1.0 && x.st.mRecent > 0);
+    if (primary.length > 0) return new Set(primary.map((x) => x.id));
+
+    // Fallback: if still none, guarantee at least 1 by selecting top-percent z among positive-mRecent.
+    const eligible = scored
+      .filter((x) => x.st.mRecent > 0)
+      .sort((a, b) => b.st.z - a.st.z);
+    if (eligible.length === 0) return new Set<string>();
+
+    const TOP_PCT = 0.15;
+    const k = Math.max(1, Math.ceil(eligible.length * TOP_PCT));
+    return new Set(eligible.slice(0, k).map((x) => x.id));
+  }, [stocks]);
 
   const filteredStocks = useMemo(() => {
     const q = structureFilter.trim().toLowerCase();
@@ -287,6 +342,7 @@ export function InventoryTable({
           <tbody className="divide-y divide-border/60">
             {sortedStocks.map((stock) => {
               const opp = isOpportunityRow(stock, themeStructuralTrendUp);
+              const boom = explosionDriverIds.has(stock.id);
               const z = deviationOf(stock);
               const dd = drawdownOf(stock);
               return (
@@ -295,7 +351,15 @@ export function InventoryTable({
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-start justify-between gap-2">
                         <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-1 min-w-0">
-                          {opp ? (
+                          {boom ? (
+                            <span
+                              className="shrink-0 text-base leading-none"
+                              title="Explosion（加速の牽引役）: 直近の Alpha 寄与が急増"
+                              aria-label="Explosion"
+                            >
+                              🔥
+                            </span>
+                          ) : opp ? (
                             <span
                               className="shrink-0 text-base leading-none"
                               title="テーマの構造トレンドは上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"

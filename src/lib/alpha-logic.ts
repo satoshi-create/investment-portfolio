@@ -285,3 +285,134 @@ export function isThemeStructuralTrendPositiveUp(
   const prev = series[idx]!.cumulative;
   return Number.isFinite(prev) && last > prev;
 }
+
+export type NonLinearExplosionDiagnostics = {
+  /** 1階差分（成長率）: cumulative[t] - cumulative[t-1] */
+  velocity: number[];
+  /** 2階差分（加速度）: velocity[t] - velocity[t-1] */
+  acceleration: number[];
+  /** 3階差分（躍度/Jerk）: acceleration[t] - acceleration[t-1] */
+  jerk: number[];
+  /** Phase Shift 判定 */
+  isNonLinearExplosion: boolean;
+  /** 判定理由（UI 表示用ではなく、デバッグ・ログ用の簡易タグ） */
+  reasons: ("accel_ratio" | "log_vertical")[];
+};
+
+function safeMean(xs: number[]): number | null {
+  const vals = xs.filter((x) => Number.isFinite(x));
+  if (vals.length === 0) return null;
+  const s = vals.reduce((a, b) => a + b, 0);
+  return s / vals.length;
+}
+
+function computeDiffSeries(values: number[]): { velocity: number[]; acceleration: number[]; jerk: number[] } {
+  const v: number[] = [];
+  for (let i = 1; i < values.length; i++) {
+    const a = values[i - 1]!;
+    const b = values[i]!;
+    v.push(Number.isFinite(a) && Number.isFinite(b) ? b - a : Number.NaN);
+  }
+  const acc: number[] = [];
+  for (let i = 1; i < v.length; i++) {
+    const a = v[i - 1]!;
+    const b = v[i]!;
+    acc.push(Number.isFinite(a) && Number.isFinite(b) ? b - a : Number.NaN);
+  }
+  const j: number[] = [];
+  for (let i = 1; i < acc.length; i++) {
+    const a = acc[i - 1]!;
+    const b = acc[i]!;
+    j.push(Number.isFinite(a) && Number.isFinite(b) ? b - a : Number.NaN);
+  }
+  return { velocity: v, acceleration: acc, jerk: j };
+}
+
+function linearRegressionR2(xs: number[], ys: number[]): { slope: number; r2: number } | null {
+  if (xs.length !== ys.length || xs.length < 3) return null;
+  const n = xs.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i]! - mx;
+    const dy = ys[i]! - my;
+    sxx += dx * dx;
+    sxy += dx * dy;
+    syy += dy * dy;
+  }
+  if (!(sxx > 0) || !(syy > 0)) return null;
+  const slope = sxy / sxx;
+  const r2 = (sxy * sxy) / (sxx * syy);
+  return { slope, r2 };
+}
+
+/**
+ * 累積 Alpha の「加速の加速」を検知し、相転移（Phase Shift）としてフラグ化する。
+ *
+ * 判定条件:
+ * - 直近7日間の加速度平均が、過去30日（直近7日を除く）の平均の2倍を超える
+ * - または、対数空間（正値へシフトした log）で「ほぼ直線」かつ急勾配（垂直立ち上がり）
+ */
+export function detectNonLinearExplosionFromCumulativeSeries(
+  series: { cumulative: number }[],
+): NonLinearExplosionDiagnostics {
+  const values = series
+    .map((p) => p.cumulative)
+    .filter((x) => x != null)
+    .map((x) => Number(x));
+
+  const { velocity, acceleration, jerk } = computeDiffSeries(values);
+
+  const reasons: ("accel_ratio" | "log_vertical")[] = [];
+
+  // Condition A: acceleration phase shift ratio
+  // acceleration[] length = values.length - 2
+  const accel = acceleration;
+  const last7 = accel.slice(-7);
+  const prev30 = accel.slice(-(7 + 30), -7);
+  const last7Mean = safeMean(last7);
+  const prev30Mean = safeMean(prev30);
+  const accelRatioOk =
+    last7Mean != null &&
+    prev30Mean != null &&
+    Number.isFinite(last7Mean) &&
+    Number.isFinite(prev30Mean) &&
+    // past mean can be tiny; require it to be meaningfully > 0 to avoid noise explosions
+    prev30Mean > 0.02 &&
+    last7Mean > prev30Mean * 2;
+  if (accelRatioOk) reasons.push("accel_ratio");
+
+  // Condition B: "vertical" in log space (shifted log; robust to scale)
+  // Use last 7 points of cumulative, require strong fit + steep slope + positive momentum.
+  const logVerticalOk = (() => {
+    if (values.length < 10) return false;
+    const window = values.slice(-7);
+    const winMin = Math.min(...window.filter((x) => Number.isFinite(x)));
+    const winMax = Math.max(...window.filter((x) => Number.isFinite(x)));
+    if (!Number.isFinite(winMin) || !Number.isFinite(winMax)) return false;
+    // Require meaningful lift in the raw space (avoid tiny wiggles)
+    if (winMax - winMin < 1.25) return false;
+    // Shift to positive for log; use global min of window for local sensitivity
+    const shift = -Math.min(...window, 0) + 1;
+    const ys = window.map((x) => Math.log(x + shift));
+    if (ys.some((y) => !Number.isFinite(y))) return false;
+    const xs = window.map((_, i) => i);
+    const reg = linearRegressionR2(xs, ys);
+    if (!reg) return false;
+    const avgVel = safeMean(velocity.slice(-7));
+    // slope threshold ~ 0.33/day => e^(0.33) ≈ 1.39x per day in shifted space
+    return reg.r2 >= 0.92 && reg.slope >= 0.33 && avgVel != null && avgVel > 0.35;
+  })();
+  if (logVerticalOk) reasons.push("log_vertical");
+
+  return {
+    velocity,
+    acceleration,
+    jerk,
+    isNonLinearExplosion: reasons.length > 0,
+    reasons,
+  };
+}

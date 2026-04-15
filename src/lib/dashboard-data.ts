@@ -19,6 +19,7 @@ import {
   computeAlphaDeviationZScore,
   computePriceDrawdownFromHighPercent,
   convertValueToJpy,
+  detectNonLinearExplosionFromCumulativeSeries,
   dailyReturnPercent,
   mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
@@ -530,6 +531,25 @@ function computeThemeAverageUnrealizedPnlPercent(stocks: Stock[]): number {
   if (withBasis.length === 0) return 0;
   const sum = withBasis.reduce((a, s) => a + s.unrealizedPnlPercent, 0);
   return roundAlphaMetric(sum / withBasis.length);
+}
+
+function computeTimeCompressionSpeedXFromCumulativeSeries(series: { cumulative: number }[]): number | null {
+  if (series.length < 9) return null;
+  const vals = series.map((p) => p.cumulative).filter((x) => Number.isFinite(x));
+  if (vals.length < 9) return null;
+  const diffs: number[] = [];
+  for (let i = vals.length - 7; i < vals.length; i++) {
+    if (i <= 0) continue;
+    const prev = vals[i - 1]!;
+    const cur = vals[i]!;
+    if (Number.isFinite(prev) && Number.isFinite(cur)) diffs.push(cur - prev);
+  }
+  if (diffs.length < 4) return null;
+  const avgDaily = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+  if (!Number.isFinite(avgDaily)) return null;
+  const annualizedPct = avgDaily * 252;
+  const speed = annualizedPct / 7;
+  return Number.isFinite(speed) && speed > 0 ? Math.round(speed * 10) / 10 : null;
 }
 
 /**
@@ -1219,6 +1239,9 @@ export async function getThemeDetailData(
     themeStructuralTrendStartDate = ymdDaysAgoUtc(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS);
   }
 
+  const explosion = detectNonLinearExplosionFromCumulativeSeries(themeStructuralTrendSeries);
+  const timeCompressionSpeedX = computeTimeCompressionSpeedXFromCumulativeSeries(themeStructuralTrendSeries);
+
   return {
     themeName,
     theme,
@@ -1234,6 +1257,8 @@ export async function getThemeDetailData(
     themeStructuralTrendSeries,
     themeStructuralTrendTotalPct,
     themeStructuralTrendStartDate,
+    isNonLinearExplosion: explosion.isNonLinearExplosion,
+    timeCompressionSpeedX,
   };
 }
 

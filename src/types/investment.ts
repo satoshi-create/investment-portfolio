@@ -284,6 +284,13 @@ export type ThemeDetailData = {
   themeStructuralTrendTotalPct: number | null;
   /** 上記系列の累積起点日（YYYY-MM-DD） */
   themeStructuralTrendStartDate: string | null;
+  /** 相転移（ノンリニア爆発）検知フラグ */
+  isNonLinearExplosion: boolean;
+  /**
+   * Time Compression 指標（x）。概算:
+   * - 直近7観測の平均「日次増分」を年率換算（×252）し、市場標準利回り 7% で割る
+   */
+  timeCompressionSpeedX: number | null;
 };
 
 /** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */
