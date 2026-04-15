@@ -5,6 +5,9 @@ const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      gridTemplateColumns: {
+        "18": "repeat(18, minmax(0, 1fr))",
+      },
       colors: {
         background: "var(--color-background)",
         foreground: "var(--color-foreground)",

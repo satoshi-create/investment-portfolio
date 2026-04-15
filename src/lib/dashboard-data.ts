@@ -4,6 +4,7 @@ import type {
   CoreSatelliteBreakdown,
   CumulativeAlphaPoint,
   DashboardData,
+  ElementInfo,
   HoldingCategory,
   InvestmentThemeRecord,
   Signal,
@@ -1437,4 +1438,284 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       expectationCategory: parseExpectationCategory(row.expectation_category),
     };
   });
+}
+
+/**
+ * Periodic Table Market Dashboard (Critical Metals)
+ *
+ * Notes:
+ * - Uses Supabase if configured (SUPABASE_URL + SUPABASE_ANON_KEY).
+ * - Must NOT throw to avoid impacting other pages.
+ * - Table schema may differ by environment; we try a few likely table names.
+ */
+export type PeriodicTableCellData = {
+  element: ElementInfo;
+  ticker: string | null;
+  price: number | null;
+  changePct: number | null;
+  asOf: string | null;
+  /** Where price/change came from. */
+  priceSource: "live" | "chart" | "db" | "none";
+  /** Present only when live fetch failed and we fell back. */
+  fetchError?: string;
+};
+
+export type PeriodicTableAlphaPoint = {
+  /** YYYY-MM-DD */
+  date: string;
+  /** daily alpha vs VOO (% points) */
+  alpha: number;
+};
+
+type PeriodicTableWatchRow = {
+  symbol: unknown;
+  atomic_number: unknown;
+  x: unknown;
+  y: unknown;
+  ticker: unknown;
+  name_ja?: unknown;
+  uses_json?: unknown;
+};
+
+const ELEMENTS_MAP: ElementInfo[] = [
+  // Row 2
+  { symbol: "Li", number: 3, x: 1, y: 2, ticker: "LIT" }, // Lithium ETF proxy
+  // Row 3
+  { symbol: "Mg", number: 12, x: 2, y: 3, ticker: "MAGN" }, // placeholder / if exists in your universe
+  { symbol: "Al", number: 13, x: 13, y: 3, ticker: "AA" },
+  // Row 4 (transition metals cluster)
+  { symbol: "Ti", number: 22, x: 4, y: 4, ticker: "TITN" },
+  { symbol: "V", number: 23, x: 5, y: 4, ticker: "VANL" }, // placeholder
+  { symbol: "Cr", number: 24, x: 6, y: 4, ticker: "CRH" }, // proxy
+  { symbol: "Mn", number: 25, x: 7, y: 4, ticker: "VALE" }, // manganese proxy (iron ore miner)
+  { symbol: "Fe", number: 26, x: 8, y: 4, ticker: "BHP" }, // iron proxy (miner)
+  { symbol: "Co", number: 27, x: 9, y: 4, ticker: "GLNCY" }, // cobalt proxy (trader)
+  { symbol: "Ni", number: 28, x: 10, y: 4, ticker: "NICK" }, // placeholder
+  { symbol: "Cu", number: 29, x: 11, y: 4, ticker: "FCX" },
+  { symbol: "Zn", number: 30, x: 12, y: 4, ticker: "TECK" }, // zinc proxy
+  // Row 5
+  { symbol: "Ag", number: 47, x: 11, y: 5, ticker: "SLV" },
+  { symbol: "Sn", number: 50, x: 14, y: 5, ticker: "TIN" }, // placeholder
+  // Row 6 (precious / critical)
+  { symbol: "W", number: 74, x: 6, y: 6, ticker: "SAND" }, // tungsten proxy (placeholder)
+  { symbol: "Pt", number: 78, x: 10, y: 6, ticker: "PPLT" },
+  { symbol: "Au", number: 79, x: 11, y: 6, ticker: "GLD" },
+  { symbol: "Hg", number: 80, x: 12, y: 6, ticker: "AEM" }, // placeholder
+  // Row 7
+  { symbol: "U", number: 92, x: 4, y: 7, ticker: "URA" }, // uranium ETF proxy
+];
+
+function numOrNull(v: unknown): number | null {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isoFromYmd(ymd: string | null): string | null {
+  if (!ymd) return null;
+  const s = ymd.trim();
+  if (s.length < 10) return null;
+  const d = s.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  return `${d}T00:00:00.000Z`;
+}
+
+async function fetchPeriodicTableWatchlist(db: Client): Promise<ElementInfo[]> {
+  const rs = await db.execute({
+    sql: `SELECT symbol, atomic_number, x, y, ticker, name_ja, uses_json FROM periodic_table_watchlist ORDER BY y ASC, x ASC`,
+    args: [],
+  });
+  const rows = rs.rows as unknown as PeriodicTableWatchRow[];
+  const out: ElementInfo[] = [];
+  for (const r of rows) {
+    const symbol = String(r.symbol ?? "").trim();
+    const number = Math.trunc(Number(r.atomic_number));
+    const x = Math.trunc(Number(r.x));
+    const y = Math.trunc(Number(r.y));
+    const tickerRaw = r.ticker != null ? String(r.ticker).trim() : "";
+    const nameJaRaw = r.name_ja != null ? String(r.name_ja).trim() : "";
+    const uses = (() => {
+      const raw = r.uses_json;
+      if (raw == null) return [];
+      const s = String(raw).trim();
+      if (!s) return [];
+      try {
+        const v = JSON.parse(s) as unknown;
+        if (!Array.isArray(v)) return [];
+        return v
+          .map((x) => String(x).trim())
+          .filter((x) => x.length > 0)
+          .slice(0, 12);
+      } catch {
+        return [];
+      }
+    })();
+    if (!symbol || !Number.isFinite(number) || number <= 0) continue;
+    if (!Number.isFinite(x) || x < 1 || x > 18) continue;
+    if (!Number.isFinite(y) || y < 1 || y > 7) continue;
+    out.push({
+      symbol,
+      number,
+      x,
+      y,
+      ticker: tickerRaw.length > 0 ? tickerRaw : undefined,
+      nameJa: nameJaRaw.length > 0 ? nameJaRaw : undefined,
+      uses: uses.length > 0 ? uses : undefined,
+    });
+  }
+  return out;
+}
+
+async function fetchLatestTwoClosesByTicker(db: Client, userId: string, tickers: string[]): Promise<Map<string, { latest: number | null; prev: number | null; asOfYmd: string | null }>> {
+  const out = new Map<string, { latest: number | null; prev: number | null; asOfYmd: string | null }>();
+  if (tickers.length === 0) return out;
+  const placeholders = tickers.map(() => "?").join(",");
+  const rs = await db.execute({
+    sql: `WITH ranked AS (
+            SELECT
+              UPPER(ticker) AS tk,
+              recorded_at AS ra,
+              close_price AS cp,
+              ROW_NUMBER() OVER (PARTITION BY UPPER(ticker) ORDER BY recorded_at DESC) AS rn
+            FROM alpha_history
+            WHERE user_id = ?
+              AND benchmark_ticker = ?
+              AND UPPER(ticker) IN (${placeholders})
+          )
+          SELECT
+            tk,
+            MAX(CASE WHEN rn = 1 THEN cp END) AS latest_close,
+            MAX(CASE WHEN rn = 2 THEN cp END) AS prev_close,
+            MAX(CASE WHEN rn = 1 THEN ra END) AS as_of
+          FROM ranked
+          WHERE rn <= 2
+          GROUP BY tk`,
+    args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers.map((t) => t.toUpperCase())],
+  });
+  for (const row of rs.rows as unknown as Record<string, unknown>[]) {
+    const tk = String(row["tk"] ?? "").trim().toUpperCase();
+    if (!tk) continue;
+    out.set(tk, {
+      latest: numOrNull(row["latest_close"]),
+      prev: numOrNull(row["prev_close"]),
+      asOfYmd: row["as_of"] != null ? String(row["as_of"]).slice(0, 10) : null,
+    });
+  }
+  return out;
+}
+
+async function fetchLiveQuotesByTicker(
+  tickers: string[],
+  options?: { concurrency?: number; batchDelayMs?: number },
+): Promise<Map<string, { price: number; changePct: number | null; asOf: string; source: "live" | "chart" }>> {
+  const uniq = [...new Set(tickers.map((t) => t.trim().toUpperCase()).filter(Boolean))];
+  const concurrency = Math.max(1, options?.concurrency ?? 4);
+  const batchDelayMs = Math.max(0, options?.batchDelayMs ?? 125);
+
+  const out = new Map<string, { price: number; changePct: number | null; asOf: string; source: "live" | "chart" }>();
+  for (let i = 0; i < uniq.length; i += concurrency) {
+    const slice = uniq.slice(i, i + concurrency);
+    const settled = await Promise.allSettled(
+      slice.map(async (tk) => {
+        const live = await fetchLiveQuoteSnapshot(tk, null);
+        if (live != null && Number.isFinite(live.price) && live.price > 0) {
+          return { tk, live: { ...live, source: "live" as const } };
+        }
+        // Fallback to daily close + changePct from chart (still external, but cheaper than full history).
+        const snap = await fetchLatestPriceWithChangePct(tk, null);
+        if (snap != null && Number.isFinite(snap.close) && snap.close > 0) {
+          return {
+            tk,
+            live: {
+              price: snap.close,
+              changePct: snap.changePct,
+              asOf: snap.date.length >= 10 ? `${snap.date.slice(0, 10)}T00:00:00.000Z` : new Date().toISOString(),
+              source: "chart" as const,
+            },
+          };
+        }
+        return null;
+      }),
+    );
+    for (const r of settled) {
+      if (r.status !== "fulfilled") continue;
+      const v = r.value;
+      if (!v) continue;
+      out.set(v.tk, {
+        price: v.live.price,
+        changePct: v.live.changePct,
+        asOf: v.live.asOf,
+        source: v.live.source,
+      });
+    }
+    if (i + concurrency < uniq.length && batchDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, batchDelayMs));
+    }
+  }
+  return out;
+}
+
+export async function getPeriodicTableData(
+  db: Client,
+  userId: string,
+  options?: { live?: boolean },
+): Promise<{ cells: PeriodicTableCellData[]; error?: string }> {
+  try {
+    let elements: ElementInfo[] = [];
+    try {
+      elements = await fetchPeriodicTableWatchlist(db);
+    } catch {
+      elements = [];
+    }
+    if (elements.length === 0) elements = ELEMENTS_MAP;
+
+    const base: PeriodicTableCellData[] = elements.map((e) => ({
+      element: e,
+      ticker: e.ticker ?? null,
+      price: null,
+      changePct: null,
+      asOf: null,
+      priceSource: "none",
+    }));
+
+    const tickers = [...new Set(elements.map((e) => (e.ticker ?? "").trim()).filter(Boolean))].map((t) => t.toUpperCase());
+    if (tickers.length === 0) return { cells: base };
+
+    const closes = await fetchLatestTwoClosesByTicker(db, userId, tickers);
+    const liveByTicker =
+      options?.live === true ? await fetchLiveQuotesByTicker(tickers, { concurrency: 4, batchDelayMs: 125 }) : new Map();
+    const merged = base.map((c) => {
+      const tk = (c.ticker ?? "").trim().toUpperCase();
+      const q = tk ? closes.get(tk) ?? null : null;
+      const latest = q?.latest ?? null;
+      const prev = q?.prev ?? null;
+      const changePct =
+        latest != null && prev != null && Number.isFinite(latest) && Number.isFinite(prev) && prev > 0
+          ? Math.round((((latest - prev) / prev) * 100) * 100) / 100
+          : null;
+      const live = tk ? liveByTicker.get(tk) ?? null : null;
+      const dbOk = latest != null && Number.isFinite(latest) && latest > 0;
+      const hasLive = live != null && Number.isFinite(live.price) && live.price > 0;
+      return {
+        ...c,
+        price: hasLive ? live!.price : dbOk ? latest : null,
+        changePct: hasLive ? (live!.changePct ?? null) : changePct,
+        asOf: hasLive ? live!.asOf : isoFromYmd(q?.asOfYmd ?? null),
+        priceSource: hasLive ? live!.source : dbOk ? "db" : "none",
+        fetchError: options?.live === true && !hasLive ? "LIVE_FETCH_FAILED_FALLBACK_TO_DB" : undefined,
+      };
+    });
+
+    return { cells: merged };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const fallback = ELEMENTS_MAP.map((e2) => ({
+      element: e2,
+      ticker: e2.ticker ?? null,
+      price: null,
+      changePct: null,
+      asOf: null,
+      priceSource: "none" as const,
+    }));
+    return { cells: fallback, error: msg };
+  }
 }

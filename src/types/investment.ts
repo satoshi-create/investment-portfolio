@@ -3,6 +3,24 @@ export type AlphaHistory = number[];
 /** Interpretation of `holdings.ticker` for Alpha inputs (see `src/lib/alpha-logic.ts`). */
 export type TickerInstrumentKind = "JP_INVESTMENT_TRUST" | "US_EQUITY";
 
+/**
+ * Periodic table placement metadata.
+ * - x: column (1..18)
+ * - y: row (1..7)
+ */
+export type ElementInfo = {
+  symbol: string;
+  /** 元素名（日本語表示向け）。例: リチウム */
+  nameJa?: string;
+  number: number;
+  x: number;
+  y: number;
+  /** Linked market ticker for the element (optional). */
+  ticker?: string;
+  /** 産業用途（表示用の短いタグ）。 */
+  uses?: string[];
+};
+
 /** DB `holdings` row subset for sync / signals context. */
 export interface Holding {
   id: string;
