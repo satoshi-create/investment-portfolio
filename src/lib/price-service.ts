@@ -284,19 +284,24 @@ export async function fetchEquityResearchSnapshots(
 async function fetchChartCloses(yahooSymbol: string, calendarDays: number): Promise<PriceBar[]> {
   const days = Math.max(1, Math.floor(Number.isFinite(calendarDays) ? calendarDays : 1));
   const { period1, period2 } = periodRangeForCalendarDays(days);
-  const result = await yahooFinance.chart(yahooSymbol, {
-    period1,
-    period2,
-    interval: "1d",
-  });
+  const result = (await yahooFinance.chart(
+    yahooSymbol,
+    {
+      period1,
+      period2,
+      interval: "1d",
+    },
+    { validateResult: false },
+  )) as { quotes?: { close?: unknown; date?: unknown }[] };
 
   const quotes = result.quotes ?? [];
   const bars: PriceBar[] = [];
   for (const q of quotes) {
-    if (q.close == null || !Number.isFinite(q.close) || q.close <= 0) continue;
-    const ymd = chartBarDateYmd(q);
+    const close = Number((q as { close?: unknown }).close);
+    if (!Number.isFinite(close) || close <= 0) continue;
+    const ymd = chartBarDateYmd(q as { date: unknown });
     if (ymd == null) continue;
-    bars.push({ date: ymd, close: q.close });
+    bars.push({ date: ymd, close });
   }
   bars.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return bars;

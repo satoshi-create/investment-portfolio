@@ -74,10 +74,41 @@ export type DatedAlphaRow = {
   alphaValue: number;
 };
 
-function toYmd(recordedAt: string): string {
+/** `recorded_at` / ISO 文字列から YYYY-MM-DD を取り出す（短い文字列はそのまま返す）。 */
+export function toYmd(recordedAt: string): string {
   const t = recordedAt.trim();
   return t.length >= 10 ? t.slice(0, 10) : t;
 }
+
+/** UTC 暦日の YYYY-MM-DD（サーバー基準の「今日」）。 */
+export function utcTodayYmd(): string {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** 暦日 `ymd` から `deltaDays` 日だけずらした YYYY-MM-DD（UTC 正午基準）。 */
+export function ymdAddDays(ymd: string, deltaDays: number): string {
+  const base = ymd.trim().slice(0, 10);
+  if (base.length !== 10) return base;
+  const t = new Date(`${base}T12:00:00Z`).getTime();
+  if (!Number.isFinite(t)) return base;
+  const d = new Date(t + deltaDays * 86_400_000);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** テーマ構造トレンド等で用いる、直近 N 暦日の起点日（今日から N 日前、UTC）。 */
+export function ymdDaysAgoUtc(days: number): string {
+  return ymdAddDays(utcTodayYmd(), -Math.max(0, Math.floor(days)));
+}
+
+/** テーマ全体の加重累積 Alpha を「直近何日」で切るか（テーマ詳細の年輪トレンド用）。 */
+export const THEME_STRUCTURAL_TREND_LOOKBACK_DAYS = 90;
 
 /**
  * テーマ設定日（または任意の起点）に最も近い観測日をアンカーとし、そこを累積 0 として
@@ -236,4 +267,21 @@ export function isCumulativeSeriesTrendUpward(
   const idx = Math.max(0, series.length - 1 - lb);
   const prev = series[idx]!.cumulative;
   return Number.isFinite(last) && Number.isFinite(prev) && last > prev;
+}
+
+/**
+ * テーマ詳細の ✨（割安採掘）条件用: 直近の加重累積 Alpha がプラス帯にあり、かつ右肩上がき。
+ * （単なる上向きだけではなく、構造がベンチを上回る「年輪」を刻んでいることを要求）
+ */
+export function isThemeStructuralTrendPositiveUp(
+  series: { cumulative: number }[],
+  lookbackPoints = 8,
+): boolean {
+  if (series.length < 2) return false;
+  const last = series[series.length - 1]!.cumulative;
+  if (!Number.isFinite(last) || last <= 0) return false;
+  const lb = Math.max(1, Math.floor(lookbackPoints));
+  const idx = Math.max(0, series.length - 1 - lb);
+  const prev = series[idx]!.cumulative;
+  return Number.isFinite(prev) && last > prev;
 }

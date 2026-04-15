@@ -2,7 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Crosshair, FileSpreadsheet, Layers, Search, TrendingUp, UserPlus } from "lucide-react";
+import {
+  Crosshair,
+  FileSpreadsheet,
+  Layers,
+  Search,
+  TrendingUp,
+  UserPlus,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import type {
@@ -18,21 +25,34 @@ import {
   parseAdoptionStage,
   summarizeThemeAdoptionMaturity,
 } from "@/src/lib/adoption-stage";
-import { isCumulativeSeriesTrendUpward } from "@/src/lib/alpha-logic";
+import {
+  isThemeStructuralTrendPositiveUp,
+  THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
+} from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { cn } from "@/src/lib/cn";
 import {
   THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS,
   themeEcosystemWatchlistToCsvRows,
 } from "@/src/lib/csv-dashboard-presets";
-import { exportToCSV, themeEcosystemWatchlistCsvFileName } from "@/src/lib/csv-export";
+import {
+  exportToCSV,
+  themeEcosystemWatchlistCsvFileName,
+} from "@/src/lib/csv-export";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
+import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
-import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
+import {
+  TradeEntryForm,
+  type TradeEntryInitial,
+} from "@/src/components/dashboard/TradeEntryForm";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
-import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
+import {
+  stickyTdFirst,
+  stickyThFirst,
+} from "@/src/components/dashboard/table-sticky";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
@@ -60,10 +80,18 @@ function fmtZsigma(v: number | null): string {
   return `${v > 0 ? "+" : ""}${v.toFixed(2)}σ`;
 }
 
-function mapThemeLabelForQuery(raw: string): { query: string; display: string; slug: string } {
+function mapThemeLabelForQuery(raw: string): {
+  query: string;
+  display: string;
+  slug: string;
+} {
   const s = raw.trim();
   if (s === "defensive-stocks") {
-    return { query: "ディフェンシブ銘柄", display: "ディフェンシブ銘柄", slug: "defensive-stocks" };
+    return {
+      query: "ディフェンシブ銘柄",
+      display: "ディフェンシブ銘柄",
+      slug: "defensive-stocks",
+    };
   }
   return { query: s, display: s, slug: s };
 }
@@ -73,37 +101,60 @@ function fmtDdCol(v: number | null): string {
   return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
 }
 
-function ecoOpportunityRow(e: ThemeEcosystemWatchItem, themeUp: boolean): boolean {
+function ecoOpportunityRow(
+  e: ThemeEcosystemWatchItem,
+  themeUp: boolean,
+): boolean {
   if (!themeUp) return false;
   const z = e.alphaDeviationZ;
   return z != null && Number.isFinite(z) && z <= -1.5;
 }
 
-function ecosystemMatchesSearchQuery(e: ThemeEcosystemWatchItem, raw: string): boolean {
+function ecosystemMatchesSearchQuery(
+  e: ThemeEcosystemWatchItem,
+  raw: string,
+): boolean {
   const n = raw.trim().toLowerCase();
   if (n.length === 0) return true;
   const hay = [e.companyName, e.ticker, e.role, e.observationNotes ?? ""];
   return hay.some((s) => s.toLowerCase().includes(n));
 }
 
-function ThemeMetaBlock({ theme, themeName }: { theme: InvestmentThemeRecord | null; themeName: string }) {
+function ThemeMetaBlock({
+  theme,
+  themeName,
+}: {
+  theme: InvestmentThemeRecord | null;
+  themeName: string;
+}) {
   return (
     <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/40 p-5 md:p-6">
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-1">Investment thesis</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-1">
+          Investment thesis
+        </p>
         {theme?.description ? (
-          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{theme.description}</p>
+          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+            {theme.description}
+          </p>
         ) : (
           <p className="text-sm text-slate-500">
-            テーマ「{themeName}」の解説は未登録です。<span className="font-mono text-slate-600">investment_themes</span>{" "}
-            に Notion から移行した <span className="font-mono">description</span> を投入すると表示されます。
+            テーマ「{themeName}」の解説は未登録です。
+            <span className="font-mono text-slate-600">investment_themes</span>{" "}
+            に Notion から移行した{" "}
+            <span className="font-mono">description</span>{" "}
+            を投入すると表示されます。
           </p>
         )}
       </div>
       {theme?.goal ? (
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-1">Goal & milestones</p>
-          <p className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">{theme.goal}</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-1">
+            Goal & milestones
+          </p>
+          <p className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
+            {theme.goal}
+          </p>
         </div>
       ) : null}
     </div>
@@ -112,47 +163,77 @@ function ThemeMetaBlock({ theme, themeName }: { theme: InvestmentThemeRecord | n
 
 type ThemeDetailJson = ThemeDetailData & { userId?: string; error?: string };
 
-function normalizeThemeDetailResponse(rest: Omit<ThemeDetailJson, "userId" | "error">): ThemeDetailData {
+function normalizeThemeDetailResponse(
+  rest: Omit<ThemeDetailJson, "userId" | "error">,
+): ThemeDetailData {
   return {
     ...rest,
     ecosystem: Array.isArray(rest.ecosystem)
       ? rest.ecosystem.map((item) => ({
           ...item,
           observationStartedAt:
-            typeof item.observationStartedAt === "string" && item.observationStartedAt.length >= 10
+            typeof item.observationStartedAt === "string" &&
+            item.observationStartedAt.length >= 10
               ? item.observationStartedAt.slice(0, 10)
               : null,
           alphaObservationStartDate:
-            typeof item.alphaObservationStartDate === "string" && item.alphaObservationStartDate.length >= 10
+            typeof item.alphaObservationStartDate === "string" &&
+            item.alphaObservationStartDate.length >= 10
               ? item.alphaObservationStartDate.slice(0, 10)
               : null,
           alphaDeviationZ:
-            typeof item.alphaDeviationZ === "number" && Number.isFinite(item.alphaDeviationZ)
+            typeof item.alphaDeviationZ === "number" &&
+            Number.isFinite(item.alphaDeviationZ)
               ? item.alphaDeviationZ
               : null,
           drawdownFromHigh90dPct:
-            typeof item.drawdownFromHigh90dPct === "number" && Number.isFinite(item.drawdownFromHigh90dPct)
+            typeof item.drawdownFromHigh90dPct === "number" &&
+            Number.isFinite(item.drawdownFromHigh90dPct)
               ? item.drawdownFromHigh90dPct
               : null,
           adoptionStage: parseAdoptionStage(
-            (item as Record<string, unknown>).adoptionStage ?? (item as Record<string, unknown>).adoption_stage,
+            (item as Record<string, unknown>).adoptionStage ??
+              (item as Record<string, unknown>).adoption_stage,
           ),
           adoptionStageRationale: (() => {
             const a = (item as Record<string, unknown>).adoptionStageRationale;
-            const b = (item as Record<string, unknown>).adoption_stage_rationale;
-            const s = typeof a === "string" && a.trim().length > 0 ? a.trim() : typeof b === "string" ? b.trim() : "";
+            const b = (item as Record<string, unknown>)
+              .adoption_stage_rationale;
+            const s =
+              typeof a === "string" && a.trim().length > 0
+                ? a.trim()
+                : typeof b === "string"
+                  ? b.trim()
+                  : "";
             return s.length > 0 ? s : null;
           })(),
         }))
       : [],
-    cumulativeAlphaSeries: Array.isArray(rest.cumulativeAlphaSeries) ? rest.cumulativeAlphaSeries : [],
+    cumulativeAlphaSeries: Array.isArray(rest.cumulativeAlphaSeries)
+      ? rest.cumulativeAlphaSeries
+      : [],
     structuralAlphaTotalPct:
-      typeof rest.structuralAlphaTotalPct === "number" && Number.isFinite(rest.structuralAlphaTotalPct)
+      typeof rest.structuralAlphaTotalPct === "number" &&
+      Number.isFinite(rest.structuralAlphaTotalPct)
         ? rest.structuralAlphaTotalPct
         : null,
     cumulativeAlphaAnchorDate:
-      typeof rest.cumulativeAlphaAnchorDate === "string" && rest.cumulativeAlphaAnchorDate.length > 0
+      typeof rest.cumulativeAlphaAnchorDate === "string" &&
+      rest.cumulativeAlphaAnchorDate.length > 0
         ? rest.cumulativeAlphaAnchorDate
+        : null,
+    themeStructuralTrendSeries: Array.isArray(rest.themeStructuralTrendSeries)
+      ? rest.themeStructuralTrendSeries
+      : [],
+    themeStructuralTrendTotalPct:
+      typeof rest.themeStructuralTrendTotalPct === "number" &&
+      Number.isFinite(rest.themeStructuralTrendTotalPct)
+        ? rest.themeStructuralTrendTotalPct
+        : null,
+    themeStructuralTrendStartDate:
+      typeof rest.themeStructuralTrendStartDate === "string" &&
+      rest.themeStructuralTrendStartDate.length > 0
+        ? rest.themeStructuralTrendStartDate.slice(0, 10)
         : null,
   } as ThemeDetailData;
 }
@@ -161,7 +242,11 @@ function fieldLabelOf(e: ThemeEcosystemWatchItem): string {
   return e.field.trim() || "その他";
 }
 
-function ChasmMeterVisual({ stage }: { stage: ThemeEcosystemWatchItem["adoptionStage"] }) {
+function ChasmMeterVisual({
+  stage,
+}: {
+  stage: ThemeEcosystemWatchItem["adoptionStage"];
+}) {
   const r = adoptionStageRank(stage);
   const active = r ?? 0;
   return (
@@ -170,7 +255,9 @@ function ChasmMeterVisual({ stage }: { stage: ThemeEcosystemWatchItem["adoptionS
         <div
           key={step}
           className={`h-2 w-2.5 rounded-sm ${
-            step <= active ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.45)]" : "bg-slate-800"
+            step <= active
+              ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.45)]"
+              : "bg-slate-800"
           }`}
         />
       ))}
@@ -181,7 +268,11 @@ function ChasmMeterVisual({ stage }: { stage: ThemeEcosystemWatchItem["adoptionS
 function EcosystemAdoptionCell({ e }: { e: ThemeEcosystemWatchItem }) {
   const st = e.adoptionStage;
   const meta = st ? ADOPTION_STAGE_META[st] : null;
-  const tip = adoptionStageTooltip(st, e.adoptionStageRationale, e.observationNotes);
+  const tip = adoptionStageTooltip(
+    st,
+    e.adoptionStageRationale,
+    e.observationNotes,
+  );
   if (!st || !meta) {
     return (
       <span className="text-xs text-slate-600" title={tip}>
@@ -190,17 +281,24 @@ function EcosystemAdoptionCell({ e }: { e: ThemeEcosystemWatchItem }) {
     );
   }
   return (
-    <div className="flex flex-col gap-1.5 max-w-[7.5rem] cursor-help" title={tip}>
+    <div
+      className="flex flex-col gap-1.5 max-w-[7.5rem] cursor-help"
+      title={tip}
+    >
       <span className="text-xl leading-none" aria-hidden>
         {meta.icon}
       </span>
       <ChasmMeterVisual stage={st} />
-      <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400 leading-tight">{meta.labelJa}</span>
+      <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400 leading-tight">
+        {meta.labelJa}
+      </span>
     </div>
   );
 }
 
-function extractGeopoliticalPotential(observationNotes: string | null | undefined): string | null {
+function extractGeopoliticalPotential(
+  observationNotes: string | null | undefined,
+): string | null {
   if (observationNotes == null) return null;
   const s = observationNotes.trim();
   if (s.length === 0) return null;
@@ -222,7 +320,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   /** fast=1 後、フル API で Alpha/Research 等を埋めている間 */
   const [hydratingFull, setHydratingFull] = useState(false);
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
-  const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(null);
+  const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(
+    null,
+  );
   const [ecoSortKey, setEcoSortKey] = useState<
     "asset" | "research" | "alpha" | "trend" | "last" | "deviation" | "drawdown"
   >("alpha");
@@ -233,7 +333,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [postChasmOnly, setPostChasmOnly] = useState(false);
   const [ecosystemSearchQuery, setEcosystemSearchQuery] = useState("");
   const [addTicker, setAddTicker] = useState("");
-  const [addImportance, setAddImportance] = useState<"standard" | "major">("standard");
+  const [addImportance, setAddImportance] = useState<"standard" | "major">(
+    "standard",
+  );
   const [addRole, setAddRole] = useState("");
   const [addCompanyName, setAddCompanyName] = useState<string | null>(null);
   const [addCompanyNameLoading, setAddCompanyNameLoading] = useState(false);
@@ -244,67 +346,93 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [ecoEditMajor, setEcoEditMajor] = useState(false);
   const [ecoEditSaving, setEcoEditSaving] = useState(false);
 
-  const load = useCallback(async (signal: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    setHydratingFull(false);
-    const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeQueryName)}`;
-    try {
-      const resFast = await fetch(`${baseUrl}&fast=1`, { cache: "no-store", signal });
-      const jsonFast = (await resFast.json()) as ThemeDetailJson;
-      if (!resFast.ok) {
-        setData(null);
-        setError(jsonFast.error ?? `HTTP ${resFast.status}`);
-        return;
-      }
-      const { userId: _u, error: _e, ...restFast } = jsonFast;
-      if (signal.aborted) return;
-      setData(normalizeThemeDetailResponse(restFast));
-      setLoading(false);
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      setLoading(true);
+      setError(null);
+      setHydratingFull(false);
+      const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeQueryName)}`;
+      try {
+        const resFast = await fetch(`${baseUrl}&fast=1`, {
+          cache: "no-store",
+          signal,
+        });
+        const jsonFast = (await resFast.json()) as ThemeDetailJson;
+        if (!resFast.ok) {
+          setData(null);
+          setError(jsonFast.error ?? `HTTP ${resFast.status}`);
+          return;
+        }
+        const { userId: _u, error: _e, ...restFast } = jsonFast;
+        if (signal.aborted) return;
+        setData(normalizeThemeDetailResponse(restFast));
+        setLoading(false);
 
+        setHydratingFull(true);
+        try {
+          const resFull = await fetch(baseUrl, { cache: "no-store", signal });
+          const jsonFull = (await resFull.json()) as ThemeDetailJson;
+          if (signal.aborted) return;
+          if (!resFull.ok) {
+            console.warn(
+              "[theme-detail] full fetch failed:",
+              jsonFull.error ?? resFull.status,
+            );
+            return;
+          }
+          const { userId: __u, error: __e, ...restFull } = jsonFull;
+          setData(normalizeThemeDetailResponse(restFull));
+        } catch (fullErr) {
+          if (signal.aborted || (fullErr instanceof Error && fullErr.name === "AbortError")) {
+            return;
+          }
+          console.warn(
+            "[theme-detail] full fetch error (keeping fast snapshot):",
+            fullErr instanceof Error ? fullErr.message : fullErr,
+          );
+        } finally {
+          setHydratingFull(false);
+        }
+      } catch (e) {
+        if (signal.aborted || (e instanceof Error && e.name === "AbortError"))
+          return;
+        setData(null);
+        setError(e instanceof Error ? e.message : "Failed to load");
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    },
+    [themeQueryName],
+  );
+
+  const refetchThemeDetailQuiet = useCallback(
+    async (signal: AbortSignal) => {
+      const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}`;
       setHydratingFull(true);
       try {
         const resFull = await fetch(baseUrl, { cache: "no-store", signal });
         const jsonFull = (await resFull.json()) as ThemeDetailJson;
         if (signal.aborted) return;
         if (!resFull.ok) {
-          console.warn("[theme-detail] full fetch failed:", jsonFull.error ?? resFull.status);
+          toast.error(
+            jsonFull.error ?? `再読み込みに失敗しました（${resFull.status}）`,
+          );
           return;
         }
         const { userId: __u, error: __e, ...restFull } = jsonFull;
         setData(normalizeThemeDetailResponse(restFull));
+      } catch (e) {
+        if (signal.aborted || (e instanceof Error && e.name === "AbortError"))
+          return;
+        toast.error(
+          e instanceof Error ? e.message : "再読み込みに失敗しました",
+        );
       } finally {
-        setHydratingFull(false);
+        if (!signal.aborted) setHydratingFull(false);
       }
-    } catch (e) {
-      if (signal.aborted || (e instanceof Error && e.name === "AbortError")) return;
-      setData(null);
-      setError(e instanceof Error ? e.message : "Failed to load");
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, [themeQueryName]);
-
-  const refetchThemeDetailQuiet = useCallback(async (signal: AbortSignal) => {
-    const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}`;
-    setHydratingFull(true);
-    try {
-      const resFull = await fetch(baseUrl, { cache: "no-store", signal });
-      const jsonFull = (await resFull.json()) as ThemeDetailJson;
-      if (signal.aborted) return;
-      if (!resFull.ok) {
-        toast.error(jsonFull.error ?? `再読み込みに失敗しました（${resFull.status}）`);
-        return;
-      }
-      const { userId: __u, error: __e, ...restFull } = jsonFull;
-      setData(normalizeThemeDetailResponse(restFull));
-    } catch (e) {
-      if (signal.aborted || (e instanceof Error && e.name === "AbortError")) return;
-      toast.error(e instanceof Error ? e.message : "再読み込みに失敗しました");
-    } finally {
-      if (!signal.aborted) setHydratingFull(false);
-    }
-  }, [themeLabel]);
+    },
+    [themeLabel],
+  );
 
   useEffect(() => {
     const ac = new AbortController();
@@ -320,15 +448,19 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const stocks = data?.stocks ?? [];
   const theme = data?.theme ?? null;
   const ecosystem = data?.ecosystem ?? [];
-  const cumulativeSeries = data?.cumulativeAlphaSeries ?? [];
-  const themeStructuralTrendUp = useMemo(() => isCumulativeSeriesTrendUpward(cumulativeSeries), [cumulativeSeries]);
+  const themeStructuralTrendSeries = data?.themeStructuralTrendSeries ?? [];
+  const themeStructuralTrendUp = useMemo(
+    () => isThemeStructuralTrendPositiveUp(themeStructuralTrendSeries),
+    [themeStructuralTrendSeries],
+  );
 
   const ecosystemTickersUpper = useMemo(
     () => new Set(ecosystem.map((e) => e.ticker.trim().toUpperCase())),
     [ecosystem],
   );
   const addTickerDuplicate =
-    addTicker.trim().length > 0 && ecosystemTickersUpper.has(addTicker.trim().toUpperCase());
+    addTicker.trim().length > 0 &&
+    ecosystemTickersUpper.has(addTicker.trim().toUpperCase());
 
   useEffect(() => {
     const raw = addTicker.trim();
@@ -340,14 +472,18 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     const ac = new AbortController();
     const t = setTimeout(() => {
       setAddCompanyNameLoading(true);
-      void fetch(`/api/ticker-name?ticker=${encodeURIComponent(raw)}`, { cache: "no-store", signal: ac.signal })
+      void fetch(`/api/ticker-name?ticker=${encodeURIComponent(raw)}`, {
+        cache: "no-store",
+        signal: ac.signal,
+      })
         .then(async (res) => {
           const json = (await res.json()) as { companyName?: string | null };
           if (!res.ok) {
             setAddCompanyName(null);
             return;
           }
-          const name = typeof json.companyName === "string" ? json.companyName.trim() : "";
+          const name =
+            typeof json.companyName === "string" ? json.companyName.trim() : "";
           setAddCompanyName(name.length > 0 ? name : null);
         })
         .catch((e) => {
@@ -541,7 +677,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
       });
     }
     if (ecosystemSearchQuery.trim().length > 0) {
-      out = out.filter((e) => ecosystemMatchesSearchQuery(e, ecosystemSearchQuery));
+      out = out.filter((e) =>
+        ecosystemMatchesSearchQuery(e, ecosystemSearchQuery),
+      );
     }
     return out;
   }, [ecosystem, patrolOn, postChasmOnly, ecosystemSearchQuery]);
@@ -568,26 +706,38 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
       return ax < by ? -1 : ax > by ? 1 : 0;
     };
     const lastAlpha = (e: ThemeEcosystemWatchItem) =>
-      e.alphaHistory.length > 0 ? e.alphaHistory[e.alphaHistory.length - 1]! : null;
+      e.alphaHistory.length > 0
+        ? e.alphaHistory[e.alphaHistory.length - 1]!
+        : null;
     const devZ = (e: ThemeEcosystemWatchItem) =>
-      e.alphaDeviationZ != null && Number.isFinite(e.alphaDeviationZ) ? e.alphaDeviationZ : null;
+      e.alphaDeviationZ != null && Number.isFinite(e.alphaDeviationZ)
+        ? e.alphaDeviationZ
+        : null;
     const ddOf = (e: ThemeEcosystemWatchItem) =>
-      e.drawdownFromHigh90dPct != null && Number.isFinite(e.drawdownFromHigh90dPct)
+      e.drawdownFromHigh90dPct != null &&
+      Number.isFinite(e.drawdownFromHigh90dPct)
         ? e.drawdownFromHigh90dPct
         : null;
 
     const arr = [...ecosystemFiltered];
     arr.sort((a, b) => {
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
-      if (ecoSortKey === "alpha") return dir * cmpNum(a.latestAlpha, b.latestAlpha);
-      if (ecoSortKey === "trend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
-      if (ecoSortKey === "last") return dir * cmpNum(a.currentPrice, b.currentPrice);
+      if (ecoSortKey === "alpha")
+        return dir * cmpNum(a.latestAlpha, b.latestAlpha);
+      if (ecoSortKey === "trend")
+        return dir * cmpNum(lastAlpha(a), lastAlpha(b));
+      if (ecoSortKey === "last")
+        return dir * cmpNum(a.currentPrice, b.currentPrice);
       if (ecoSortKey === "deviation") return dir * cmpNum(devZ(a), devZ(b));
       if (ecoSortKey === "drawdown") return dir * cmpNum(ddOf(a), ddOf(b));
       // research
       const earnCmp = cmpNum(
-        a.daysToEarnings != null && a.daysToEarnings >= 0 ? a.daysToEarnings : null,
-        b.daysToEarnings != null && b.daysToEarnings >= 0 ? b.daysToEarnings : null,
+        a.daysToEarnings != null && a.daysToEarnings >= 0
+          ? a.daysToEarnings
+          : null,
+        b.daysToEarnings != null && b.daysToEarnings >= 0
+          ? b.daysToEarnings
+          : null,
       );
       if (earnCmp !== 0) return dir * earnCmp;
       return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
@@ -596,7 +746,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   }, [ecosystemFiltered, ecoSortDir, ecoSortKey]);
 
   function toggleEcoSort(next: typeof ecoSortKey) {
-    if (next === ecoSortKey) setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    if (next === ecoSortKey)
+      setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setEcoSortKey(next);
       setEcoSortDir("desc");
@@ -618,7 +769,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
 
   function holderBadgeClass(holder: string): string {
     if (holder === "バークシャー") return "bg-red-100 text-red-800";
-    if (holder === "エル" || holder === "ロンリード") return "bg-blue-100 text-blue-800";
+    if (holder === "エル" || holder === "ロンリード")
+      return "bg-blue-100 text-blue-800";
     return "bg-slate-100 text-slate-800";
   }
 
@@ -645,7 +797,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
           })}
         </div>
         {isPayMonth ? (
-          <span className="text-base leading-none" aria-label="Dividend month" title="今月が配当月">
+          <span
+            className="text-base leading-none"
+            aria-label="Dividend month"
+            title="今月が配当月"
+          >
             ✨
           </span>
         ) : null}
@@ -677,17 +833,27 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 <Crosshair size={14} className="text-cyan-500/90" />
                 <span>Structural theme command</span>
               </div>
-              <h1 className="text-3xl font-bold text-white tracking-tight">{themeDisplayName}</h1>
+              <h1 className="text-3xl font-bold text-white tracking-tight">
+                {themeDisplayName}
+              </h1>
               <p className="text-[11px] text-slate-600 mt-2">
-                <span className="font-mono text-slate-500">{DEFAULT_USER_ID}</span>
-                ・<span className="font-mono">structure_tags[0]</span> がこのテーマ名と一致する保有のみ
+                <span className="font-mono text-slate-500">
+                  {DEFAULT_USER_ID}
+                </span>
+                ・<span className="font-mono">structure_tags[0]</span>{" "}
+                がこのテーマ名と一致する保有のみ
               </p>
             </div>
-            {data?.benchmarkLatestPrice != null && data.benchmarkLatestPrice > 0 ? (
+            {data?.benchmarkLatestPrice != null &&
+            data.benchmarkLatestPrice > 0 ? (
               <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right shrink-0">
-                <p className="text-[9px] font-bold uppercase text-slate-500">VOO (ref)</p>
+                <p className="text-[9px] font-bold uppercase text-slate-500">
+                  VOO (ref)
+                </p>
                 <p className="font-mono text-lg text-slate-200">
-                  {data.benchmarkLatestPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  {data.benchmarkLatestPrice.toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}
                 </p>
               </div>
             ) : null}
@@ -712,22 +878,36 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                     テーマ評価額
                   </p>
                   <p className="text-xl font-mono font-bold text-slate-100 mt-1">
-                    {data.themeTotalMarketValue > 0 ? jpyFmt.format(data.themeTotalMarketValue) : "—"}
+                    {data.themeTotalMarketValue > 0
+                      ? jpyFmt.format(data.themeTotalMarketValue)
+                      : "—"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-slate-500">銘柄数</p>
-                  <p className="text-xl font-mono font-bold text-slate-100 mt-1">{stocks.length}</p>
+                  <p className="text-[9px] font-bold uppercase text-slate-500">
+                    銘柄数
+                  </p>
+                  <p className="text-xl font-mono font-bold text-slate-100 mt-1">
+                    {stocks.length}
+                  </p>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-slate-500">平均含み損益率</p>
-                  <p className={`text-xl font-mono font-bold mt-1 ${pctClass(data.themeAverageUnrealizedPnlPercent)}`}>
+                  <p className="text-[9px] font-bold uppercase text-slate-500">
+                    平均含み損益率
+                  </p>
+                  <p
+                    className={`text-xl font-mono font-bold mt-1 ${pctClass(data.themeAverageUnrealizedPnlPercent)}`}
+                  >
                     {fmtPct(data.themeAverageUnrealizedPnlPercent)}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-slate-500">平均 Alpha（日次）</p>
-                  <p className={`text-xl font-mono font-bold mt-1 ${pctClass(data.themeAverageAlpha)}`}>
+                  <p className="text-[9px] font-bold uppercase text-slate-500">
+                    平均 Alpha（日次）
+                  </p>
+                  <p
+                    className={`text-xl font-mono font-bold mt-1 ${pctClass(data.themeAverageAlpha)}`}
+                  >
                     {fmtPct(data.themeAverageAlpha)}
                   </p>
                 </div>
@@ -742,16 +922,24 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/90 mb-2">
                   Technology adoption · テーマ成熟度
                 </p>
-                <p className="text-lg font-bold text-slate-100 leading-snug">{themeAdoptionMaturity.headline}</p>
-                <p className="text-xs text-slate-500 mt-2 leading-relaxed">{themeAdoptionMaturity.detail}</p>
+                <p className="text-lg font-bold text-slate-100 leading-snug">
+                  {themeAdoptionMaturity.headline}
+                </p>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  {themeAdoptionMaturity.detail}
+                </p>
                 {quoripsWatch?.adoptionStage === "chasm" ? (
                   <div className="mt-4 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-400/95 mb-1">
                       クオリプス（4894）× キャズム
                     </p>
                     <p className="text-sm text-slate-300 leading-relaxed">
-                      再生医療（iPS 心筋等）は臨床・規制・製造の峡谷に位置しやすく、
-                      <span className="text-cyan-300/95 font-semibold"> 日次 Alpha（Z・累積トレンドのズレ）</span>
+                      再生医療（iPS
+                      心筋等）は臨床・規制・製造の峡谷に位置しやすく、
+                      <span className="text-cyan-300/95 font-semibold">
+                        {" "}
+                        日次 Alpha（Z・累積トレンドのズレ）
+                      </span>
                       がイベントで動きやすい。割安パトロールと併せ、冷え込み＝期待調整のサインとして読むと直感的です。
                     </p>
                     {quoripsWatch.adoptionStageRationale ? (
@@ -769,9 +957,22 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 stocks={stocks}
                 totalHoldings={stocks.length}
                 averageAlpha={data.themeAverageAlpha}
-                onTrade={(init) => openTradeForm({ ...init, themeId: theme?.id ?? init.themeId })}
+                onTrade={(init) =>
+                  openTradeForm({ ...init, themeId: theme?.id ?? init.themeId })
+                }
                 onTradeNew={() => openTradeForm(null)}
                 themeStructuralTrendUp={themeStructuralTrendUp}
+              />
+            ) : null}
+
+            {stocks.length > 0 ||
+            (data.ecosystem?.length ?? 0) > 0 ||
+            theme?.id != null ? (
+              <ThemeStructuralTrendChart
+                series={data.themeStructuralTrendSeries}
+                totalPct={data.themeStructuralTrendTotalPct}
+                lookbackDays={THEME_STRUCTURAL_TREND_LOOKBACK_DAYS}
+                startDateLabel={data.themeStructuralTrendStartDate}
               />
             ) : null}
 
@@ -781,7 +982,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 md:p-6 space-y-4"
               >
                 <div className="flex items-start gap-2">
-                  <UserPlus size={16} className="text-amber-500/90 shrink-0 mt-0.5" aria-hidden />
+                  <UserPlus
+                    size={16}
+                    className="text-amber-500/90 shrink-0 mt-0.5"
+                    aria-hidden
+                  />
                   <div>
                     <h2
                       id="theme-ecosystem-add-heading"
@@ -790,11 +995,16 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                       Ecosystem · 銘柄を追加
                     </h2>
                     <p className="text-[10px] text-slate-600 mt-0.5">
-                      Ticker・Importance・Role を登録してウォッチリストへ追加します（同一テーマ内の ticker 重複は不可）
+                      Ticker・Importance・Role
+                      を登録してウォッチリストへ追加します（同一テーマ内の
+                      ticker 重複は不可）
                     </p>
                   </div>
                 </div>
-                <form onSubmit={handleAddEcosystemMember} className="flex flex-col gap-4">
+                <form
+                  onSubmit={handleAddEcosystemMember}
+                  className="flex flex-col gap-4"
+                >
                   <div className="grid grid-cols-1 md:grid-cols-[7.5rem_11rem_1fr_auto] gap-4 items-end">
                     <div className="space-y-1.5 min-w-0">
                       <label
@@ -811,7 +1021,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         aria-invalid={addTickerDuplicate}
                         className={cn(
                           "font-mono",
-                          addTickerDuplicate ? "border-rose-500/80 focus-visible:ring-rose-500/40" : undefined,
+                          addTickerDuplicate
+                            ? "border-rose-500/80 focus-visible:ring-rose-500/40"
+                            : undefined,
                         )}
                         autoComplete="off"
                       />
@@ -826,7 +1038,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                       <select
                         id="eco-add-importance"
                         value={addImportance}
-                        onChange={(e) => setAddImportance(e.target.value === "major" ? "major" : "standard")}
+                        onChange={(e) =>
+                          setAddImportance(
+                            e.target.value === "major" ? "major" : "standard",
+                          )
+                        }
                         className={cn(
                           "flex h-9 w-full rounded-md border border-slate-700 bg-slate-950/80 px-3 py-1 text-sm text-slate-200 shadow-sm",
                           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50 focus-visible:border-cyan-500/40",
@@ -854,7 +1070,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                     <div className="w-full md:w-auto shrink-0">
                       <Button
                         type="submit"
-                        disabled={!addTicker.trim() || addTickerDuplicate || addSubmitting}
+                        disabled={
+                          !addTicker.trim() ||
+                          addTickerDuplicate ||
+                          addSubmitting
+                        }
                         className="w-full md:w-auto px-5 h-9"
                       >
                         {addSubmitting ? "追加中…" : "追加"}
@@ -863,9 +1083,13 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                   </div>
                   <p className="text-[10px] text-slate-600 min-h-[1.1rem]">
                     {addTickerDuplicate ? (
-                      <span className="text-rose-400">この銘柄は既に登録済み</span>
+                      <span className="text-rose-400">
+                        この銘柄は既に登録済み
+                      </span>
                     ) : addCompanyNameLoading ? (
-                      <span className="font-mono text-slate-500">Resolving name…</span>
+                      <span className="font-mono text-slate-500">
+                        Resolving name…
+                      </span>
                     ) : addCompanyName ? (
                       <span className="text-slate-400">{addCompanyName}</span>
                     ) : (
@@ -891,7 +1115,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
                   <div className="p-5 border-b border-slate-800 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between bg-slate-900/50">
                     <div className="flex items-start gap-2 min-w-0">
-                      <Layers size={16} className="text-amber-500/90 shrink-0 mt-0.5" />
+                      <Layers
+                        size={16}
+                        className="text-amber-500/90 shrink-0 mt-0.5"
+                      />
                       <div>
                         <h2
                           id="theme-ecosystem-heading"
@@ -900,7 +1127,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           Ecosystem map / Watchlist
                         </h2>
                         <p className="text-[10px] text-slate-600 mt-0.5">
-                          テーマ設置日起点の累積 Alpha（VOO 比）で観測。ポートフォリオ外の重要銘柄も含む（Notion 連携）
+                          テーマ設置日起点の累積 Alpha（VOO
+                          比）で観測。ポートフォリオ外の重要銘柄も含む（Notion
+                          連携）
                         </p>
                       </div>
                     </div>
@@ -916,7 +1145,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           <input
                             type="search"
                             value={ecosystemSearchQuery}
-                            onChange={(ev) => setEcosystemSearchQuery(ev.target.value)}
+                            onChange={(ev) =>
+                              setEcosystemSearchQuery(ev.target.value)
+                            }
                             placeholder="銘柄・役割・ノートで検索"
                             className="w-full rounded-lg border border-slate-700 bg-slate-950/80 pl-8 pr-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/40"
                             autoComplete="off"
@@ -975,8 +1206,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                             Alpha・Research 読込中…
                           </span>
                         ) : null}
-                          <span>
-                          {patrolOn || postChasmOnly || ecosystemSearchQuery.trim().length > 0
+                        <span>
+                          {patrolOn ||
+                          postChasmOnly ||
+                          ecosystemSearchQuery.trim().length > 0
                             ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
                             : `計 ${ecosystem.length} 銘柄`}
                         </span>
@@ -996,9 +1229,15 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           </th>
                           {isDefensiveTheme ? (
                             <>
-                              <th className="px-6 py-4 text-left whitespace-nowrap">Holder</th>
-                              <th className="px-6 py-4 text-left whitespace-nowrap">Dividend</th>
-                              <th className="px-6 py-4 text-left whitespace-nowrap">Defensive role</th>
+                              <th className="px-6 py-4 text-left whitespace-nowrap">
+                                Holder
+                              </th>
+                              <th className="px-6 py-4 text-left whitespace-nowrap">
+                                Dividend
+                              </th>
+                              <th className="px-6 py-4 text-left whitespace-nowrap">
+                                Defensive role
+                              </th>
                             </>
                           ) : (
                             <>
@@ -1009,7 +1248,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                               >
                                 Research{ecoSortMark("research")}
                               </th>
-                              <th className="px-6 py-4 text-left whitespace-nowrap">江戸的役割</th>
+                              <th className="px-6 py-4 text-left whitespace-nowrap">
+                                江戸的役割
+                              </th>
                             </>
                           )}
                           <th
@@ -1061,7 +1302,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                       </thead>
                       <tbody className="divide-y divide-slate-800/50">
                         {ecosystemSorted.length === 0 &&
-                        (patrolOn || postChasmOnly || ecosystemSearchQuery.trim().length > 0) ? (
+                        (patrolOn ||
+                          postChasmOnly ||
+                          ecosystemSearchQuery.trim().length > 0) ? (
                           <tr>
                             <td
                               colSpan={ecoShowValueCols ? 9 : 7}
@@ -1078,15 +1321,24 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                           </tr>
                         ) : null}
                         {ecosystemSorted.map((e, idx) => {
-                          const prev = idx > 0 ? ecosystemSorted[idx - 1] : null;
+                          const prev =
+                            idx > 0 ? ecosystemSorted[idx - 1] : null;
                           const field = fieldLabelOf(e);
                           const prevField = prev ? fieldLabelOf(prev) : null;
-                          const showFieldHeader = idx === 0 || field !== prevField;
-                          const ecoOpp = ecoOpportunityRow(e, themeStructuralTrendUp);
+                          const showFieldHeader =
+                            idx === 0 || field !== prevField;
+                          const ecoOpp = ecoOpportunityRow(
+                            e,
+                            themeStructuralTrendUp,
+                          );
                           const zEco =
-                            e.alphaDeviationZ != null && Number.isFinite(e.alphaDeviationZ) ? e.alphaDeviationZ : null;
+                            e.alphaDeviationZ != null &&
+                            Number.isFinite(e.alphaDeviationZ)
+                              ? e.alphaDeviationZ
+                              : null;
                           const ddEco =
-                            e.drawdownFromHigh90dPct != null && Number.isFinite(e.drawdownFromHigh90dPct)
+                            e.drawdownFromHigh90dPct != null &&
+                            Number.isFinite(e.drawdownFromHigh90dPct)
                               ? e.drawdownFromHigh90dPct
                               : null;
                           return (
@@ -1106,342 +1358,419 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                 </tr>
                               ) : null}
                               <tr className="group hover:bg-slate-800/40 transition-all">
-                              <td className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyTdFirst}`}>
-                                <div className="flex flex-col gap-0.5">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors font-mono inline-flex items-center gap-1">
-                                        {ecoOpp ? (
-                                          <span
-                                            className="shrink-0 text-base leading-none"
-                                            title="テーマの加重累積 Alpha は上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"
-                                            aria-label="Opportunity"
-                                          >
-                                            ✨
+                                <td
+                                  className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyTdFirst}`}
+                                >
+                                  <div className="flex flex-col gap-0.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors font-mono inline-flex items-center gap-1">
+                                          {ecoOpp ? (
+                                            <span
+                                              className="shrink-0 text-base leading-none"
+                                              title="テーマの加重累積 Alpha は上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"
+                                              aria-label="Opportunity"
+                                            >
+                                              ✨
+                                            </span>
+                                          ) : null}
+                                          <span className="break-all">
+                                            {e.ticker}
                                           </span>
-                                        ) : null}
-                                        <span className="break-all">{e.ticker}</span>
-                                      </span>
-                                      {e.isUnlisted ? (
-                                        <div className="mt-1 flex flex-wrap items-center gap-1">
-                                          {e.estimatedIpoDate ? (
-                                            <span className="text-[8px] font-bold uppercase tracking-wide text-fuchsia-300/95 border border-fuchsia-500/30 px-1.5 py-0.5 rounded">
-                                              IPO {e.estimatedIpoDate}
-                                            </span>
-                                          ) : null}
-                                          {e.estimatedValuation ? (
-                                            <span className="text-[8px] font-bold uppercase tracking-wide text-slate-300/95 border border-slate-500/30 px-1.5 py-0.5 rounded">
-                                              {e.estimatedValuation}
-                                            </span>
-                                          ) : null}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                    <div className="flex flex-wrap gap-1 justify-end shrink-0">
-                                      {e.isMajorPlayer ? (
-                                        <span className="text-[8px] font-bold uppercase tracking-wide text-amber-400/95 border border-amber-500/35 px-1.5 py-0.5 rounded">
-                                          Major
                                         </span>
-                                      ) : null}
-                                      {e.inPortfolio ? (
-                                        <span className="text-[8px] font-bold uppercase tracking-wide text-emerald-400/95 border border-emerald-500/35 px-1.5 py-0.5 rounded">
-                                          In portfolio
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                  {e.companyName ? (
-                                    <span className="text-[10px] text-slate-400 leading-snug line-clamp-2" title={e.companyName}>
-                                      {e.companyName}
-                                    </span>
-                                  ) : null}
-                                      {ecoEditingId === e.id ? (
-                                        <div className="mt-2 space-y-2 rounded-lg border border-slate-800 bg-slate-950/40 p-2">
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            <div className="space-y-1">
-                                              <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
-                                                Company
-                                              </p>
-                                              <Input
-                                                value={ecoEditCompanyName}
-                                                onChange={(ev) => setEcoEditCompanyName(ev.target.value)}
-                                                placeholder="企業名（任意）"
-                                                className="h-8 text-xs"
-                                                autoComplete="off"
-                                              />
-                                            </div>
-                                            <div className="space-y-1">
-                                              <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
-                                                Role
-                                              </p>
-                                              <Input
-                                                value={ecoEditRole}
-                                                onChange={(ev) => setEcoEditRole(ev.target.value)}
-                                                placeholder="役割（任意）"
-                                                className="h-8 text-xs"
-                                                autoComplete="off"
-                                              />
-                                            </div>
+                                        {e.isUnlisted ? (
+                                          <div className="mt-1 flex flex-wrap items-center gap-1">
+                                            {e.estimatedIpoDate ? (
+                                              <span className="text-[8px] font-bold uppercase tracking-wide text-fuchsia-300/95 border border-fuchsia-500/30 px-1.5 py-0.5 rounded">
+                                                IPO {e.estimatedIpoDate}
+                                              </span>
+                                            ) : null}
+                                            {e.estimatedValuation ? (
+                                              <span className="text-[8px] font-bold uppercase tracking-wide text-slate-300/95 border border-slate-500/30 px-1.5 py-0.5 rounded">
+                                                {e.estimatedValuation}
+                                              </span>
+                                            ) : null}
                                           </div>
-                                          <label className="flex items-center gap-2 text-[10px] text-slate-400 select-none">
-                                            <input
-                                              type="checkbox"
-                                              checked={ecoEditMajor}
-                                              onChange={(ev) => setEcoEditMajor(ev.target.checked)}
-                                              className="accent-amber-500"
-                                            />
+                                        ) : null}
+                                      </div>
+                                      <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                                        {e.isMajorPlayer ? (
+                                          <span className="text-[8px] font-bold uppercase tracking-wide text-amber-400/95 border border-amber-500/35 px-1.5 py-0.5 rounded">
                                             Major
-                                          </label>
-                                          <div className="flex items-center gap-2">
-                                            <Button
-                                              type="button"
-                                              onClick={() => void saveEditEcosystem(e.id)}
-                                              disabled={ecoEditSaving}
-                                              className="h-8 px-3 text-xs"
-                                            >
-                                              {ecoEditSaving ? "保存中…" : "保存"}
-                                            </Button>
-                                            <button
-                                              type="button"
-                                              onClick={cancelEditEcosystem}
-                                              className="h-8 px-3 rounded-md border border-slate-700 text-xs font-bold text-slate-300 hover:bg-slate-800/60"
-                                            >
-                                              Cancel
-                                            </button>
+                                          </span>
+                                        ) : null}
+                                        {e.inPortfolio ? (
+                                          <span className="text-[8px] font-bold uppercase tracking-wide text-emerald-400/95 border border-emerald-500/35 px-1.5 py-0.5 rounded">
+                                            In portfolio
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                    {e.companyName ? (
+                                      <span
+                                        className="text-[10px] text-slate-400 leading-snug line-clamp-2"
+                                        title={e.companyName}
+                                      >
+                                        {e.companyName}
+                                      </span>
+                                    ) : null}
+                                    {ecoEditingId === e.id ? (
+                                      <div className="mt-2 space-y-2 rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <div className="space-y-1">
+                                            <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                                              Company
+                                            </p>
+                                            <Input
+                                              value={ecoEditCompanyName}
+                                              onChange={(ev) =>
+                                                setEcoEditCompanyName(
+                                                  ev.target.value,
+                                                )
+                                              }
+                                              placeholder="企業名（任意）"
+                                              className="h-8 text-xs"
+                                              autoComplete="off"
+                                            />
+                                          </div>
+                                          <div className="space-y-1">
+                                            <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                                              Role
+                                            </p>
+                                            <Input
+                                              value={ecoEditRole}
+                                              onChange={(ev) =>
+                                                setEcoEditRole(ev.target.value)
+                                              }
+                                              placeholder="役割（任意）"
+                                              className="h-8 text-xs"
+                                              autoComplete="off"
+                                            />
                                           </div>
                                         </div>
-                                      ) : null}
-                                  {e.observationNotes ? (() => {
-                                    const geo = extractGeopoliticalPotential(e.observationNotes);
-                                    return (
-                                      <span className="text-[10px] text-slate-500 leading-snug line-clamp-2" title={e.observationNotes}>
-                                        {e.observationNotes}
-                                        {geo ? (
-                                          <span
-                                            className="ml-2 inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-300/90"
-                                            title={`地政学ポテンシャル: ${geo}`}
+                                        <label className="flex items-center gap-2 text-[10px] text-slate-400 select-none">
+                                          <input
+                                            type="checkbox"
+                                            checked={ecoEditMajor}
+                                            onChange={(ev) =>
+                                              setEcoEditMajor(ev.target.checked)
+                                            }
+                                            className="accent-amber-500"
+                                          />
+                                          Major
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            type="button"
+                                            onClick={() =>
+                                              void saveEditEcosystem(e.id)
+                                            }
+                                            disabled={ecoEditSaving}
+                                            className="h-8 px-3 text-xs"
                                           >
-                                            Geo
+                                            {ecoEditSaving ? "保存中…" : "保存"}
+                                          </Button>
+                                          <button
+                                            type="button"
+                                            onClick={cancelEditEcosystem}
+                                            className="h-8 px-3 rounded-md border border-slate-700 text-xs font-bold text-slate-300 hover:bg-slate-800/60"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                    {e.observationNotes
+                                      ? (() => {
+                                          const geo =
+                                            extractGeopoliticalPotential(
+                                              e.observationNotes,
+                                            );
+                                          return (
+                                            <span
+                                              className="text-[10px] text-slate-500 leading-snug line-clamp-2"
+                                              title={e.observationNotes}
+                                            >
+                                              {e.observationNotes}
+                                              {geo ? (
+                                                <span
+                                                  className="ml-2 inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-300/90"
+                                                  title={`地政学ポテンシャル: ${geo}`}
+                                                >
+                                                  Geo
+                                                </span>
+                                              ) : null}
+                                            </span>
+                                          );
+                                        })()
+                                      : null}
+                                    {e.observationStartedAt ? (
+                                      <span className="text-[10px] font-mono text-slate-600 pt-0.5">
+                                        観測開始（投入）{" "}
+                                        <span className="text-slate-500">
+                                          {e.observationStartedAt}
+                                        </span>
+                                        {e.alphaObservationStartDate &&
+                                        e.alphaObservationStartDate !==
+                                          e.observationStartedAt ? (
+                                          <span className="block text-[9px] text-slate-600 mt-0.5 font-normal">
+                                            系列起点{" "}
+                                            {e.alphaObservationStartDate}
                                           </span>
                                         ) : null}
                                       </span>
-                                    );
-                                  })() : null}
-                                  {e.observationStartedAt ? (
-                                    <span className="text-[10px] font-mono text-slate-600 pt-0.5">
-                                      観測開始（投入）{" "}
-                                      <span className="text-slate-500">{e.observationStartedAt}</span>
-                                      {e.alphaObservationStartDate &&
-                                      e.alphaObservationStartDate !== e.observationStartedAt ? (
-                                        <span className="block text-[9px] text-slate-600 mt-0.5 font-normal">
-                                          系列起点 {e.alphaObservationStartDate}
+                                    ) : e.alphaObservationStartDate ? (
+                                      <span className="text-[10px] font-mono text-slate-600 pt-0.5">
+                                        観測起点{" "}
+                                        <span className="text-slate-500">
+                                          {e.alphaObservationStartDate}
                                         </span>
-                                      ) : null}
-                                    </span>
-                                  ) : e.alphaObservationStartDate ? (
-                                    <span className="text-[10px] font-mono text-slate-600 pt-0.5">
-                                      観測起点 <span className="text-slate-500">{e.alphaObservationStartDate}</span>
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </td>
-                              {isDefensiveTheme ? (
-                                <>
-                                  <td className="px-6 py-4">
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {e.holderTags.length > 0 ? (
-                                        e.holderTags.map((h) => (
-                                          <span
-                                            key={h}
-                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${holderBadgeClass(h)}`}
-                                            title={h}
-                                          >
-                                            {h}
-                                          </span>
-                                        ))
-                                      ) : (
-                                        <span className="text-xs text-slate-600">—</span>
-                                      )}
-                                    </div>
-                                    <div className="mt-2 md:hidden text-[10px] text-slate-500">
-                                      {e.countryName}
-                                    </div>
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    {dividendCalendar(e.dividendMonths)}
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    <div className="hidden md:block">
-                                      {e.defensiveStrength ? (
-                                        <p className="text-sm font-bold text-slate-100 leading-snug">
-                                          {e.defensiveStrength}
-                                        </p>
-                                      ) : null}
-                                      {e.role ? (
-                                        <p className="text-xs text-slate-400 leading-relaxed mt-1 line-clamp-3" title={e.role}>
-                                          {e.role}
-                                        </p>
-                                      ) : (
-                                        <span className="text-xs text-slate-600">—</span>
-                                      )}
-                                    </div>
-                                    <div className="md:hidden">
-                                      <p className="text-xs font-semibold text-slate-200 leading-snug line-clamp-2" title={e.defensiveStrength ?? e.role}>
-                                        {e.defensiveStrength ?? e.role ?? "—"}
-                                      </p>
-                                    </div>
-                                  </td>
-                                </>
-                              ) : (
-                                <>
-                                  <td className="px-6 py-4">
-                                    <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-[10px] font-bold text-slate-400 border border-slate-700 bg-slate-950/40 px-2 py-0.5 rounded-md">
-                                          {e.countryName}
-                                        </span>
-                                        {e.nextEarningsDate ? (
-                                          <span
-                                            className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
-                                            title={`次期決算予定日: ${e.nextEarningsDate}`}
-                                          >
-                                            E:{e.daysToEarnings != null ? `D${e.daysToEarnings}` : e.nextEarningsDate}
-                                          </span>
-                                        ) : (
-                                          <span className="text-[10px] text-slate-500">E:—</span>
-                                        )}
-                                        {e.dividendYieldPercent != null ? (
-                                          <span
-                                            className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
-                                            title={e.annualDividendRate != null ? `年間配当: ${e.annualDividendRate}` : "年間配当: —"}
-                                          >
-                                            Div:{e.dividendYieldPercent.toFixed(2)}%
-                                          </span>
-                                        ) : (
-                                          <span className="text-[10px] text-slate-500">Div:—</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    {e.role ? (
-                                      <div className="text-xs text-slate-300 leading-relaxed line-clamp-4" title={e.role}>
-                                        {e.role}
-                                      </div>
-                                    ) : (
-                                      <span className="text-xs text-slate-600">—</span>
-                                    )}
-                                  </td>
-                                </>
-                              )}
-                              <td className="px-6 py-4 align-top">
-                                <EcosystemAdoptionCell e={e} />
-                              </td>
-                              {ecoShowValueCols ? (
-                                <>
-                                  <td
-                                    className={`px-6 py-4 text-right font-mono text-xs font-bold ${
-                                      isDefensiveTheme ? defensiveZClass(zEco) : zEco == null
-                                        ? "text-slate-500"
-                                        : zEco < -1
-                                          ? "text-amber-400"
-                                          : zEco > 1
-                                            ? "text-emerald-400"
-                                            : "text-slate-200"
-                                    }`}
-                                  >
-                                    {fmtZsigma(zEco)}
-                                  </td>
-                                  <td
-                                    className={`px-6 py-4 text-right font-mono text-xs font-bold ${
-                                      ddEco == null
-                                        ? "text-slate-500"
-                                        : ddEco < -10
-                                          ? "text-rose-400"
-                                          : "text-slate-200"
-                                    }`}
-                                  >
-                                    {fmtDdCol(ddEco)}
-                                  </td>
-                                </>
-                              ) : null}
-                              <td
-                                className={`px-6 py-4 text-right font-mono font-bold ${
-                                  e.latestAlpha != null && Number.isFinite(e.latestAlpha)
-                                    ? pctClass(e.latestAlpha)
-                                    : "text-slate-500"
-                                }`}
-                              >
-                                {e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? (
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                {isDefensiveTheme ? (
                                   <>
-                                    {e.latestAlpha > 0 ? "+" : ""}
-                                    {e.latestAlpha.toFixed(2)}%
+                                    <td className="px-6 py-4">
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {e.holderTags.length > 0 ? (
+                                          e.holderTags.map((h) => (
+                                            <span
+                                              key={h}
+                                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${holderBadgeClass(h)}`}
+                                              title={h}
+                                            >
+                                              {h}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="text-xs text-slate-600">
+                                            —
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="mt-2 md:hidden text-[10px] text-slate-500">
+                                        {e.countryName}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      {dividendCalendar(e.dividendMonths)}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div className="hidden md:block">
+                                        {e.defensiveStrength ? (
+                                          <p className="text-sm font-bold text-slate-100 leading-snug">
+                                            {e.defensiveStrength}
+                                          </p>
+                                        ) : null}
+                                        {e.role ? (
+                                          <p
+                                            className="text-xs text-slate-400 leading-relaxed mt-1 line-clamp-3"
+                                            title={e.role}
+                                          >
+                                            {e.role}
+                                          </p>
+                                        ) : (
+                                          <span className="text-xs text-slate-600">
+                                            —
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="md:hidden">
+                                        <p
+                                          className="text-xs font-semibold text-slate-200 leading-snug line-clamp-2"
+                                          title={e.defensiveStrength ?? e.role}
+                                        >
+                                          {e.defensiveStrength ?? e.role ?? "—"}
+                                        </p>
+                                      </div>
+                                    </td>
                                   </>
                                 ) : (
-                                  "—"
+                                  <>
+                                    <td className="px-6 py-4">
+                                      <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-[10px] font-bold text-slate-400 border border-slate-700 bg-slate-950/40 px-2 py-0.5 rounded-md">
+                                            {e.countryName}
+                                          </span>
+                                          {e.nextEarningsDate ? (
+                                            <span
+                                              className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
+                                              title={`次期決算予定日: ${e.nextEarningsDate}`}
+                                            >
+                                              E:
+                                              {e.daysToEarnings != null
+                                                ? `D${e.daysToEarnings}`
+                                                : e.nextEarningsDate}
+                                            </span>
+                                          ) : (
+                                            <span className="text-[10px] text-slate-500">
+                                              E:—
+                                            </span>
+                                          )}
+                                          {e.dividendYieldPercent != null ? (
+                                            <span
+                                              className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
+                                              title={
+                                                e.annualDividendRate != null
+                                                  ? `年間配当: ${e.annualDividendRate}`
+                                                  : "年間配当: —"
+                                              }
+                                            >
+                                              Div:
+                                              {e.dividendYieldPercent.toFixed(
+                                                2,
+                                              )}
+                                              %
+                                            </span>
+                                          ) : (
+                                            <span className="text-[10px] text-slate-500">
+                                              Div:—
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      {e.role ? (
+                                        <div
+                                          className="text-xs text-slate-300 leading-relaxed line-clamp-4"
+                                          title={e.role}
+                                        >
+                                          {e.role}
+                                        </div>
+                                      ) : (
+                                        <span className="text-xs text-slate-600">
+                                          —
+                                        </span>
+                                      )}
+                                    </td>
+                                  </>
                                 )}
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex flex-col items-center gap-1">
-                                  {e.isUnlisted ? (
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                                      Proxy Momentum{e.proxyTicker ? ` (${e.proxyTicker})` : ""}
-                                    </span>
-                                  ) : null}
-                                  <EcosystemCumulativeSparkline history={e.alphaHistory} />
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 text-right">
-                                <div className="flex flex-col items-end gap-1">
-                                  <span className="font-mono text-slate-300 text-xs">
-                                    {e.currentPrice != null && e.currentPrice > 0
-                                      ? e.currentPrice < 500
-                                        ? `$${e.currentPrice.toFixed(2)}`
-                                        : `$${e.currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-                                      : "—"}
-                                  </span>
-                                  {!e.inPortfolio ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openTradeForm({
-                                          ticker: e.isUnlisted && e.proxyTicker ? e.proxyTicker : e.ticker,
-                                          name: e.companyName || undefined,
-                                          theme: themeLabel,
-                                          themeId: theme?.id,
-                                          quantityDefault: 1,
-                                          ...(e.currentPrice != null &&
-                                          Number.isFinite(e.currentPrice) &&
-                                          e.currentPrice > 0
-                                            ? { unitPrice: e.currentPrice }
-                                            : {}),
-                                        })
-                                      }
-                                      className="text-[9px] font-bold uppercase tracking-wide text-cyan-400 border border-cyan-500/40 px-2 py-0.5 rounded-md hover:bg-cyan-500/10"
+                                <td className="px-6 py-4 align-top">
+                                  <EcosystemAdoptionCell e={e} />
+                                </td>
+                                {ecoShowValueCols ? (
+                                  <>
+                                    <td
+                                      className={`px-6 py-4 text-right font-mono text-xs font-bold ${
+                                        isDefensiveTheme
+                                          ? defensiveZClass(zEco)
+                                          : zEco == null
+                                            ? "text-slate-500"
+                                            : zEco < -1
+                                              ? "text-amber-400"
+                                              : zEco > 1
+                                                ? "text-emerald-400"
+                                                : "text-slate-200"
+                                      }`}
                                     >
-                                      Trade
-                                    </button>
-                                  ) : null}
-                                  <div className="flex items-center gap-1">
-                                    {ecoEditingId !== e.id ? (
+                                      {fmtZsigma(zEco)}
+                                    </td>
+                                    <td
+                                      className={`px-6 py-4 text-right font-mono text-xs font-bold ${
+                                        ddEco == null
+                                          ? "text-slate-500"
+                                          : ddEco < -10
+                                            ? "text-rose-400"
+                                            : "text-slate-200"
+                                      }`}
+                                    >
+                                      {fmtDdCol(ddEco)}
+                                    </td>
+                                  </>
+                                ) : null}
+                                <td
+                                  className={`px-6 py-4 text-right font-mono font-bold ${
+                                    e.latestAlpha != null &&
+                                    Number.isFinite(e.latestAlpha)
+                                      ? pctClass(e.latestAlpha)
+                                      : "text-slate-500"
+                                  }`}
+                                >
+                                  {e.latestAlpha != null &&
+                                  Number.isFinite(e.latestAlpha) ? (
+                                    <>
+                                      {e.latestAlpha > 0 ? "+" : ""}
+                                      {e.latestAlpha.toFixed(2)}%
+                                    </>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex flex-col items-center gap-1">
+                                    {e.isUnlisted ? (
+                                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                        Proxy Momentum
+                                        {e.proxyTicker
+                                          ? ` (${e.proxyTicker})`
+                                          : ""}
+                                      </span>
+                                    ) : null}
+                                    <EcosystemCumulativeSparkline
+                                      history={e.alphaHistory}
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className="font-mono text-slate-300 text-xs">
+                                      {e.currentPrice != null &&
+                                      e.currentPrice > 0
+                                        ? e.currentPrice < 500
+                                          ? `$${e.currentPrice.toFixed(2)}`
+                                          : `$${e.currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                                        : "—"}
+                                    </span>
+                                    {!e.inPortfolio ? (
                                       <button
                                         type="button"
-                                        onClick={() => beginEditEcosystem(e)}
-                                        className="text-[9px] font-bold uppercase tracking-wide text-slate-400 border border-slate-700 px-2 py-0.5 rounded-md hover:bg-slate-800/60"
+                                        onClick={() =>
+                                          openTradeForm({
+                                            ticker:
+                                              e.isUnlisted && e.proxyTicker
+                                                ? e.proxyTicker
+                                                : e.ticker,
+                                            name: e.companyName || undefined,
+                                            theme: themeLabel,
+                                            themeId: theme?.id,
+                                            quantityDefault: 1,
+                                            ...(e.currentPrice != null &&
+                                            Number.isFinite(e.currentPrice) &&
+                                            e.currentPrice > 0
+                                              ? { unitPrice: e.currentPrice }
+                                              : {}),
+                                          })
+                                        }
+                                        className="text-[9px] font-bold uppercase tracking-wide text-cyan-400 border border-cyan-500/40 px-2 py-0.5 rounded-md hover:bg-cyan-500/10"
                                       >
-                                        Edit
+                                        Trade
                                       </button>
                                     ) : null}
-                                    <button
-                                      type="button"
-                                      onClick={() => void deleteEcoMember(e.id, e.ticker)}
-                                      className="text-[9px] font-bold uppercase tracking-wide text-rose-400 border border-rose-500/40 px-2 py-0.5 rounded-md hover:bg-rose-500/10"
-                                    >
-                                      Delete
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                      {ecoEditingId !== e.id ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => beginEditEcosystem(e)}
+                                          className="text-[9px] font-bold uppercase tracking-wide text-slate-400 border border-slate-700 px-2 py-0.5 rounded-md hover:bg-slate-800/60"
+                                        >
+                                          Edit
+                                        </button>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void deleteEcoMember(e.id, e.ticker)
+                                        }
+                                        className="text-[9px] font-bold uppercase tracking-wide text-rose-400 border border-rose-500/40 px-2 py-0.5 rounded-md hover:bg-rose-500/10"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
-                              </td>
+                                </td>
                               </tr>
                             </React.Fragment>
                           );
@@ -1479,9 +1808,14 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="font-mono font-bold text-slate-100 text-sm">{s.ticker}</p>
+                          <p className="font-mono font-bold text-slate-100 text-sm">
+                            {s.ticker}
+                          </p>
                           {s.name ? (
-                            <p className="text-[9px] text-slate-500 truncate" title={s.name}>
+                            <p
+                              className="text-[9px] text-slate-500 truncate"
+                              title={s.name}
+                            >
                               {s.name}
                             </p>
                           ) : null}
@@ -1496,7 +1830,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                                   : "text-slate-400"
                             }`}
                           >
-                            {s.alphaHistory[s.alphaHistory.length - 1]! > 0 ? "+" : ""}
+                            {s.alphaHistory[s.alphaHistory.length - 1]! > 0
+                              ? "+"
+                              : ""}
                             {s.alphaHistory[s.alphaHistory.length - 1]}%
                           </span>
                         ) : (
@@ -1505,7 +1841,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                       </div>
                       <div className="flex-1 flex items-center justify-center min-h-[3rem]">
                         {s.alphaHistory.length === 0 ? (
-                          <span className="text-[10px] text-slate-600">No series</span>
+                          <span className="text-[10px] text-slate-600">
+                            No series
+                          </span>
                         ) : (
                           <TrendMiniChart history={s.alphaHistory} />
                         )}
@@ -1515,7 +1853,9 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                 </div>
               </section>
             ) : (
-              <p className="text-sm text-slate-500">このテーマに該当する保有がありません。</p>
+              <p className="text-sm text-slate-500">
+                このテーマに該当する保有がありません。
+              </p>
             )}
           </>
         ) : null}
@@ -1532,7 +1872,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             const ac = new AbortController();
             void load(ac.signal);
           }}
-          holdingOptions={stocks.map((s) => ({ ticker: s.ticker, name: s.name }))}
+          holdingOptions={stocks.map((s) => ({
+            ticker: s.ticker,
+            name: s.name,
+          }))}
         />
       </div>
     </div>

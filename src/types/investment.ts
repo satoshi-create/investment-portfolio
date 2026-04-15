@@ -278,6 +278,12 @@ export type ThemeDetailData = {
   structuralAlphaTotalPct: number | null;
   /** 表示用の起点日（テーマ `created_at` の日付部。テーマ行が無い場合は系列先頭に合わせる） */
   cumulativeAlphaAnchorDate: string | null;
+  /** 直近 N 日（サーバー UTC）を起点としたテーマ加重累積 Alpha（年輪トレンドチャート用） */
+  themeStructuralTrendSeries: CumulativeAlphaPoint[];
+  /** `themeStructuralTrendSeries` の最終累積（%）。算出不可時は null */
+  themeStructuralTrendTotalPct: number | null;
+  /** 上記系列の累積起点日（YYYY-MM-DD） */
+  themeStructuralTrendStartDate: string | null;
 };
 
 /** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */

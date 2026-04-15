@@ -1,11 +1,16 @@
 import type { Client } from "@libsql/client";
 
-import { computeAlphaPercent, dailyReturnPercent, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+import {
+  computeAlphaPercent,
+  dailyReturnPercent,
+  SIGNAL_BENCHMARK_TICKER,
+  THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
+} from "@/src/lib/alpha-logic";
 import { linkAlphaHistoryHoldingForTicker, upsertAlphaHistoryRow } from "@/src/lib/db-operations";
 import { fetchHoldingsWithProviderForUser } from "@/src/lib/holdings-queries";
-import type { Holding } from "@/src/types/investment";
 import type { PriceBar } from "@/src/lib/price-service";
 import { fetchPriceHistory } from "@/src/lib/price-service";
+import type { Holding } from "@/src/types/investment";
 
 /** Total rows below this ⇒ treat as “too thin” and backfill. */
 const MIN_TOTAL_ALPHA_ROWS = 20;
@@ -15,6 +20,30 @@ const MIN_RECENT_ALPHA_ROWS = 12;
 function sharedSortedDates(stockBars: PriceBar[], vooBars: PriceBar[]): string[] {
   const vooSet = new Set(vooBars.map((b) => b.date));
   return [...new Set(stockBars.map((b) => b.date).filter((d) => vooSet.has(d)))].sort();
+}
+
+/** エコシステム行から Alpha バックフィル対象（上場ティッカー文字列）を一意化して返す。 */
+export type EcosystemAlphaMemberInput = {
+  isUnlisted: boolean;
+  ticker: string;
+  proxyTicker: string | null;
+};
+
+export type AlphaWatchTarget = { ticker: string; providerSymbol: string | null };
+
+export function alphaWatchTargetsFromEcosystemMembers(rows: EcosystemAlphaMemberInput[]): AlphaWatchTarget[] {
+  const map = new Map<string, AlphaWatchTarget>();
+  for (const r of rows) {
+    const raw = r.isUnlisted
+      ? r.proxyTicker != null && String(r.proxyTicker).trim().length > 0
+        ? String(r.proxyTicker).trim()
+        : null
+      : String(r.ticker).trim();
+    if (!raw) continue;
+    const u = raw.toUpperCase();
+    if (!map.has(u)) map.set(u, { ticker: raw, providerSymbol: null });
+  }
+  return [...map.values()];
 }
 
 async function countAlphaHistoryTotal(
@@ -53,15 +82,22 @@ function needsBackfill(total: number, recent: number): boolean {
   return false;
 }
 
-async function backfillOneHolding(
+/**
+ * Yahoo + VOO 対比で `alpha_history` を upsert。保有に紐づかない観測ティッカーは `holdingId` を省略。
+ */
+export async function backfillAlphaHistoryForTicker(
   db: Client,
   userId: string,
-  holding: Holding,
+  args: {
+    ticker: string;
+    providerSymbol?: string | null;
+    holdingId?: string | null;
+  },
   vooBars: PriceBar[],
   days: number,
 ): Promise<number> {
   const vooByDate = new Map(vooBars.map((b) => [b.date, b.close]));
-  const stockBars = await fetchPriceHistory(holding.ticker, days, holding.providerSymbol);
+  const stockBars = await fetchPriceHistory(args.ticker, days, args.providerSymbol ?? null);
   const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
   const shared = sharedSortedDates(stockBars, vooBars);
   if (shared.length < 2) return 0;
@@ -81,18 +117,94 @@ async function backfillOneHolding(
     const alpha = computeAlphaPercent(rStock, rBench);
     if (alpha === null) continue;
 
-    await upsertAlphaHistoryRow(db, {
-      userId,
-      ticker: holding.ticker,
-      holdingId: holding.id,
-      recordedAtYmd: dCur,
-      closePrice: s1,
-      alphaValue: alpha,
-      benchmarkTicker: SIGNAL_BENCHMARK_TICKER,
-    });
-    written += 1;
+    try {
+      await upsertAlphaHistoryRow(db, {
+        userId,
+        ticker: args.ticker,
+        holdingId: args.holdingId,
+        recordedAtYmd: dCur,
+        closePrice: s1,
+        alphaValue: alpha,
+        benchmarkTicker: SIGNAL_BENCHMARK_TICKER,
+      });
+      written += 1;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[alpha-reconcile] upsertAlphaHistoryRow skip ${args.ticker} ${dCur}: ${msg}`);
+    }
   }
   return written;
+}
+
+async function backfillOneHolding(
+  db: Client,
+  userId: string,
+  holding: Holding,
+  vooBars: PriceBar[],
+  days: number,
+): Promise<number> {
+  return backfillAlphaHistoryForTicker(
+    db,
+    userId,
+    { ticker: holding.ticker, providerSymbol: holding.providerSymbol, holdingId: holding.id },
+    vooBars,
+    days,
+  );
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export type ReconcileWatchlistAlphaResult = {
+  rowsBackfilled: number;
+  backfilledTickers: string[];
+};
+
+/**
+ * テーマエコシステム等の「保有外」ティッカーに対し、履歴が薄いときだけ VOO 対比 Alpha をバックフィルする。
+ */
+export async function reconcileAlphaHistoryForWatchlistTickers(
+  db: Client,
+  userId: string,
+  targets: AlphaWatchTarget[],
+  options?: { days?: number; delayMs?: number; maxTickers?: number },
+): Promise<ReconcileWatchlistAlphaResult> {
+  /** 直近 90 日窓 + 営業日ズレを吸収するため、既定はテーマ窓より長めに取る。 */
+  const days =
+    options?.days ??
+    Math.min(150, Math.max(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS + 45, 60));
+  const delayMs = Math.max(0, Math.floor(options?.delayMs ?? 200));
+  const maxTickers = Math.max(1, Math.floor(options?.maxTickers ?? 20));
+
+  let rowsBackfilled = 0;
+  const backfilledTickers: string[] = [];
+  let vooBars: PriceBar[] | null = null;
+
+  const capped = targets.slice(0, maxTickers);
+
+  for (let i = 0; i < capped.length; i++) {
+    const t = capped[i]!;
+    try {
+      const total = await countAlphaHistoryTotal(db, userId, t.ticker, SIGNAL_BENCHMARK_TICKER);
+      const recent = await countAlphaHistoryRecent(db, userId, t.ticker, SIGNAL_BENCHMARK_TICKER);
+      if (!needsBackfill(total, recent)) continue;
+
+      if (!vooBars) {
+        vooBars = await fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, days, null);
+      }
+      if (vooBars.length < 2) break;
+
+      const n = await backfillAlphaHistoryForTicker(db, userId, t, vooBars, days);
+      rowsBackfilled += n;
+      if (n > 0) backfilledTickers.push(t.ticker);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[alpha-reconcile] watchlist backfill skip ticker=${t.ticker}: ${msg}`);
+    }
+
+    if (i < capped.length - 1 && delayMs > 0) await sleep(delayMs);
+  }
+
+  return { rowsBackfilled, backfilledTickers };
 }
 
 export type ReconcileAlphaHistoryResult = {

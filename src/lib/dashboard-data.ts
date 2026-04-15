@@ -24,8 +24,15 @@ import {
   quoteCurrencyForDashboardWeights,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
+  THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
+  toYmd,
+  ymdDaysAgoUtc,
   type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
+import {
+  alphaWatchTargetsFromEcosystemMembers,
+  reconcileAlphaHistoryForWatchlistTickers,
+} from "@/src/lib/alpha-history-reconcile";
 import { parseAdoptionStage } from "@/src/lib/adoption-stage";
 import { parseExpectationCategory } from "@/src/lib/expectation-category";
 import {
@@ -1021,11 +1028,27 @@ export async function getThemeDetailData(
     })(),
   ]);
 
+  let ecosystem: ThemeEcosystemWatchItem[] = [];
+  if (theme?.id != null) {
+    ecosystem = await fetchEnrichedThemeEcosystem(
+      db,
+      userId,
+      theme.id,
+      portfolioTickerSet,
+      theme.createdAt != null ? String(theme.createdAt) : null,
+      perf,
+      { fast },
+    );
+  }
+
   let stocks: Stock[] = [];
   let themeTotalMarketValue = 0;
   let themeAverageUnrealizedPnlPercent = 0;
   let themeAverageAlpha = 0;
   let cumulativeAlphaSeries: CumulativeAlphaPoint[] = [];
+  let themeStructuralTrendSeries: CumulativeAlphaPoint[] = [];
+  let themeStructuralTrendTotalPct: number | null = null;
+  let themeStructuralTrendStartDate: string | null = null;
   let structuralAlphaTotalPct: number | null = null;
   let cumulativeAlphaAnchorDate: string | null =
     theme?.createdAt != null && String(theme.createdAt).trim().length >= 10
@@ -1095,22 +1118,105 @@ export async function getThemeDetailData(
     if (cumulativeAlphaAnchorDate == null && cumulativeAlphaSeries.length > 0) {
       cumulativeAlphaAnchorDate = cumulativeAlphaSeries[0]!.date;
     }
+
+    const windowStartYmd = ymdDaysAgoUtc(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS);
+    themeStructuralTrendStartDate = windowStartYmd;
+    const perTickerWindow: { weight: number; series: { date: string; cumulative: number }[] }[] = [];
+    for (const s of stocks) {
+      const dated = byTickerDated.get(s.ticker) ?? [];
+      const filtered = dated.filter((r) => toYmd(r.recordedAt) >= windowStartYmd);
+      if (filtered.length === 0) continue;
+      const series = calculateCumulativeAlpha(filtered, windowStartYmd);
+      if (series.length > 0) {
+        perTickerWindow.push({
+          weight: sanitizeMarketValueForAggregation(s.marketValue),
+          series,
+        });
+      }
+    }
+    themeStructuralTrendSeries = mergeWeightedCumulativeAlphaSeries(perTickerWindow);
+    if (themeStructuralTrendSeries.length > 0) {
+      themeStructuralTrendTotalPct =
+        themeStructuralTrendSeries[themeStructuralTrendSeries.length - 1]!.cumulative;
+    }
+  } else if (ecosystem.length > 0) {
+    const ecoAlphaTargets = alphaWatchTargetsFromEcosystemMembers(ecosystem);
+    if (ecoAlphaTargets.length > 0) {
+      const tBf = perf.enabled ? Date.now() : 0;
+      try {
+        const r = await reconcileAlphaHistoryForWatchlistTickers(db, userId, ecoAlphaTargets, {
+          delayMs: 150,
+          maxTickers: 24,
+        });
+        if (perf.enabled && perf.requestId) {
+          console.log(
+            `[perf] ${perf.requestId} ecosystem:alphaBackfill ms=${Date.now() - tBf} rows=${r.rowsBackfilled} tickers=${r.backfilledTickers.length}`,
+          );
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[getThemeDetailData] ecosystem alpha backfill failed (continuing): ${msg}`);
+      }
+    }
+
+    const windowStartYmd = ymdDaysAgoUtc(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS);
+    themeStructuralTrendStartDate = windowStartYmd;
+
+    const tickerWeights = new Map<string, number>();
+    const tickerSqlByUpper = new Map<string, string>();
+    for (const e of ecosystem) {
+      const raw = e.isUnlisted
+        ? e.proxyTicker != null && String(e.proxyTicker).trim().length > 0
+          ? String(e.proxyTicker).trim()
+          : null
+        : String(e.ticker).trim();
+      if (!raw) continue;
+      const u = raw.toUpperCase();
+      if (!tickerSqlByUpper.has(u)) tickerSqlByUpper.set(u, raw);
+      const w = e.isMajorPlayer ? 2 : 1;
+      tickerWeights.set(u, (tickerWeights.get(u) ?? 0) + w);
+    }
+
+    const tickersForQuery = [...tickerSqlByUpper.values()];
+    if (tickersForQuery.length > 0) {
+      const tPlaceholders = tickersForQuery.map(() => "?").join(",");
+      const aEco = await db.execute({
+        sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
+              WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
+              ORDER BY ticker ASC, recorded_at ASC`,
+        args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickersForQuery],
+      });
+      const ecoRows = aEco.rows as Record<string, unknown>[];
+      const byTickerDatedEco = buildByTickerDatedAlphaRows(ecoRows);
+      const byUpper = new Map<string, DatedAlphaRow[]>();
+      for (const [k, v] of byTickerDatedEco) {
+        byUpper.set(k.toUpperCase(), v);
+      }
+
+      const perTickerWindowEco: { weight: number; series: { date: string; cumulative: number }[] }[] = [];
+      for (const [u, weight] of tickerWeights) {
+        const dated = byUpper.get(u) ?? [];
+        const filtered = dated.filter((r) => toYmd(r.recordedAt) >= windowStartYmd);
+        if (filtered.length === 0) continue;
+        const series = calculateCumulativeAlpha(filtered, windowStartYmd);
+        if (series.length > 0) {
+          perTickerWindowEco.push({ weight, series });
+        }
+      }
+      themeStructuralTrendSeries = mergeWeightedCumulativeAlphaSeries(perTickerWindowEco);
+      if (themeStructuralTrendSeries.length > 0) {
+        themeStructuralTrendTotalPct =
+          themeStructuralTrendSeries[themeStructuralTrendSeries.length - 1]!.cumulative;
+      }
+    }
   }
 
-  const ecosystem =
-    theme?.id != null
-      ? await fetchEnrichedThemeEcosystem(
-          db,
-          userId,
-          theme.id,
-          portfolioTickerSet,
-          theme.createdAt != null ? String(theme.createdAt) : null,
-          perf,
-          { fast },
-        )
-      : [];
   if (perf.enabled && perf.requestId) {
     console.log(`[perf] ${perf.requestId} getThemeDetailData totalMs=${Date.now() - t0} theme="${themeName}"`);
+  }
+
+  if (themeStructuralTrendStartDate == null && theme?.id != null) {
+    themeStructuralTrendStartDate = ymdDaysAgoUtc(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS);
   }
 
   return {
@@ -1125,6 +1231,9 @@ export async function getThemeDetailData(
     cumulativeAlphaSeries,
     structuralAlphaTotalPct,
     cumulativeAlphaAnchorDate,
+    themeStructuralTrendSeries,
+    themeStructuralTrendTotalPct,
+    themeStructuralTrendStartDate,
   };
 }
 
