@@ -3,5 +3,14 @@
 import { Toaster } from "sonner";
 
 export function AppToaster() {
-  return <Toaster theme="dark" position="top-center" richColors closeButton />;
+  return (
+    <Toaster
+      theme="dark"
+      position="top-center"
+      richColors
+      closeButton
+      className="!z-[20000]"
+      style={{ zIndex: 20000 }}
+    />
+  );
 }

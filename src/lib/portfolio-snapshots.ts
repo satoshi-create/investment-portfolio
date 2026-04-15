@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 
 import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+import { reconcileAlphaHistoryForUser, type ReconcileAlphaHistoryResult } from "@/src/lib/alpha-history-reconcile";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { getDashboardData } from "@/src/lib/dashboard-data";
@@ -16,6 +17,8 @@ export type RecordPortfolioSnapshotResult = {
   snapshotDate: string;
   totalMarketValueJpy: number;
   replacedExistingRow: boolean;
+  /** Best-effort alpha_history refresh before computing dashboard metrics (may be partial on errors). */
+  alphaHistoryReconcile?: ReconcileAlphaHistoryResult;
 };
 
 const SNAPSHOT_LIST_LIMIT = 90;
@@ -359,6 +362,17 @@ export async function recordPortfolioDailySnapshot(
   db: Client,
   userId: string,
 ): Promise<RecordPortfolioSnapshotResult> {
+  // `portfolio_avg_alpha` is derived from `alpha_history`’s latest daily alpha per holding.
+  // Cron/manual snapshots previously skipped the reconcile step that signal generation performs,
+  // which can freeze “平均α” if `alpha_history` isn’t being appended daily.
+  let alphaHistoryReconcile: ReconcileAlphaHistoryResult | undefined;
+  try {
+    alphaHistoryReconcile = await reconcileAlphaHistoryForUser(userId, db);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[snapshot] alpha_history reconcile failed (continuing): ${msg}`);
+  }
+
   const dash = await getDashboardData(db, userId);
   const snapshotDate = new Date().toISOString().slice(0, 10);
   const recordedAt = new Date().toISOString();
@@ -524,5 +538,6 @@ export async function recordPortfolioDailySnapshot(
     snapshotDate,
     totalMarketValueJpy: totalMv,
     replacedExistingRow,
+    alphaHistoryReconcile,
   };
 }

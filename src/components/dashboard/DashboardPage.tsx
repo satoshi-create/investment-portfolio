@@ -15,6 +15,7 @@ import { ThemesNavigationSection } from "@/src/components/dashboard/ThemesNaviga
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import Link from "next/link";
 import { Camera, RefreshCw, ScrollText } from "lucide-react";
+import { toast } from "sonner";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
@@ -121,9 +122,13 @@ export function DashboardPage() {
     startSnapshotTransition(async () => {
       const result = await recordPortfolioSnapshotAction(DEFAULT_USER_ID);
       setActionMessage(result.message);
-      if (result.ok) {
-        await loadDashboard();
-      }
+      // Sonner inside startTransition can be deferred or obscured; fire on the next task + high z-index Toaster.
+      const msg = result.message;
+      setTimeout(() => {
+        if (result.ok) toast.success(msg, { duration: 10_000 });
+        else toast.error(msg, { duration: 12_000 });
+      }, 0);
+      if (result.ok) await loadDashboard();
     });
   };
 

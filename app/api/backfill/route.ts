@@ -63,6 +63,7 @@ async function handle(request: Request) {
       snapshotDate: result.snapshotDate,
       totalMarketValueJpy: result.totalMarketValueJpy,
       replacedExistingRow: result.replacedExistingRow,
+      alphaHistoryReconcile: result.alphaHistoryReconcile ?? null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

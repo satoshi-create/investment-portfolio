@@ -24,8 +24,13 @@ async function main() {
 
   const db = getDb();
   const out = await recordPortfolioDailySnapshot(db, userId);
+  const r = out.alphaHistoryReconcile;
+  const reconcileSuffix =
+    r != null
+      ? ` alphaHistoryRows=${r.rowsBackfilled} backfilledTickers=${r.backfilledTickers.length}`
+      : "";
   console.log(
-    `portfolio_daily_snapshots: user=${userId} date=${out.snapshotDate} totalJpy=${out.totalMarketValueJpy} replaced=${out.replacedExistingRow}`,
+    `portfolio_daily_snapshots: user=${userId} date=${out.snapshotDate} totalJpy=${out.totalMarketValueJpy} replaced=${out.replacedExistingRow}${reconcileSuffix}`,
   );
 }
 
