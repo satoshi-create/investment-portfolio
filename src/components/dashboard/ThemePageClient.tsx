@@ -17,6 +17,7 @@ import type {
   ThemeDetailData,
   ThemeEcosystemWatchItem,
 } from "@/src/types/investment";
+import { fetchWithTimeout } from "@/src/lib/fetch-utils";
 import {
   ADOPTION_STAGE_META,
   adoptionStageRank,
@@ -318,6 +319,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const [data, setData] = useState<ThemeDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [slowLoading, setSlowLoading] = useState(false);
   /** fast=1 後、フル API で Alpha/Research 等を埋めている間 */
   const [hydratingFull, setHydratingFull] = useState(false);
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
@@ -350,17 +352,19 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   const load = useCallback(
     async (signal: AbortSignal) => {
       setLoading(true);
+      setSlowLoading(false);
       setError(null);
       setHydratingFull(false);
+      const slowTimer = setTimeout(() => setSlowLoading(true), 3000);
       const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeQueryName)}`;
       try {
-        const resFast = await fetch(`${baseUrl}&fast=1`, {
+        const resFast = await fetchWithTimeout(`${baseUrl}&fast=1`, {
           cache: "no-store",
           signal,
-        });
+        }, { timeoutMs: 8000 });
         const jsonFast = (await resFast.json()) as ThemeDetailJson;
         if (!resFast.ok) {
-          setData(null);
+          // Keep previous snapshot if any; don't blank the screen.
           setError(jsonFast.error ?? `HTTP ${resFast.status}`);
           return;
         }
@@ -371,7 +375,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
 
         setHydratingFull(true);
         try {
-          const resFull = await fetch(baseUrl, { cache: "no-store", signal });
+          const resFull = await fetchWithTimeout(baseUrl, { cache: "no-store", signal }, { timeoutMs: 8000 });
           const jsonFull = (await resFull.json()) as ThemeDetailJson;
           if (signal.aborted) return;
           if (!resFull.ok) {
@@ -384,7 +388,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
           const { userId: __u, error: __e, ...restFull } = jsonFull;
           setData(normalizeThemeDetailResponse(restFull));
         } catch (fullErr) {
-          if (signal.aborted || (fullErr instanceof Error && fullErr.name === "AbortError")) {
+          if (signal.aborted) return;
+          if (fullErr instanceof Error && fullErr.name === "AbortError") {
+            // Keep fast snapshot; show a gentle hint only if there's no other error.
+            setError((cur) => cur ?? "接続タイムアウト：通信環境を確認してください");
             return;
           }
           console.warn(
@@ -395,11 +402,15 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
           setHydratingFull(false);
         }
       } catch (e) {
-        if (signal.aborted || (e instanceof Error && e.name === "AbortError"))
-          return;
-        setData(null);
-        setError(e instanceof Error ? e.message : "Failed to load");
+        if (signal.aborted) return;
+        if (e instanceof Error && e.name === "AbortError") {
+          setError("接続タイムアウト：通信環境を確認してください");
+        } else {
+          setError(e instanceof Error ? e.message : "Failed to load");
+        }
       } finally {
+        clearTimeout(slowTimer);
+        setSlowLoading(false);
         if (!signal.aborted) setLoading(false);
       }
     },
@@ -411,7 +422,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
       const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeLabel)}`;
       setHydratingFull(true);
       try {
-        const resFull = await fetch(baseUrl, { cache: "no-store", signal });
+        const resFull = await fetchWithTimeout(baseUrl, { cache: "no-store", signal }, { timeoutMs: 8000 });
         const jsonFull = (await resFull.json()) as ThemeDetailJson;
         if (signal.aborted) return;
         if (!resFull.ok) {
@@ -426,7 +437,11 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         if (signal.aborted || (e instanceof Error && e.name === "AbortError"))
           return;
         toast.error(
-          e instanceof Error ? e.message : "再読み込みに失敗しました",
+          e instanceof Error && e.name === "AbortError"
+            ? "接続タイムアウト：通信環境を確認してください"
+            : e instanceof Error
+              ? e.message
+              : "再読み込みに失敗しました",
         );
       } finally {
         if (!signal.aborted) setHydratingFull(false);
@@ -878,6 +893,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     return "text-amber-300"; // 注意域
   }
 
+  const canRenderContent = data != null;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -921,10 +938,53 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
           </div>
         </header>
 
-        {loading ? <p className="text-sm text-slate-500">読み込み中…</p> : null}
-        {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+        {loading ? (
+          <div className="text-sm text-slate-500">
+            読み込み中…
+            {slowLoading ? (
+              <span className="ml-2 text-slate-500">
+                通信に時間がかかっています...
+              </span>
+            ) : null}
+          </div>
+        ) : null}
 
-        {!loading && !error && data ? (
+        {error ? (
+          <div className="rounded-2xl border border-rose-500/25 bg-rose-500/5 p-5">
+            <p className="text-sm font-bold text-rose-300">データ取得に失敗しました</p>
+            <p className="text-xs text-rose-200/80 mt-1">{error}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  const ac = new AbortController();
+                  void load(ac.signal);
+                }}
+                className="h-9 px-4"
+                disabled={loading}
+              >
+                再読み込み（Retry）
+              </Button>
+              {canRenderContent ? (
+                <span className="text-[11px] text-slate-500 self-center">
+                  直近の表示内容を維持しています
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Initial skeleton (prevents layout jump when data is empty / slow / offline) */}
+        {loading && !canRenderContent ? (
+          <div className="space-y-4" aria-busy="true">
+            <div className="h-36 rounded-2xl border border-slate-800 bg-slate-900/40 animate-pulse" />
+            <div className="h-28 rounded-2xl border border-slate-800 bg-slate-900/40 animate-pulse" />
+            <div className="h-72 rounded-2xl border border-slate-800 bg-slate-900/40 animate-pulse" />
+            <div className="h-80 rounded-2xl border border-slate-800 bg-slate-900/40 animate-pulse" />
+          </div>
+        ) : null}
+
+        {canRenderContent ? (
           <>
             <ThemeMetaBlock theme={theme} themeName={themeLabel} />
 

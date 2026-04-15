@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState, useTransition } from "react";
 import { recordPortfolioSnapshotAction } from "@/app/actions/snapshot";
 import { generateSignalsAction } from "@/app/actions/signals";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
+import { fetchWithTimeout } from "@/src/lib/fetch-utils";
 import type { DashboardSummary, InvestmentThemeRecord, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
@@ -53,6 +54,7 @@ export function DashboardPage() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [slowLoading, setSlowLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [refreshPending, startRefreshTransition] = useTransition();
@@ -62,14 +64,16 @@ export function DashboardPage() {
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
+    setSlowLoading(false);
     setError(null);
+    const slowTimer = setTimeout(() => setSlowLoading(true), 3000);
     try {
-      const res = await fetch(`/api/dashboard?userId=${encodeURIComponent(DEFAULT_USER_ID)}`, {
+      const res = await fetchWithTimeout(`/api/dashboard?userId=${encodeURIComponent(DEFAULT_USER_ID)}`, {
         cache: "no-store",
-      });
+      }, { timeoutMs: 12_000 });
       const json = (await res.json()) as Partial<DashboardPayload> & { error?: string; hint?: string };
       if (!res.ok) {
-        setData(null);
+        // Keep last good snapshot on failures so the screen doesn't go blank.
         setError(json.error ?? `HTTP ${res.status}${json.hint ? ` — ${json.hint}` : ""}`);
         return;
       }
@@ -83,9 +87,14 @@ export function DashboardPage() {
         summary: { ...EMPTY_SUMMARY, ...(json.summary ?? {}) },
       });
     } catch (e) {
-      setData(null);
-      setError(e instanceof Error ? e.message : "Failed to load dashboard");
+      if (e instanceof Error && e.name === "AbortError") {
+        setError("接続タイムアウト：通信環境を確認してください");
+      } else {
+        setError(e instanceof Error ? e.message : "Failed to load dashboard");
+      }
     } finally {
+      clearTimeout(slowTimer);
+      setSlowLoading(false);
       setLoading(false);
     }
   }, []);
@@ -167,6 +176,16 @@ export function DashboardPage() {
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
+        {/* Initial load skeleton (keeps layout stable even when offline/slow). */}
+        {loading && data == null ? (
+          <div className="space-y-4" aria-busy="true">
+            <div className="h-28 rounded-2xl border border-border bg-muted/20 animate-pulse" />
+            <div className="h-24 rounded-2xl border border-border bg-muted/20 animate-pulse" />
+            <div className="h-64 rounded-2xl border border-border bg-muted/20 animate-pulse" />
+            <div className="h-80 rounded-2xl border border-border bg-muted/20 animate-pulse" />
+          </div>
+        ) : null}
+
         <DashboardHeader
           totalAlpha={summary.portfolioAverageAlpha}
           benchmarkPrice={summary.benchmarkLatestPrice}
@@ -181,7 +200,16 @@ export function DashboardPage() {
           <div className="text-xs text-muted-foreground">
             <span className="font-bold uppercase tracking-wider text-muted-foreground/90">Profile</span>{" "}
             <span className="text-foreground/90 font-mono">{DEFAULT_USER_ID}</span>
-            {loading && <span className="ml-2 text-muted-foreground/80">Loading…</span>}
+            {loading && (
+              <span className="ml-2 text-muted-foreground/80">
+                Loading…
+                {slowLoading ? (
+                  <span className="ml-2 text-muted-foreground/80">
+                    通信に時間がかかっています...
+                  </span>
+                ) : null}
+              </span>
+            )}
             {error && (
               <span className="ml-2 text-rose-400 block sm:inline mt-1 sm:mt-0">{error}</span>
             )}
@@ -216,6 +244,18 @@ export function DashboardPage() {
             >
               取引入力
             </button>
+            {error ? (
+              <button
+                type="button"
+                onClick={() => void loadDashboard()}
+                disabled={loading}
+                className="text-[10px] font-bold text-rose-200 border border-rose-500/35 px-3 py-2 rounded-lg hover:bg-rose-500/10 transition-all flex items-center gap-2 disabled:opacity-50"
+                title="データ取得を再試行"
+              >
+                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                再読み込み（Retry）
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onRefresh}
@@ -246,6 +286,24 @@ export function DashboardPage() {
             </button>
           </div>
         </div>
+
+        {/* Clear error card when there's no cached snapshot */}
+        {error && data == null ? (
+          <div className="rounded-2xl border border-rose-500/25 bg-rose-500/5 p-5">
+            <p className="text-sm font-bold text-rose-300">データ取得に失敗しました</p>
+            <p className="text-xs text-rose-200/80 mt-1">{error}</p>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => void loadDashboard()}
+                className="text-[11px] font-bold text-rose-100 border border-rose-500/35 px-4 py-2 rounded-lg hover:bg-rose-500/10 transition-all inline-flex items-center gap-2"
+              >
+                <RefreshCw size={14} />
+                再読み込み（Retry）
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <StrategySection
           structureBySector={structureBySector}
