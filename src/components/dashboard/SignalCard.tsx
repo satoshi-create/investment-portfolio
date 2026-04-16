@@ -21,7 +21,7 @@ function formatDetectedAt(iso: string): string {
 type Props = {
   signal: Signal;
   userId: string;
-  onResolved?: () => void;
+  onResolved?: (signalId: string) => void;
   onTrade?: (initial: TradeEntryInitial) => void;
 };
 
@@ -32,7 +32,7 @@ export function SignalCard({ signal, userId, onResolved, onTrade }: Props) {
     startTransition(async () => {
       const result = await resolveSignalAction(signal.id, userId);
       if (result.ok) {
-        onResolved?.();
+        onResolved?.(signal.id);
       }
     });
   };

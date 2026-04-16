@@ -8,7 +8,7 @@ import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryFor
 type Props = {
   signals: Signal[];
   userId: string;
-  onSignalResolved?: () => void;
+  onSignalResolved?: (signalId: string) => void;
   onTrade?: (initial: TradeEntryInitial) => void;
 };
 

@@ -99,6 +99,18 @@ export function DashboardPage() {
     }
   }, []);
 
+  const resolveSignalOptimistic = useCallback(
+    (signalId: string) => {
+      setData((prev) => {
+        if (!prev) return prev;
+        return { ...prev, signals: (prev.signals ?? []).filter((s) => s.id !== signalId) };
+      });
+      // Best-effort sync (dedupe / ordering). If this fails, UI still reflects the action.
+      void loadDashboard();
+    },
+    [loadDashboard],
+  );
+
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
@@ -317,7 +329,7 @@ export function DashboardPage() {
         <SignalsSection
           signals={signals}
           userId={DEFAULT_USER_ID}
-          onSignalResolved={() => void loadDashboard()}
+          onSignalResolved={resolveSignalOptimistic}
           onTrade={(init) => openTradeForm(init)}
         />
         <InventoryTable

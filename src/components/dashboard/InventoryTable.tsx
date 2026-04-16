@@ -430,7 +430,7 @@ export function InventoryTable({
                     {stock.alphaHistory.length === 0 ? (
                       <span className="text-muted-foreground text-xs">No data</span>
                     ) : (
-                      <TrendMiniChart history={stock.alphaHistory} />
+                      <TrendMiniChart history={stock.alphaHistory} maxPoints={5} />
                     )}
                   </td>
                   <td className="px-6 py-4 text-right">

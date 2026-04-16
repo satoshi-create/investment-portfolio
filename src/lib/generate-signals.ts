@@ -31,18 +31,26 @@ export type GenerateSignalsResult = {
   reconcile: ReconcileAlphaHistoryResult;
 };
 
-async function signalExistsForDay(
+function todayUtcYmd(): string {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(now.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+async function signalExistsForAlphaDay(
   db: Client,
   holdingId: string,
   signalType: "BUY" | "WARN",
-  dateYmd: string,
+  alphaDayYmd: string,
 ): Promise<boolean> {
   const rs = await db.execute({
     sql: `SELECT 1 AS ok FROM signals
           WHERE holding_id = ? AND signal_type = ?
-            AND substr(detected_at, 1, 10) = ?
+            AND alpha_day = ?
           LIMIT 1`,
-    args: [holdingId, signalType, dateYmd],
+    args: [holdingId, signalType, alphaDayYmd],
   });
   return rs.rows.length > 0;
 }
@@ -52,13 +60,15 @@ async function insertSignal(
   holdingId: string,
   signalType: "BUY" | "WARN",
   alphaAtSignal: number,
-  dateYmd: string,
+  alphaDayYmd: string,
 ): Promise<void> {
   const id = crypto.randomUUID();
+  // `detected_at` should represent the time the generation ran (not the alpha_history day).
+  const detectedAtIso = new Date().toISOString();
   await db.execute({
-    sql: `INSERT INTO signals (id, holding_id, signal_type, alpha_at_signal, is_resolved, detected_at)
-          VALUES (?, ?, ?, ?, 0, ?)`,
-    args: [id, holdingId, signalType, alphaAtSignal, `${dateYmd}T12:00:00.000Z`],
+    sql: `INSERT INTO signals (id, holding_id, signal_type, alpha_at_signal, is_resolved, detected_at, alpha_day)
+          VALUES (?, ?, ?, ?, 0, ?, ?)`,
+    args: [id, holdingId, signalType, alphaAtSignal, detectedAtIso, alphaDayYmd],
   });
 }
 
@@ -70,9 +80,11 @@ export async function generateSignalsForUser(
   userId: string,
   db: Client = getDb(),
 ): Promise<GenerateSignalsResult> {
+  const runDateYmd = todayUtcYmd();
   signalsDebug("generateSignalsForUser start", {
     userId,
     benchmark: SIGNAL_BENCHMARK_TICKER,
+    runDateYmd,
   });
 
   const reconcile = await reconcileAlphaHistoryForUser(userId, db);
@@ -116,13 +128,13 @@ export async function generateSignalsForUser(
     const chronological = [...alphaRs.rows].reverse();
     const alphas = chronological.map((r) => Number(r.alpha_value));
     const latestRecordedAt = String(chronological[chronological.length - 1].recorded_at);
-    const dateYmd = latestRecordedAt.slice(0, 10);
+    const alphaDateYmd = latestRecordedAt.slice(0, 10);
 
     const points = chronological.map((r) => ({
       recorded_at: String(r.recorded_at),
       alpha_value: Number(r.alpha_value),
     }));
-    signalsDebug("alpha tail (chronological)", { ticker: h.ticker, holdingId, dateYmd, points });
+    signalsDebug("alpha tail (chronological)", { ticker: h.ticker, holdingId, alphaDateYmd, points });
 
     if (alphas.length >= 3) {
       const last3 = alphas.slice(-3);
@@ -134,20 +146,20 @@ export async function generateSignalsForUser(
         note: "requires all three strictly < 0",
       });
       if (warnRule) {
-        const exists = await signalExistsForDay(db, holdingId, "WARN", dateYmd);
+        const exists = await signalExistsForAlphaDay(db, holdingId, "WARN", alphaDateYmd);
         if (exists) {
-          signalsDebug("WARN skipped: already exists for calendar day", { ticker: h.ticker, dateYmd });
+          signalsDebug("WARN skipped: already exists for alpha day", { ticker: h.ticker, alphaDateYmd });
         } else {
           await insertSignal(
             db,
             holdingId,
             "WARN",
             roundAlphaMetric(alphas[alphas.length - 1]!),
-            dateYmd,
+            alphaDateYmd,
           );
           inserted += 1;
           details.push({ holdingId, type: "WARN" });
-          signalsDebug("inserted WARN", { ticker: h.ticker, dateYmd });
+          signalsDebug("inserted WARN", { ticker: h.ticker, runDateYmd, alphaDateYmd });
         }
       }
     } else {
@@ -169,14 +181,14 @@ export async function generateSignalsForUser(
         note: "prev day alpha < 0 and latest > 0",
       });
       if (buyRule) {
-        const exists = await signalExistsForDay(db, holdingId, "BUY", dateYmd);
+        const exists = await signalExistsForAlphaDay(db, holdingId, "BUY", alphaDateYmd);
         if (exists) {
-          signalsDebug("BUY skipped: already exists for calendar day", { ticker: h.ticker, dateYmd });
+          signalsDebug("BUY skipped: already exists for alpha day", { ticker: h.ticker, alphaDateYmd });
         } else {
-          await insertSignal(db, holdingId, "BUY", roundAlphaMetric(cur), dateYmd);
+          await insertSignal(db, holdingId, "BUY", roundAlphaMetric(cur), alphaDateYmd);
           inserted += 1;
           details.push({ holdingId, type: "BUY" });
-          signalsDebug("inserted BUY", { ticker: h.ticker, dateYmd });
+          signalsDebug("inserted BUY", { ticker: h.ticker, runDateYmd, alphaDateYmd });
         }
       }
     } else {
