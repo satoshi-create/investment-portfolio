@@ -261,7 +261,8 @@ export function EtfCollectionPage() {
             ) : null}
         </div>
 
-        <EtfTable etfs={data.etfs ?? []} fxUsdJpy={data.fxUsdJpy ?? null} regionFilter={region} />
+        {/* Table is always global (no pin-driven filtering). */}
+        <EtfTable etfs={data.etfs ?? []} fxUsdJpy={data.fxUsdJpy ?? null} regionFilter="ALL" />
       </div>
     </div>
   );

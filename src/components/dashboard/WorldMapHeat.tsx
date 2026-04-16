@@ -4,23 +4,43 @@ import React, { useMemo, useState } from "react";
 
 import type { EtfRow, EtfRegionGroup } from "@/src/components/dashboard/EtfTable";
 
-type GeoCode = "NA" | "SA" | "EU" | "AF" | "AS" | "OC" | "GL" | "OTHER";
-
-const CONTINENTS: { code: Exclude<GeoCode, "GL" | "OTHER">; label: string }[] = [
-  { code: "NA", label: "North America" },
-  { code: "SA", label: "South America" },
-  { code: "EU", label: "Europe" },
-  { code: "AF", label: "Africa" },
-  { code: "AS", label: "Asia" },
-  { code: "OC", label: "Oceania" },
-];
+type GeoCode = "US" | "EU" | "CN" | "JP" | "IN" | "SEA" | "AF" | "MX" | "FR" | "GL" | "OTHER";
 
 type GeoDatum = {
   code: GeoCode;
   label: string;
-  score: number | null; // avg cumulative alpha 90d
-  etfs: { ticker: string; alpha90d: number | null; regionGroup: EtfRegionGroup }[];
+  score90d: number | null;
+  etfs: EtfRow[];
 };
+
+type Pin = {
+  code: GeoCode;
+  lon: number; // -180..180
+  lat: number; // -90..90
+};
+
+// Equirectangular (-180..180, 90..-90). Pins use representative lon/lat.
+const PINS: Pin[] = [
+  { code: "US", lon: -98, lat: 39 },
+  { code: "MX", lon: -102, lat: 23 },
+  { code: "EU", lon: 10, lat: 50 },
+  { code: "AF", lon: 20, lat: 5 },
+  { code: "CN", lon: 105, lat: 35 },
+  { code: "JP", lon: 138, lat: 36 },
+  { code: "IN", lon: 78, lat: 22 },
+  { code: "SEA", lon: 106, lat: 10 },
+  { code: "FR", lon: 30, lat: 0 },
+  { code: "GL", lon: 0, lat: 80 },
+];
+
+const MAP_VIEWBOX_W = 2520.631;
+const MAP_VIEWBOX_H = 1260.315;
+
+function lonLatToXY(lon: number, lat: number): { x: number; y: number } {
+  const x = ((lon + 180) / 360) * MAP_VIEWBOX_W;
+  const y = ((90 - lat) / 180) * MAP_VIEWBOX_H;
+  return { x, y };
+}
 
 function clamp01(x: number): number {
   if (!Number.isFinite(x)) return 0;
@@ -48,51 +68,60 @@ function mix(a: string, b: string, t: number): string {
   return `rgb(${r} ${g} ${bl})`;
 }
 
-/**
- * Visual encoding:
- * - Use cumulativeAlpha90d average per geo code as the heat score.
- * - Normalize across available geos, then map to a warm->cool palette:
- *   cold (neg) => rose, hot (pos) => emerald, neutral => slate.
- */
-function heatFill(score: number | null, min: number, max: number): string {
-  if (score == null || !Number.isFinite(score)) return "rgb(71 85 105 / 0.25)"; // slate-600/25
-  if (!(max > min)) return "rgb(34 211 238 / 0.22)"; // cyan-ish when flat
+function scoreToColor(score: number | null, min: number, max: number): string {
+  if (score == null || !Number.isFinite(score)) return "rgb(148 163 184 / 0.25)";
+  if (!(max > min)) return "rgb(34 211 238 / 0.22)";
   const t = clamp01((score - min) / (max - min));
-  // 0..0.5: rose -> slate, 0.5..1: slate -> emerald
-  if (t < 0.5) return mix("#fb7185", "#64748b", t / 0.5); // rose-400 -> slate-500
-  return mix("#64748b", "#34d399", (t - 0.5) / 0.5); // slate-500 -> emerald-400
+  if (t < 0.5) return mix("#fb7185", "#64748b", t / 0.5);
+  return mix("#64748b", "#34d399", (t - 0.5) / 0.5);
 }
 
 function geoLabel(code: GeoCode): string {
-  if (code === "NA") return "North America";
-  if (code === "SA") return "South America";
+  if (code === "US") return "United States";
+  if (code === "MX") return "Mexico";
   if (code === "EU") return "Europe";
+  if (code === "CN") return "China";
+  if (code === "JP") return "Japan";
+  if (code === "IN") return "India";
+  if (code === "SEA") return "Southeast Asia";
   if (code === "AF") return "Africa";
-  if (code === "AS") return "Asia";
-  if (code === "OC") return "Oceania";
+  if (code === "FR") return "Frontier";
   if (code === "GL") return "Global";
   return "Other";
 }
 
 function geoToFilter(code: GeoCode): "ALL" | EtfRegionGroup {
-  // Map geo clicks to the existing region filter (coarse).
-  if (code === "NA" || code === "EU" || code === "OC") return "GLOBAL_DEVELOPED";
-  if (code === "SA" || code === "AF") return "EMERGING_FRONTIER";
-  if (code === "AS") return "ALL";
+  if (code === "US" || code === "EU" || code === "JP") return "GLOBAL_DEVELOPED";
+  if (code === "CN" || code === "IN" || code === "SEA" || code === "AF" || code === "MX" || code === "FR")
+    return "EMERGING_FRONTIER";
   if (code === "GL") return "THEMATIC_STRATA";
   return "ALL";
 }
 
 function asGeoCode(input: string | null | undefined): GeoCode {
   const s = (input ?? "").trim().toUpperCase();
-  if (s === "US") return "NA";
-  if (s === "MX") return "NA";
+  if (s === "US") return "US";
+  if (s === "MX") return "MX";
   if (s === "EU") return "EU";
-  if (s === "IN") return "AS";
-  if (s === "JP") return "AS";
+  if (s === "CN") return "CN";
+  if (s === "JP") return "JP";
+  if (s === "IN") return "IN";
+  if (s === "SEA") return "SEA";
+  if (s === "AF") return "AF";
+  if (s === "FR") return "FR";
   if (s === "GL") return "GL";
-  if (s === "FR") return "AF";
   return "OTHER";
+}
+
+function pinRadius(score90d: number | null, min: number, max: number): number {
+  if (score90d == null || !Number.isFinite(score90d)) return 11;
+  // Normalize by the observed min/max so negative (weak/red) becomes smaller
+  // and positive (strong/green) becomes larger.
+  if (!(max > min)) return 15;
+  const t = clamp01((score90d - min) / (max - min)); // 0..1
+  const rMin = 7.5;
+  const rMax = 30;
+  return rMin + t * (rMax - rMin);
 }
 
 export function WorldMapHeat({
@@ -105,38 +134,26 @@ export function WorldMapHeat({
   onSelectFilter: (next: "ALL" | EtfRegionGroup) => void;
 }) {
   const [hover, setHover] = useState<GeoCode | null>(null);
+  const [selectedPin, setSelectedPin] = useState<GeoCode | null>(null);
 
-  const geoData = useMemo((): { byCode: Map<GeoCode, GeoDatum>; min: number; max: number } => {
+  const pinData = useMemo((): { byCode: Map<GeoCode, GeoDatum>; min: number; max: number } => {
     const by = new Map<GeoCode, GeoDatum>();
-    const push = (code: GeoCode, e: EtfRow) => {
-      if (!by.has(code)) {
-        by.set(code, { code, label: geoLabel(code), score: null, etfs: [] });
-      }
-      by.get(code)!.etfs.push({ ticker: e.ticker, alpha90d: e.cumulativeAlpha90d, regionGroup: e.regionGroup });
-    };
-
-    // Always render continents even when there are no matching ETFs (neutral heat).
-    for (const c of CONTINENTS) {
-      by.set(c.code, { code: c.code, label: c.label, score: null, etfs: [] });
-    }
-    by.set("OTHER", { code: "OTHER", label: "Other", score: null, etfs: [] });
-    by.set("GL", { code: "GL", label: "Global", score: null, etfs: [] });
+    for (const p of PINS) by.set(p.code, { code: p.code, label: geoLabel(p.code), score90d: null, etfs: [] });
+    by.set("OTHER", { code: "OTHER", label: "Other", score90d: null, etfs: [] });
 
     for (const e of etfs) {
       const code = asGeoCode(e.geographyCode);
-      push(code, e);
+      if (!by.has(code)) by.set(code, { code, label: geoLabel(code), score90d: null, etfs: [] });
+      by.get(code)!.etfs.push(e);
     }
 
     const scores: number[] = [];
     for (const d of by.values()) {
-      const vals = d.etfs.map((x) => x.alpha90d).filter((x): x is number => x != null && Number.isFinite(x));
-      if (vals.length === 0) {
-        d.score = null;
-        continue;
-      }
-      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-      d.score = avg;
-      scores.push(avg);
+      const vals = d.etfs
+        .map((x) => x.cumulativeAlpha90d)
+        .filter((x): x is number => x != null && Number.isFinite(x));
+      d.score90d = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      if (d.score90d != null) scores.push(d.score90d);
     }
 
     const min = scores.length > 0 ? Math.min(...scores) : 0;
@@ -144,51 +161,93 @@ export function WorldMapHeat({
     return { byCode: by, min, max };
   }, [etfs]);
 
-  const hovered = hover ? geoData.byCode.get(hover) ?? null : null;
+  const hovered = hover ? pinData.byCode.get(hover) ?? null : null;
+  const selected = selectedPin ? pinData.byCode.get(selectedPin) ?? null : null;
 
-  const selectedGeo = useMemo(() => {
-    // When a filter is selected, highlight likely geos.
-    if (selectedFilter === "GLOBAL_DEVELOPED") return new Set<GeoCode>(["NA", "EU", "OC"]);
-    if (selectedFilter === "EMERGING_FRONTIER") return new Set<GeoCode>(["SA", "AF", "AS"]);
-    if (selectedFilter === "THEMATIC_STRATA") return new Set<GeoCode>(["GL", "NA", "EU", "AS"]);
+  const selectedPins = useMemo(() => {
+    if (selectedFilter === "GLOBAL_DEVELOPED") return new Set<GeoCode>(["US", "EU", "JP"]);
+    if (selectedFilter === "EMERGING_FRONTIER") return new Set<GeoCode>(["CN", "IN", "SEA", "AF", "MX", "FR"]);
+    if (selectedFilter === "THEMATIC_STRATA") return new Set<GeoCode>(["GL"]);
     return new Set<GeoCode>();
   }, [selectedFilter]);
 
   const strokeFor = (code: GeoCode) =>
-    selectedGeo.has(code) ? "rgb(34 211 238 / 0.85)" : "rgb(148 163 184 / 0.35)"; // cyan / slate
+    selectedPins.has(code) ? "rgb(34 211 238 / 0.90)" : "rgb(148 163 184 / 0.45)";
 
   const handleActivate = (code: GeoCode) => {
-    const next = geoToFilter(code);
-    onSelectFilter(next);
+    setSelectedPin(code);
+    onSelectFilter(geoToFilter(code));
   };
 
-  const continentPaths = useMemo(() => {
-    return {
-      /**
-       * Paths are intentionally coarse "continent hit areas".
-       * This map image is Pacific-centered: Eurasia/Africa left, Americas right.
-       */
-      AS: "M70,85 C170,45 360,50 520,120 C590,150 610,210 585,255 C555,305 455,330 340,315 C240,302 145,258 95,205 C55,165 45,115 70,85 Z",
-      EU: "M260,105 C310,78 375,78 425,103 C455,120 460,150 435,170 C405,192 340,195 295,173 C260,155 245,125 260,105 Z",
-      AF: "M265,190 C305,175 360,182 392,215 C425,252 420,310 385,352 C350,395 300,412 268,392 C235,372 232,320 245,278 C255,242 238,205 265,190 Z",
-      OC: "M390,360 C430,340 485,345 520,372 C555,398 548,438 510,455 C470,472 420,462 395,435 C372,410 362,378 390,360 Z",
-      NA: "M610,90 C690,50 830,58 905,110 C960,150 965,215 925,255 C885,298 810,310 735,285 C660,262 600,215 592,165 C588,135 592,110 610,90 Z",
-      SA: "M780,275 C820,260 865,278 890,315 C920,360 912,430 870,470 C835,505 792,505 768,475 C742,442 748,392 760,355 C770,325 748,288 780,275 Z",
-    } as const;
-  }, []);
+  const focused = selected ?? hovered;
 
-  /**
-   * Minimal "world map" (stylized) without external deps.
-   * Coordinates are in a 1000x520 viewBox.
-   * Regions are intentionally coarse blobs positioned approximately.
-   */
+  const summaryForFocused = useMemo(() => {
+    if (!focused) return null;
+    const list = focused.etfs ?? [];
+    const avg = (vals: (number | null)[]) => {
+      const v = vals.filter((x): x is number => x != null && Number.isFinite(x));
+      if (v.length === 0) return null;
+      return v.reduce((a, b) => a + b, 0) / v.length;
+    };
+    const avg90 = avg(list.map((e) => e.cumulativeAlpha90d));
+    const avg1d = avg(list.map((e) => e.latestDailyAlpha));
+    const avgZ = avg(list.map((e) => e.dailyAlphaZ));
+    const trackAvg = avg(list.map((e) => e.trackingAlphaScore));
+    const phaseCount = list.filter((e) => e.phaseShift).length;
+    const usdCount = list.filter((e) => e.currency === "USD").length;
+    const jpyCount = list.filter((e) => e.currency === "JPY").length;
+    const topBy90 =
+      [...list].filter((e) => e.cumulativeAlpha90d != null).sort((a, b) => (b.cumulativeAlpha90d ?? -Infinity) - (a.cumulativeAlpha90d ?? -Infinity))[0] ??
+      null;
+    const worstBy90 =
+      [...list].filter((e) => e.cumulativeAlpha90d != null).sort((a, b) => (a.cumulativeAlpha90d ?? Infinity) - (b.cumulativeAlpha90d ?? Infinity))[0] ??
+      null;
+    /**
+     * Trend score: a single number to read at a glance.
+     * - avg90d is the backbone (structure trend)
+     * - avg1d is momentum accent
+     * - avgZ is regime intensity (clamped)
+     * Output ~ [-100, 100] range.
+     */
+    const zClamped = avgZ != null ? Math.max(-3, Math.min(3, avgZ)) : 0;
+    const trendScore =
+      (avg90 ?? 0) * 1.2 +
+      (avg1d ?? 0) * 2.0 +
+      zClamped * 3.0 -
+      (phaseCount > 0 ? 1.5 : 0);
+
+    return { avg90, avg1d, avgZ, trackAvg, phaseCount, usdCount, jpyCount, topBy90, worstBy90, total: list.length, trendScore };
+  }, [focused]);
+
+  function fmtPct(v: number | null, digits = 2) {
+    if (v == null || !Number.isFinite(v)) return "—";
+    return `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
+  }
+
+  function fmtZ(v: number | null) {
+    if (v == null || !Number.isFinite(v)) return "—";
+    return `${v > 0 ? "+" : ""}${v.toFixed(2)}σ`;
+  }
+
+  function fmtScore(v: number | null): string {
+    if (v == null || !Number.isFinite(v)) return "—";
+    return `${v > 0 ? "+" : ""}${v.toFixed(1)}`;
+  }
+
+  function scoreClass(v: number | null): string {
+    if (v == null || !Number.isFinite(v)) return "text-muted-foreground border-border bg-background/60";
+    if (v > 0) return "text-emerald-200 border-emerald-500/35 bg-emerald-500/10";
+    if (v < 0) return "text-rose-200 border-rose-500/35 bg-rose-500/10";
+    return "text-muted-foreground border-border bg-background/60";
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-background/40 p-4 overflow-hidden">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">World Heat (90D Alpha)</div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">World Pins (ETF Strata)</div>
           <div className="text-[11px] text-muted-foreground mt-1">
-            地域ごとの直近90日累積Alpha（平均）を、地図の“熱”として表示（クリックでフィルタ）
+            ピンをホバーして、その国/地域のETFの“熱”を確認（クリックでフィルタ）
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -204,166 +263,142 @@ export function WorldMapHeat({
           >
             World
           </button>
+          {selectedPin ? (
+            <button
+              type="button"
+              onClick={() => setSelectedPin(null)}
+              className="text-[10px] font-bold uppercase tracking-wide px-2.5 py-2 rounded-lg border border-border text-muted-foreground hover:bg-muted/40 transition-all"
+              title="ピン選択を解除"
+            >
+              Clear
+            </button>
+          ) : null}
         </div>
       </div>
 
       <div className="mt-3 relative">
-        <svg
-          viewBox="0 0 1000 520"
-          className="w-full h-auto"
-          role="img"
-          aria-label="ETF heat world map"
-        >
+        <svg viewBox={`0 0 ${MAP_VIEWBOX_W} ${MAP_VIEWBOX_H}`} className="w-full h-auto" role="img" aria-label="ETF pin world map">
           <defs>
             <radialGradient id="glow" cx="50%" cy="50%" r="65%">
-              <stop offset="0%" stopColor="rgb(34 211 238 / 0.12)" />
+              <stop offset="0%" stopColor="rgb(34 211 238 / 0.10)" />
               <stop offset="100%" stopColor="rgb(34 211 238 / 0)" />
             </radialGradient>
             <clipPath id="mapClip">
-              <rect x="0" y="0" width="1000" height="520" rx="26" />
+              <rect x="0" y="0" width={MAP_VIEWBOX_W} height={MAP_VIEWBOX_H} rx="36" />
             </clipPath>
+            <filter id="pinShadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="rgb(0 0 0 / 0.45)" />
+            </filter>
           </defs>
 
           <g clipPath="url(#mapClip)">
-            {/* Base map image (public/world-map.png) */}
             <image
-              href="/world-map.png"
+              href="/World_location_map_(equirectangular_180).svg"
               x="0"
               y="0"
-              width="1000"
-              height="520"
+              width={MAP_VIEWBOX_W}
+              height={MAP_VIEWBOX_H}
               preserveAspectRatio="xMidYMid slice"
             />
-            {/* Subtle glow overlay to match the app theme */}
-            <rect x="0" y="0" width="1000" height="520" rx="26" fill="url(#glow)" />
+            <rect x="0" y="0" width={MAP_VIEWBOX_W} height={MAP_VIEWBOX_H} rx="36" fill="url(#glow)" />
 
-            {/* Graticule-ish lines */}
-            <g opacity="0.22" stroke="rgb(148 163 184 / 0.35)" strokeWidth="1">
-              <path d="M0 260H1000" />
-              <path d="M200 0V520" />
-              <path d="M500 0V520" />
-              <path d="M800 0V520" />
-            </g>
+            {PINS.map((p) => {
+              const pt = lonLatToXY(p.lon, p.lat);
+              const d = pinData.byCode.get(p.code) ?? null;
+              const score90d = d?.score90d ?? null;
+              const avg1d = (() => {
+                const vals = (d?.etfs ?? []).map((x) => x.latestDailyAlpha).filter((x): x is number => x != null && Number.isFinite(x));
+                if (vals.length === 0) return null;
+                return vals.reduce((a, b) => a + b, 0) / vals.length;
+              })();
+              const r = pinRadius(score90d, pinData.min, pinData.max);
+              const fill = scoreToColor(score90d, pinData.min, pinData.max);
+              const stroke = strokeFor(p.code);
+              const active = selectedPins.has(p.code);
+              const phaseCount = (d?.etfs ?? []).filter((x) => x.phaseShift).length;
+              const isSelected = selectedPin === p.code;
+              const ring =
+                avg1d == null
+                  ? "rgb(148 163 184 / 0.45)"
+                  : avg1d > 0
+                    ? "rgb(52 211 153 / 0.85)"
+                    : "rgb(251 113 133 / 0.85)";
 
-            {/* Background: continents silhouette (replaces the halo circle) */}
-            <g
-              opacity={selectedFilter === "THEMATIC_STRATA" ? 0.16 : 0.10}
-              style={{ pointerEvents: "none" }}
-            >
-              {(["NA", "SA", "EU", "AF", "AS", "OC"] as const).map((c) => (
-                <path
-                  key={c}
-                  d={continentPaths[c]}
-                  fill={heatFill(geoData.byCode.get("GL")?.score ?? null, geoData.min, geoData.max)}
-                />
-              ))}
-            </g>
-
-            {/* Regions (coarse) */}
-            <Region
-              code="NA"
-              label="North America"
-              d={continentPaths.NA}
-              fill={heatFill(geoData.byCode.get("NA")?.score ?? null, geoData.min, geoData.max)}
-              stroke={strokeFor("NA")}
-              onHover={setHover}
-              onActivate={handleActivate}
-            />
-            <Region
-              code="SA"
-              label="South America"
-              d={continentPaths.SA}
-              fill={heatFill(geoData.byCode.get("SA")?.score ?? null, geoData.min, geoData.max)}
-              stroke={strokeFor("SA")}
-              onHover={setHover}
-              onActivate={handleActivate}
-            />
-            <Region
-              code="EU"
-              label="Europe"
-              d={continentPaths.EU}
-              fill={heatFill(geoData.byCode.get("EU")?.score ?? null, geoData.min, geoData.max)}
-              stroke={strokeFor("EU")}
-              onHover={setHover}
-              onActivate={handleActivate}
-            />
-            <Region
-              code="AF"
-              label="Africa"
-              d={continentPaths.AF}
-              fill={heatFill(geoData.byCode.get("AF")?.score ?? null, geoData.min, geoData.max)}
-              stroke={strokeFor("AF")}
-              onHover={setHover}
-              onActivate={handleActivate}
-            />
-            <Region
-              code="AS"
-              label="Asia"
-              d={continentPaths.AS}
-              fill={heatFill(geoData.byCode.get("AS")?.score ?? null, geoData.min, geoData.max)}
-              stroke={strokeFor("AS")}
-              onHover={setHover}
-              onActivate={handleActivate}
-            />
-            <Region
-              code="OC"
-              label="Oceania"
-              d={continentPaths.OC}
-              fill={heatFill(geoData.byCode.get("OC")?.score ?? null, geoData.min, geoData.max)}
-              stroke={strokeFor("OC")}
-              onHover={setHover}
-              onActivate={handleActivate}
-            />
-
-            {/* Global thematic toggle (keeps click affordance after removing the halo circle) */}
-            <g>
-              <text
-                x="500"
-                y="60"
-                textAnchor="middle"
-                className="fill-slate-200/70 text-[10px] font-bold uppercase tracking-widest"
-                onMouseEnter={() => setHover("GL")}
-                onMouseLeave={() => setHover(null)}
-                onClick={() => handleActivate("GL")}
-                style={{ cursor: "pointer" }}
-              >
-                Global thematic layer
-              </text>
-            </g>
-
-            {/* Labels */}
-            <g className="fill-slate-200/70 text-[10px] font-bold">
-              <text x="800" y="105">NA</text>
-              <text x="840" y="500">SA</text>
-              <text x="350" y="120">EU</text>
-              <text x="320" y="405">AF</text>
-              <text x="250" y="165">AS</text>
-              <text x="470" y="455">OC</text>
-            </g>
+              return (
+                <g
+                  key={p.code}
+                  onMouseEnter={() => setHover(p.code)}
+                  onMouseLeave={() => setHover(null)}
+                  onClick={() => handleActivate(p.code)}
+                  style={{ cursor: "pointer" }}
+                  filter="url(#pinShadow)"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${geoLabel(p.code)} pin`}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") handleActivate(p.code);
+                  }}
+                >
+                  <circle
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={r * 1.8}
+                    fill={active ? "rgb(34 211 238 / 0.14)" : "rgb(148 163 184 / 0.10)"}
+                  />
+                  {/* ring encodes 1D direction */}
+                  <circle cx={pt.x} cy={pt.y} r={r + 2.5} fill="transparent" stroke={ring} strokeWidth={3} />
+                  {/* fill encodes 90D level; size encodes magnitude */}
+                  <circle
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={r}
+                    fill={fill}
+                    fillOpacity={0.9}
+                    stroke={isSelected ? "rgb(34 211 238 / 0.95)" : stroke}
+                    strokeWidth={3}
+                  />
+                  {avg1d != null ? (
+                    <text x={pt.x} y={pt.y - r - 10} textAnchor="middle" className="fill-slate-200/90 text-[12px] font-black">
+                      {avg1d > 0 ? "▲" : "▼"}
+                    </text>
+                  ) : null}
+                  {phaseCount > 0 ? (
+                    <circle cx={pt.x + r * 0.9} cy={pt.y - r * 0.9} r={5.5} fill="rgb(245 158 11 / 0.95)" />
+                  ) : null}
+                  <text
+                    x={pt.x}
+                    y={pt.y + r + 22}
+                    textAnchor="middle"
+                    className="fill-slate-200/80 text-[10px] font-bold uppercase tracking-widest"
+                  >
+                    {p.code}
+                  </text>
+                </g>
+              );
+            })}
           </g>
         </svg>
 
-        {/* Hover tooltip */}
         <div className="mt-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="text-[11px] text-muted-foreground">
-              {hovered ? (
+              {focused ? (
                 <>
-                  <span className="font-bold text-foreground/90">{hovered.label}</span>
-                  <span className="ml-2 font-mono">
-                    {hovered.score != null && Number.isFinite(hovered.score)
-                      ? `${hovered.score > 0 ? "+" : ""}${hovered.score.toFixed(2)}%`
-                      : "—"}
+                  <span className="font-bold text-foreground/90">{focused.label}</span>
+                  <span className="ml-2 font-mono">90D {summaryForFocused?.avg90 != null ? fmtPct(summaryForFocused.avg90) : "—"}</span>
+                  <span className="ml-2 font-mono text-muted-foreground">
+                    1D {summaryForFocused?.avg1d != null ? fmtPct(summaryForFocused.avg1d) : "—"} / Z{" "}
+                    {summaryForFocused?.avgZ != null ? fmtZ(summaryForFocused.avgZ) : "—"}
                   </span>
                 </>
               ) : (
-                <span>Hover a region to see details</span>
+                <span>Click a pin to pin details (or hover for preview)</span>
               )}
             </div>
-            {hovered ? (
+            {focused ? (
               <button
                 type="button"
-                onClick={() => handleActivate(hovered.code)}
+                onClick={() => handleActivate(focused.code)}
                 className="text-[10px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-3 py-2 rounded-lg hover:bg-accent-cyan/10 transition-all"
                 title="この地域でフィルタ"
               >
@@ -371,62 +406,120 @@ export function WorldMapHeat({
               </button>
             ) : null}
           </div>
-          {hovered ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {hovered.etfs.slice(0, 8).map((e) => (
-                <span
-                  key={e.ticker}
-                  className="text-[10px] font-bold uppercase tracking-wide text-foreground/90 border border-border bg-background/60 px-2 py-1 rounded-lg"
-                  title={`${e.ticker} 90D: ${e.alpha90d != null ? `${e.alpha90d > 0 ? "+" : ""}${e.alpha90d.toFixed(2)}%` : "—"}`}
-                >
-                  <span className="font-mono">{e.ticker}</span>
-                  <span className="ml-2 text-muted-foreground font-mono">
-                    {e.alpha90d != null && Number.isFinite(e.alpha90d) ? `${e.alpha90d > 0 ? "+" : ""}${e.alpha90d.toFixed(1)}%` : "—"}
-                  </span>
-                </span>
-              ))}
+
+          {focused ? (
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+              {focused.etfs.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No ETFs mapped to this pin</div>
+              ) : (
+                [...focused.etfs]
+                  .sort((a, b) => Math.abs(b.dailyAlphaZ ?? 0) - Math.abs(a.dailyAlphaZ ?? 0))
+                  .slice(0, 9)
+                  .map((e) => (
+                    <div
+                      key={e.ticker}
+                      className="rounded-xl border border-border bg-background/60 px-3 py-2"
+                      title={e.underlyingStructure}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-bold text-foreground/90">
+                          <span className="font-mono">{e.ticker}</span>
+                          {e.phaseShift ? (
+                            <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-amber-300">Phase</span>
+                          ) : null}
+                        </div>
+                        <div className="text-[10px] font-mono text-muted-foreground">
+                          {e.cumulativeAlpha90d != null
+                            ? `${e.cumulativeAlpha90d > 0 ? "+" : ""}${e.cumulativeAlpha90d.toFixed(2)}%`
+                            : "—"}
+                        </div>
+                      </div>
+                      <div className="mt-1 text-[10px] text-muted-foreground line-clamp-2">{e.name}</div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                        <span className="font-mono text-foreground/90">
+                          1D{" "}
+                          {e.latestDailyAlpha != null
+                            ? `${e.latestDailyAlpha > 0 ? "+" : ""}${e.latestDailyAlpha.toFixed(2)}%`
+                            : "—"}
+                        </span>
+                        <span className="font-mono text-foreground/90">
+                          Z {e.dailyAlphaZ != null ? `${e.dailyAlphaZ > 0 ? "+" : ""}${e.dailyAlphaZ.toFixed(2)}σ` : "—"}
+                        </span>
+                        <span className="font-mono text-muted-foreground">
+                          Track {Number.isFinite(e.trackingAlphaScore) ? e.trackingAlphaScore.toFixed(1) : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </div>
+          ) : null}
+
+          {focused && summaryForFocused ? (
+            <div className="mt-3 rounded-2xl border border-border bg-background/40 p-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Country Snapshot</div>
+                <div className="text-[10px] text-muted-foreground font-mono">
+                  ETFs {summaryForFocused.total} / Phase {summaryForFocused.phaseCount} / USD {summaryForFocused.usdCount} / JPY {summaryForFocused.jpyCount}
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
+                <div className="rounded-xl border border-border bg-background/60 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Trend</div>
+                  <div className="mt-1 font-mono text-foreground/90">
+                    90D {fmtPct(summaryForFocused.avg90)} / 1D {fmtPct(summaryForFocused.avg1d)} / Z {fmtZ(summaryForFocused.avgZ)}
+                  </div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">
+                    Track Avg {summaryForFocused.trackAvg != null ? summaryForFocused.trackAvg.toFixed(1) : "—"}
+                  </div>
+                  <div className="mt-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Trend Score</div>
+                  <div className="mt-1">
+                    <span
+                      className={`inline-flex items-center font-mono font-black text-base px-3 py-1 rounded-lg border ${scoreClass(
+                        summaryForFocused.trendScore,
+                      )}`}
+                      title="90D/1D/Z/Phase を合成した国別トレンドスコア"
+                    >
+                      {fmtScore(summaryForFocused.trendScore)}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border bg-background/60 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Top / Bottom (90D)</div>
+                  <div className="mt-1 text-[11px] text-foreground/90">
+                    {summaryForFocused.topBy90 ? (
+                      <span className="font-mono">
+                        {summaryForFocused.topBy90.ticker} {fmtPct(summaryForFocused.topBy90.cumulativeAlpha90d)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-[11px] text-foreground/90">
+                    {summaryForFocused.worstBy90 ? (
+                      <span className="font-mono">
+                        {summaryForFocused.worstBy90.ticker} {fmtPct(summaryForFocused.worstBy90.cumulativeAlpha90d)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border bg-background/60 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">How to read</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground leading-snug">
+                    <span className="font-bold text-foreground/80">塗り</span>: 90D（累積Alpha平均） /{" "}
+                    <span className="font-bold text-foreground/80">外周</span>: 1D（当日方向） /{" "}
+                    <span className="font-bold text-foreground/80">▲▼</span>: 1Dの符号 /{" "}
+                    <span className="font-bold text-foreground/80">●</span>: Phase Shift 発生
+                  </div>
+                </div>
+              </div>
             </div>
           ) : null}
         </div>
       </div>
     </div>
-  );
-}
-
-function Region({
-  code,
-  label,
-  d,
-  fill,
-  stroke,
-  onHover,
-  onActivate,
-}: {
-  code: GeoCode;
-  label: string;
-  d: string;
-  fill: string;
-  stroke: string;
-  onHover: (c: GeoCode | null) => void;
-  onActivate: (c: GeoCode) => void;
-}) {
-  return (
-    <path
-      d={d}
-      fill={fill}
-      stroke={stroke}
-      strokeWidth={2}
-      onMouseEnter={() => onHover(code)}
-      onMouseLeave={() => onHover(null)}
-      onClick={() => onActivate(code)}
-      role="button"
-      tabIndex={0}
-      aria-label={`${label} region`}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onActivate(code);
-      }}
-      style={{ cursor: "pointer" }}
-    />
   );
 }
 

@@ -86,6 +86,71 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     relatedKeywords: ["インド", "India", "人口", "内需", "金融", "都市化"],
   },
   {
+    ticker: "INDA",
+    name: "iShares MSCI India ETF",
+    regionGroup: "EMERGING_FRONTIER",
+    geographyLabel: "India",
+    geographyCode: "IN",
+    underlyingStructure: "インドの広い株式市場（内需・製造・サービスの複合）",
+    currency: "USD",
+    expenseRatioPercent: 0.64,
+    purityScore: 0.78,
+    liquidityScore: 0.88,
+    relatedKeywords: ["インド", "India", "MSCI", "内需", "製造", "サービス"],
+  },
+  {
+    ticker: "MCHI",
+    name: "iShares MSCI China ETF",
+    regionGroup: "EMERGING_FRONTIER",
+    geographyLabel: "China",
+    geographyCode: "CN",
+    underlyingStructure: "中国の政策・景気循環と巨大内需（製造・プラットフォーム・金融の再編）",
+    currency: "USD",
+    expenseRatioPercent: 0.59,
+    purityScore: 0.70,
+    liquidityScore: 0.90,
+    relatedKeywords: ["中国", "China", "内需", "製造", "政策", "MSCI"],
+  },
+  {
+    ticker: "EWJ",
+    name: "iShares MSCI Japan ETF",
+    regionGroup: "GLOBAL_DEVELOPED",
+    geographyLabel: "Japan",
+    geographyCode: "JP",
+    underlyingStructure: "日本の企業統治・円資産・輸出の質（高配当化と再投資の均衡）",
+    currency: "USD",
+    expenseRatioPercent: 0.50,
+    purityScore: 0.86,
+    liquidityScore: 0.92,
+    relatedKeywords: ["日本", "Japan", "MSCI", "輸出", "円", "企業統治"],
+  },
+  {
+    ticker: "VNM",
+    name: "VanEck Vietnam ETF",
+    regionGroup: "EMERGING_FRONTIER",
+    geographyLabel: "Southeast Asia",
+    geographyCode: "SEA",
+    underlyingStructure: "東南アジアの製造代替と内需拡張（若年人口×都市化×サプライチェーン移転）",
+    currency: "USD",
+    expenseRatioPercent: 0.61,
+    purityScore: 0.66,
+    liquidityScore: 0.70,
+    relatedKeywords: ["東南アジア", "ASEAN", "ベトナム", "Vietnam", "製造", "内需", "都市化"],
+  },
+  {
+    ticker: "EZA",
+    name: "iShares MSCI South Africa ETF",
+    regionGroup: "EMERGING_FRONTIER",
+    geographyLabel: "Africa",
+    geographyCode: "AF",
+    underlyingStructure: "南アフリカを中心とした資源・金融の循環（新興フロンティアの入口）",
+    currency: "USD",
+    expenseRatioPercent: 0.59,
+    purityScore: 0.62,
+    liquidityScore: 0.72,
+    relatedKeywords: ["アフリカ", "Africa", "南ア", "資源", "金融", "新興"],
+  },
+  {
     ticker: "EWW",
     name: "iShares MSCI Mexico ETF",
     regionGroup: "EMERGING_FRONTIER",
@@ -250,7 +315,7 @@ export async function getEtfCollectionSnapshot(db: Client, userId: string): Prom
 
   // Fetch daily alpha series concurrently (but bounded) to avoid timeouts.
   const MAX = GLOBAL_STRATA_ETFS.length;
-  const CONCURRENCY = Math.min(6, Math.max(2, MAX));
+  const CONCURRENCY = Math.min(10, Math.max(2, MAX));
   const results: (EtfEvaluatedRow | null)[] = new Array(MAX).fill(null);
   let nextIdx = 0;
 
