@@ -263,7 +263,7 @@ export function EtfTable({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
+      <div className="relative overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[1100px] text-left text-xs lg:text-sm">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
             <tr>

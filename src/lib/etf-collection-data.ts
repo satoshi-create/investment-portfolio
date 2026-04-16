@@ -233,6 +233,35 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     liquidityScore: 0.78,
     relatedKeywords: ["FANG", "プラットフォーム", "米国テック", "クラウド", "広告"],
   },
+  {
+    ticker: "ICLN",
+    name: "iShares Global Clean Energy ETF",
+    regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "CLEAN_ENERGY_GLOBAL",
+    geographyLabel: "Global",
+    geographyCode: "GL",
+    underlyingStructure: "クリーンエネルギー（再エネ・電化投資）の“世界の潮目”を観測するプローブ",
+    currency: "USD",
+    expenseRatioPercent: 0.41,
+    purityScore: 0.78,
+    liquidityScore: 0.88,
+    relatedKeywords: ["再エネ", "クリーンエネルギー", "電力", "太陽光", "風力", "送配電", "蓄電", "電化"],
+  },
+  {
+    ticker: "ASEA",
+    name: "Global X FTSE Southeast Asia ETF",
+    regionGroup: "EMERGING_FRONTIER",
+    strataThemeKey: "SEA_RENEWABLES_PROBE",
+    geographyLabel: "Southeast Asia",
+    geographyCode: "SEA",
+    underlyingStructure:
+      "東南アジア（SEA）の電化・電力インフラ投資の地殻変動を、地域株の資金循環として観測するプローブ（再エネ転換の温度計）",
+    currency: "USD",
+    expenseRatioPercent: 0.65,
+    purityScore: 0.62,
+    liquidityScore: 0.62,
+    relatedKeywords: ["東南アジア", "SEA", "ASEAN", "電力", "送配電", "再エネ", "インフラ", "電化", "電池"],
+  },
 ];
 
 /**

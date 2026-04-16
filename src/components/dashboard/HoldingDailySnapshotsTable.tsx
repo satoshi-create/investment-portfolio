@@ -84,7 +84,9 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
               Holding snapshots (銘柄×日)
             </h3>
             <p className="text-[10px] text-muted-foreground mt-1">
-              最新日のスライスを表示（CSV は全期間）。`holding_daily_snapshots` 記録（
+              最新日のスライスを表示（CSV は全期間）。過去日は上の{" "}
+              <span className="font-semibold text-muted-foreground/90">Portfolio snapshots</span> の行を開き、同日の銘柄
+              内訳を参照できます。`holding_daily_snapshots` 記録（
               {rows.length > 0 ? (
                 <>
                   <span className="font-mono text-muted-foreground/90">{distinctSnapshotDays}</span> 日分 ·{" "}

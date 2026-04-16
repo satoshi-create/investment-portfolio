@@ -73,6 +73,8 @@ function themeLabel(key: string): string {
   const k = key.trim().toUpperCase();
   if (k === "AI_SEMICONDUCTOR") return "AI / Semiconductor";
   if (k === "EV_BATTERY") return "EV / Battery";
+  if (k === "CLEAN_ENERGY_GLOBAL") return "Clean Energy (Global)";
+  if (k === "SEA_RENEWABLES_PROBE") return "SEA Renewables (Probe)";
   if (k === "US_TECH_PLATFORM") return "US Tech / Platform";
   if (k === "US_EQUITY_CORE") return "US Equity (Core)";
   if (k === "EU_EQUITY") return "Europe Equity";

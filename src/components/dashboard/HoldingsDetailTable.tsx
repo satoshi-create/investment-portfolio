@@ -177,7 +177,7 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
           含み損益・損益率は平均取得単価と Yahoo 日足ベースの最新終値から算出。米株の円換算はダッシュボード取得の USD/JPY（JPY=X、失敗時フォールバック）を使用。
         </p>
       </div>
-      <div className="overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
+      <div className="relative overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full text-left text-sm min-w-[1100px]">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.08em]">
             <tr>

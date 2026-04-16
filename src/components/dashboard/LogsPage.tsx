@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 
@@ -66,6 +66,17 @@ export function LogsPage() {
   const holdingSnapshots = data?.holdingSnapshots ?? [];
   const closedTrades = data?.closedTrades ?? [];
 
+  const holdingsBySnapshotDate = useMemo(() => {
+    const m = new Map<string, HoldingDailySnapshotRow[]>();
+    for (const h of holdingSnapshots) {
+      const d = h.snapshotDate;
+      const cur = m.get(d);
+      if (cur) cur.push(h);
+      else m.set(d, [h]);
+    }
+    return m;
+  }, [holdingSnapshots]);
+
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
       <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
@@ -101,7 +112,7 @@ export function LogsPage() {
           </div>
         </div>
 
-        <PortfolioSnapshotsTable rows={portfolioSnapshots} />
+        <PortfolioSnapshotsTable rows={portfolioSnapshots} holdingsBySnapshotDate={holdingsBySnapshotDate} />
         <HoldingDailySnapshotsTable snapshotDate={holdingSnapshotsDate} rows={holdingSnapshots} />
         <ClosedTradesTable rows={closedTrades} />
       </div>
