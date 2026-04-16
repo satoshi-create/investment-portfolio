@@ -1,0 +1,51 @@
+Company Name,Company Name_en,Country,Field,Primary Role,Ticker
+ADEKA,,JP,材料,石英ガラス・マスク材料
+AGC,,JP,材料,半導体材料（薬液・ケミカル）
+AMD,,US,前工程（設計）,CPU/GPU（ファブレス）
+Amkor,,US,後工程,OSAT（後工程ファウンドリー）
+Apple（設計）,,US,前工程（設計）,SoC設計（Mシリーズ）
+Applied Materials,,US,前工程,成膜・エッチング装置
+Broadcom,,US,前工程（設計）,通信・ストレージSoC（ファブレス）
+Cohu,,US,後工程寄り,テストハンドラー・検査装置
+DISCO,,JP,後工程,ダイシング・研磨装置
+Google（TPU）,,US,前工程（設計）,TPU・AIアクセラレータ
+HOYA,,JP,材料,フォトマスク基板・前工程材料
+IBM（International Business Machines）,,US,研究開発（プロセス源流）,先端半導体プロセス研究（2nm/GAAFET）
+Intel,,US,IDM（設計〜前工程〜後工程）,CPU/GPU/AI向け半導体（IDM）
+JSR,,JP,材料,CMPスラリー・感光材（レジスト）
+JテックC,,JP,前工程,薄膜成膜装置
+KLA,,US,前工程,検査・計測装置
+KOKUSAI ELECTRIC,,JP,前工程,成膜装置（CVD/ALD）
+Kulicke & Soffa,,US,後工程,ワイヤーボンダー
+Lam Research,,US,前工程,エッチング装置
+Meta（AIチップ）,,US,前工程（設計）,自社AIアクセラレータ
+NVIDIA,,US,前工程（設計）,GPU・AIアクセラレータ（ファブレス）
+Qualcomm,,US,前工程（設計）,通信SoC（ファブレス）
+RS Tech,,JP,前工程,シリコン材料・再生ウェハー
+SCREEN HD,,JP,前工程,洗浄装置
+SUMCO,,JP,材料,シリコンウェハー,3436
+Tesla（自社AIチップ）,,US,前工程（設計）,自動運転AIチップ
+Texas Instruments,,US,前工程（IDM）,アナログ半導体（IDM）
+アドバンテスト,,JP,前工程,半導体テスター
+アルバック,,JP,前工程,真空・成膜装置
+イビデン,,JP,後工程寄り,IC基板・パッケージ基板
+キオクシア,,JP,メモリ製造（IDM）,NANDフラッシュメモリ（BiCS FLASH）
+キヤノン（Canon Inc.）,,JP,前工程（露光）,半導体露光装置・NIL・検査装置
+ノリタケ,,JP,材料,CMP研磨材・砥石
+フェローテック,,JP,前工程,装置部材・真空関連部品
+ラピダス,,JP,前工程〜後工程（ファウンドリ）,2nm先端ロジック半導体製造
+ルネサス,,JP,前工程（IDM）,マイコン・車載半導体
+レーザーテック,Intel Corporation,JP,前工程,EUVマスク検査装置,INTC
+ローム,"Advanced Micro Devices, Inc.",JP,前工程（IDM）,パワー半導体,AMD
+荏原（EBARA）,Apple Inc.,JP,前工程,真空ポンプ・CMP装置,AAPL
+関東電化工業,"Applied Materials, Inc.",JP,材料,高純度ガス・フォト関連材料,AMAT
+三井ハイテック,ASML Holding N.V.,JP,後工程,リードフレーム,ASML
+住友化学,Qualcomm Incorporated,JP,材料,フォトレジスト,QCOM
+信越化学工業,"Samsung Electronics Co., Ltd.",JP,材料（前工程）,シリコンウェハー・レジスト,005930.KS
+東京エレクトロン（TEL）,Texas Instruments Incorporated,JP,前工程,成膜・エッチング装置,TXN
+東京応化工業（TOK）,Taiwan Semiconductor Manufacturing   Company,JP,材料,レジスト・ケミカル,TSM
+東京精密（Accretech）,Advantest Corporation,JP,後工程寄り,計測装置・ダイサー,6857.T
+日産化学,Rapidus Corporation,JP,材料,フォトレジスト・化学材料,N/A
+日本酸素HD,Renesas Electronics Corporation,JP,材料,半導体用高純度ガス,6723.T
+富士フイルムHD,Lasertec Corporation,JP,材料（前工程）,フォトレジスト・ケミカル,6920.T
+信越化学工業,"Shin-Etsu Chemical Co., Ltd.",JP,前工程（CMP）,CMP研磨材・研磨パッド,4063.T

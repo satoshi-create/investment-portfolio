@@ -41,6 +41,7 @@ import {
   themeEcosystemWatchlistCsvFileName,
 } from "@/src/lib/csv-export";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
+import { SemiconductorEquipmentObservationPanel } from "@/src/components/dashboard/SemiconductorEquipmentObservationPanel";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import {
@@ -54,6 +55,7 @@ import {
   stickyTdFirst,
   stickyThFirst,
 } from "@/src/components/dashboard/table-sticky";
+import { SEMICONDUCTOR_EQUIPMENT_THEME_NAME } from "@/src/lib/semiconductor-equipment-catalog";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
@@ -314,6 +316,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
     [themeLabel],
   );
   const isDefensiveTheme = themeQueryName === "ディフェンシブ銘柄";
+  const isSemiconductorEquipmentTheme =
+    themeQueryName === SEMICONDUCTOR_EQUIPMENT_THEME_NAME;
   const [holderFilter, setHolderFilter] = useState<string[]>([]);
 
   const [data, setData] = useState<ThemeDetailData | null>(null);
@@ -987,6 +991,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         {canRenderContent ? (
           <>
             <ThemeMetaBlock theme={theme} themeName={themeLabel} />
+
+            {isSemiconductorEquipmentTheme ? (
+              <SemiconductorEquipmentObservationPanel />
+            ) : null}
 
             <section aria-labelledby="theme-performance-heading">
               <h2 id="theme-performance-heading" className="sr-only">
