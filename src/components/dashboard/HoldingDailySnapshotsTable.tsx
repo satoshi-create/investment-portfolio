@@ -55,9 +55,24 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
     () => new Set(rows.map((r) => r.snapshotDate)).size,
     [rows],
   );
-  const singleDayOnly = distinctSnapshotDays <= 1;
-  const bench = singleDayOnly ? rows[0]?.benchmarkClose : undefined;
-  const fx = singleDayOnly ? rows[0]?.fxUsdJpy : undefined;
+  const latestSnapshotDate = useMemo(() => {
+    if (snapshotDate) return snapshotDate;
+    let max = "";
+    for (const r of rows) {
+      const d = r.snapshotDate;
+      if (typeof d === "string" && d.length > 0 && (max.length === 0 || d > max)) max = d;
+    }
+    return max.length > 0 ? max : null;
+  }, [rows, snapshotDate]);
+
+  // Table shows latest day slice only; CSV exports all rows.
+  const displayRows = useMemo(
+    () => (latestSnapshotDate ? rows.filter((r) => r.snapshotDate === latestSnapshotDate) : rows),
+    [latestSnapshotDate, rows],
+  );
+
+  const bench = displayRows[0]?.benchmarkClose;
+  const fx = displayRows[0]?.fxUsdJpy;
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
@@ -69,7 +84,7 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
               Holding snapshots (銘柄×日)
             </h3>
             <p className="text-[10px] text-muted-foreground mt-1">
-              Record snapshot 実行時に `holding_daily_snapshots` へ保存された全期間の行（
+              最新日のスライスを表示（CSV は全期間）。`holding_daily_snapshots` 記録（
               {rows.length > 0 ? (
                 <>
                   <span className="font-mono text-muted-foreground/90">{distinctSnapshotDays}</span> 日分 ·{" "}
@@ -79,8 +94,8 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
                 "0 行"
               )}
               ）
-              {snapshotDate ? (
-                <span className="text-muted-foreground/90 font-mono"> · 最新 UTC {snapshotDate}</span>
+              {latestSnapshotDate ? (
+                <span className="text-muted-foreground/90 font-mono"> · 表示 UTC {latestSnapshotDate}</span>
               ) : null}
               {bench != null && bench > 0 ? (
                 <span className="text-muted-foreground/90">
@@ -136,7 +151,7 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
-              {rows.map((r) => (
+              {displayRows.map((r) => (
                 <tr key={r.id} className="group hover:bg-slate-800/35 transition-colors">
                   <td className={`px-4 py-2.5 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyTdFirst}`}>
                     <div className="flex flex-col gap-0.5">
