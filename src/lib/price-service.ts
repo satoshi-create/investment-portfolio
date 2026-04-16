@@ -49,6 +49,8 @@ export type EquityResearchSnapshot = {
   ticker: string;
   /** YYYY-MM-DD */
   nextEarningsDate: string | null;
+  /** Ex-dividend date (権利落ち日), YYYY-MM-DD */
+  exDividendDate: string | null;
   /** Annual dividend per share/unit (local currency). */
   annualDividendRate: number | null;
   /** Dividend yield percent (e.g. 2.15). */
@@ -243,6 +245,7 @@ export async function fetchEquityResearchSnapshots(
         summaryDetail?: {
           dividendRate?: unknown;
           dividendYield?: unknown;
+          exDividendDate?: unknown;
         };
       };
       const qss = qs as unknown as YahooQuoteSummaryShape;
@@ -265,10 +268,12 @@ export async function fetchEquityResearchSnapshots(
           : null;
 
       const dividendYieldPercent = parseDividendYieldPercent(qss.summaryDetail?.dividendYield);
+      const exDividendDate = ymdFromYahooDateLike(qss.summaryDetail?.exDividendDate as unknown) ?? null;
 
       return {
         ticker: ticker.toUpperCase(),
         nextEarningsDate,
+        exDividendDate,
         annualDividendRate,
         dividendYieldPercent,
       } satisfies EquityResearchSnapshot;

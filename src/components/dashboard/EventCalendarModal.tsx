@@ -14,6 +14,13 @@ function utcTodayYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
+function ymdAddDaysUtc(ymd: string, deltaDays: number): string {
+  const base = ymd.length >= 10 ? ymd.slice(0, 10) : utcTodayYmd();
+  const d = new Date(`${base}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + Math.trunc(deltaDays));
+  return formatUtcYmd(d);
+}
+
 /** Monday .. Sunday (UTC) containing `ymd`. */
 function isoWeekRangeUtcContaining(ymd: string): { start: string; end: string } {
   const base = ymd.length >= 10 ? ymd.slice(0, 10) : utcTodayYmd();
@@ -38,6 +45,7 @@ function categoryBadgeClass(category: string): string {
   const c = category.trim();
   if (c === "Macro") return "border-sky-500/35 bg-sky-500/10 text-sky-300";
   if (c === "Earnings") return "border-violet-500/35 bg-violet-500/10 text-violet-200";
+  if (c === "Dividend") return "border-fuchsia-500/35 bg-fuchsia-500/10 text-fuchsia-200";
   if (c === "CentralBank") return "border-emerald-500/35 bg-emerald-500/10 text-emerald-200";
   if (c === "Geopolitics") return "border-amber-500/40 bg-amber-500/10 text-amber-200";
   return "border-border bg-muted/40 text-muted-foreground";
@@ -60,26 +68,82 @@ export function EventCalendarModal({
 
   const today = useMemo(() => utcTodayYmd(), []);
   const week = useMemo(() => isoWeekRangeUtcContaining(today), [today]);
+  const dateWindow = useMemo(
+    () => ({ start: ymdAddDaysUtc(today, -5), end: ymdAddDaysUtc(today, 70) }),
+    [today],
+  );
+
+  type DashboardStockLite = {
+    ticker?: unknown;
+    name?: unknown;
+    nextEarningsDate?: unknown;
+    exDividendDate?: unknown;
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
     setFetchErr(null);
     try {
-      const res = await fetch("/api/events", { cache: "no-store" });
-      const json = (await res.json()) as { events?: MarketEventRecord[]; error?: string };
-      if (!res.ok) {
-        setFetchErr(json.error ?? `HTTP ${res.status}`);
+      const [resEvents, resDash] = await Promise.all([
+        fetch("/api/events", { cache: "no-store" }),
+        fetch("/api/dashboard", { cache: "no-store" }),
+      ]);
+
+      const eventsJson = (await resEvents.json()) as { events?: MarketEventRecord[]; error?: string };
+      const dashJson = (await resDash.json()) as { stocks?: unknown[]; error?: string };
+
+      if (!resEvents.ok) {
+        setFetchErr(eventsJson.error ?? `HTTP ${resEvents.status}`);
         setEvents([]);
         return;
       }
-      setEvents(Array.isArray(json.events) ? json.events : []);
+
+      const marketEvents = Array.isArray(eventsJson.events) ? eventsJson.events : [];
+
+      const stocksRaw = Array.isArray(dashJson.stocks) ? (dashJson.stocks as DashboardStockLite[]) : [];
+      const holdingEvents: MarketEventRecord[] = [];
+      for (const s of stocksRaw) {
+        const ticker = s.ticker != null ? String(s.ticker).trim() : "";
+        if (!ticker) continue;
+        const name = s.name != null ? String(s.name).trim() : "";
+
+        const eYmd = s.nextEarningsDate != null ? String(s.nextEarningsDate).trim().slice(0, 10) : "";
+        if (eYmd.length === 10 && eYmd >= dateWindow.start && eYmd <= dateWindow.end) {
+          holdingEvents.push({
+            id: `holding:${ticker}:earnings:${eYmd}`,
+            event_date: `${eYmd}T00:00:00.000Z`,
+            title: `${ticker} 決算`,
+            category: "Earnings",
+            importance: 3,
+            description: name.length > 0 ? name : null,
+          });
+        }
+
+        const xYmd = s.exDividendDate != null ? String(s.exDividendDate).trim().slice(0, 10) : "";
+        if (xYmd.length === 10 && xYmd >= dateWindow.start && xYmd <= dateWindow.end) {
+          holdingEvents.push({
+            id: `holding:${ticker}:exdiv:${xYmd}`,
+            event_date: `${xYmd}T00:00:00.000Z`,
+            title: `${ticker} 配当（権利落ち）`,
+            category: "Dividend",
+            importance: 2,
+            description: name.length > 0 ? name : null,
+          });
+        }
+      }
+
+      const merged = new Map<string, MarketEventRecord>();
+      for (const e of marketEvents) merged.set(e.id, e);
+      for (const e of holdingEvents) merged.set(e.id, e);
+
+      setEvents([...merged.values()]);
     } catch (e) {
       setFetchErr(e instanceof Error ? e.message : "読み込みに失敗しました");
       setEvents([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateWindow.end, dateWindow.start]);
 
   useEffect(() => {
     if (!open) return;

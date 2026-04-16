@@ -405,7 +405,15 @@ function buildByTickerDatedAlphaRows(rows: Iterable<Record<string, unknown>>): M
 function buildDraftsFromHoldingRows(
   rows: HoldingQueryRow[],
   byTicker: Map<string, AlphaPoint[]>,
-  researchByTicker: Map<string, { nextEarningsDate: string | null; annualDividendRate: number | null; dividendYieldPercent: number | null }>,
+  researchByTicker: Map<
+    string,
+    {
+      nextEarningsDate: string | null;
+      exDividendDate: string | null;
+      annualDividendRate: number | null;
+      dividendYieldPercent: number | null;
+    }
+  >,
   fxUsdJpy: number,
   hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
 ): StockDraft[] {
@@ -449,10 +457,18 @@ function buildDraftsFromHoldingRows(
     const countryName = instrumentKind === "US_EQUITY" ? "米国" : "日本";
     const research = researchByTicker.get(ticker.toUpperCase()) ?? null;
     const nextEarningsDate = research?.nextEarningsDate ?? null;
+    const exDividendDate = research?.exDividendDate ?? null;
     const annualDividendRate = research?.annualDividendRate ?? null;
     const dividendYieldPercent = research?.dividendYieldPercent ?? null;
     const daysToEarnings = nextEarningsDate != null ? (() => {
       const d = new Date(`${nextEarningsDate}T00:00:00.000Z`);
+      if (Number.isNaN(d.getTime())) return null;
+      const now = new Date();
+      const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
+    })() : null;
+    const daysToExDividend = exDividendDate != null ? (() => {
+      const d = new Date(`${exDividendDate}T00:00:00.000Z`);
       if (Number.isNaN(d.getTime())) return null;
       const now = new Date();
       const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -486,6 +502,8 @@ function buildDraftsFromHoldingRows(
       countryName,
       nextEarningsDate,
       daysToEarnings,
+      exDividendDate,
+      daysToExDividend,
       annualDividendRate,
       dividendYieldPercent,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
@@ -576,7 +594,12 @@ async function enrichEcosystemMemberRow(
   themeCreatedAt: string | null,
   researchByTicker: Map<
     string,
-    { nextEarningsDate: string | null; annualDividendRate: number | null; dividendYieldPercent: number | null }
+    {
+      nextEarningsDate: string | null;
+      exDividendDate: string | null;
+      annualDividendRate: number | null;
+      dividendYieldPercent: number | null;
+    }
   >,
   options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem> {
@@ -627,12 +650,23 @@ async function enrichEcosystemMemberRow(
   const researchKey = effectiveTicker.length > 0 ? effectiveTicker.toUpperCase() : ticker.toUpperCase();
   const research = researchByTicker.get(researchKey) ?? null;
   const nextEarningsDate = research?.nextEarningsDate ?? null;
+  const exDividendDate = research?.exDividendDate ?? null;
   const annualDividendRate = research?.annualDividendRate ?? null;
   const dividendYieldPercent = research?.dividendYieldPercent ?? null;
   const daysToEarnings =
     nextEarningsDate != null
       ? (() => {
           const d = new Date(`${nextEarningsDate}T00:00:00.000Z`);
+          if (Number.isNaN(d.getTime())) return null;
+          const now = new Date();
+          const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+          return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
+        })()
+      : null;
+  const daysToExDividend =
+    exDividendDate != null
+      ? (() => {
+          const d = new Date(`${exDividendDate}T00:00:00.000Z`);
           if (Number.isNaN(d.getTime())) return null;
           const now = new Date();
           const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -759,6 +793,8 @@ async function enrichEcosystemMemberRow(
     instrumentKind,
     nextEarningsDate,
     daysToEarnings,
+    exDividendDate,
+    daysToExDividend,
     annualDividendRate,
     dividendYieldPercent,
     observationStartedAt,
@@ -1409,6 +1445,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       countryName: instrumentKind === "US_EQUITY" ? "米国" : "日本",
       nextEarningsDate: null,
       daysToEarnings: null,
+      exDividendDate: null,
+      daysToExDividend: null,
       annualDividendRate: null,
       dividendYieldPercent: null,
       tag,
