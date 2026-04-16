@@ -294,3 +294,88 @@ export function isThemeStructuralTrendPositiveUp(
   const prev = series[idx]!.cumulative;
   return Number.isFinite(prev) && last > prev;
 }
+
+/**
+ * ===== ETF gravity logic =====
+ *
+ * ETFs are "structures" rather than individual companies.
+ * The following functions are used by the Global Strata (ETF collection) dashboard.
+ */
+
+/**
+ * Expense Ratio Drag (% points) for compounding.
+ * - Input: `expenseRatioPercent` in percent (e.g. 0.03 for 0.03%).
+ * - Output: estimated total drag in % over `years` (rounded to 2 decimals).
+ *
+ * Approx: \(1 - (1 - e)^{years}\) where \(e\) is annual fee as a decimal.
+ */
+export function computeExpenseRatioDragPercent(expenseRatioPercent: number, years = 1): number {
+  const er = Number.isFinite(expenseRatioPercent) ? expenseRatioPercent : 0;
+  const y = Math.max(0, Math.floor(Number.isFinite(years) ? years : 1));
+  if (!(er > 0) || y === 0) return 0;
+  const e = er / 100;
+  if (!(e > 0) || e >= 1) return 100;
+  const drag = (1 - Math.pow(1 - e, y)) * 100;
+  return roundAlphaMetric(Number.isFinite(drag) ? drag : 0);
+}
+
+/**
+ * Tracking Alpha for ETFs (structure extraction quality).
+ *
+ * Not "tracking error vs index" but "how purely this ETF captures the intended structure".
+ * - `purityScore`: 0..1 (1 = pure)
+ * - `liquidityScore`: 0..1 (1 = liquid / scalable)
+ * - `expenseRatioPercent`: fee % (e.g. 0.03)
+ *
+ * Output is a signed score in % points (higher is better), rounded to 2 decimals.
+ */
+export function computeEtfTrackingAlphaPercent(input: {
+  purityScore: number;
+  liquidityScore?: number;
+  expenseRatioPercent?: number;
+  feeHorizonYears?: number;
+}): number {
+  const purity = Number.isFinite(input.purityScore) ? input.purityScore : 0;
+  const liq = Number.isFinite(input.liquidityScore) ? input.liquidityScore! : 0.6;
+  const fee = Number.isFinite(input.expenseRatioPercent) ? input.expenseRatioPercent! : 0;
+  const feeYears = input.feeHorizonYears ?? 5;
+  const feeDrag = computeExpenseRatioDragPercent(fee, feeYears);
+
+  // 0..100 base score from purity + liquidity; subtract multi-year fee drag.
+  const base = (Math.max(0, Math.min(1, purity)) * 70 + Math.max(0, Math.min(1, liq)) * 30);
+  const out = base - feeDrag;
+  return roundAlphaMetric(Number.isFinite(out) ? out : 0);
+}
+
+export type RegionMomentumInput = { region: string; cumulativeAlpha: number };
+export type RegionMomentumOutput = {
+  region: string;
+  cumulativeAlpha: number;
+  gravityWeight: number; // 0..1, sums to 1 across the set
+};
+
+/**
+ * Regional Momentum ("capital gravity") as a softmax over cumulative Alpha.
+ * - Regions with higher cumulative alpha attract more weight.
+ * - Temperature controls sensitivity: lower => winner-takes-more.
+ */
+export function computeRegionalMomentum(inputs: RegionMomentumInput[], temperature = 10): RegionMomentumOutput[] {
+  const temp = Number.isFinite(temperature) && temperature > 0 ? temperature : 10;
+  const cleaned = inputs
+    .map((x) => ({
+      region: String(x.region ?? "").trim() || "Unknown",
+      cumulativeAlpha: Number.isFinite(x.cumulativeAlpha) ? x.cumulativeAlpha : 0,
+    }))
+    .filter((x) => x.region.length > 0);
+  if (cleaned.length === 0) return [];
+
+  const maxA = Math.max(...cleaned.map((x) => x.cumulativeAlpha));
+  const exps = cleaned.map((x) => Math.exp((x.cumulativeAlpha - maxA) / temp));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  const out = cleaned.map((x, i) => ({
+    ...x,
+    gravityWeight: sum > 0 ? exps[i]! / sum : 1 / cleaned.length,
+  }));
+  out.sort((a, b) => b.gravityWeight - a.gravityWeight);
+  return out;
+}
