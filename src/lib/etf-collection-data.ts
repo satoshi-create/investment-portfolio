@@ -17,6 +17,7 @@ import {
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { themeFromStructureTags } from "@/src/lib/structure-tags";
 import { fetchRecentDatedDailyAlphasVsVoo, fetchUsdJpyRate } from "@/src/lib/price-service";
+import { isLikelyEtfOrFundHolding } from "@/src/lib/strata-holding-detect";
 
 export type EtfRegionFilter = "ALL" | "GLOBAL_DEVELOPED" | "EMERGING_FRONTIER" | "THEMATIC_STRATA";
 
@@ -341,6 +342,14 @@ export const COMMODITIES_STRATA_ETFS: EtfDescriptor[] = [
   },
 ];
 
+/** Strata カタログのティッカー → Global / Commodities（Rotation / 一覧と突合せ用） */
+const STRATA_TICKER_CATALOG: Map<string, "GLOBAL" | "COMMODITIES"> = (() => {
+  const m = new Map<string, "GLOBAL" | "COMMODITIES">();
+  for (const d of GLOBAL_STRATA_ETFS) m.set(d.ticker.trim().toUpperCase(), "GLOBAL");
+  for (const d of COMMODITIES_STRATA_ETFS) m.set(d.ticker.trim().toUpperCase(), "COMMODITIES");
+  return m;
+})();
+
 type HoldingRow = { ticker: string; name: string; structure_tags: string | null };
 
 async function fetchHoldingsForSpillover(db: Client, userId: string): Promise<HoldingRow[]> {
@@ -379,6 +388,72 @@ function matchSpilloverHoldings(holdings: HoldingRow[], keywords: string[], limi
     }
   }
   return out;
+}
+
+export type PortfolioStrataHoldingRow =
+  | {
+      source: "CATALOG";
+      ticker: string;
+      name: string;
+      quantity: number;
+      category: string | null;
+      catalog: "GLOBAL" | "COMMODITIES";
+    }
+  | {
+      source: "DETECTED";
+      ticker: string;
+      name: string;
+      quantity: number;
+      category: string | null;
+    };
+
+function comparePortfolioStrataHoldings(a: PortfolioStrataHoldingRow, b: PortfolioStrataHoldingRow): number {
+  const sa = a.source === "CATALOG" ? 0 : 1;
+  const sb = b.source === "CATALOG" ? 0 : 1;
+  if (sa !== sb) return sa - sb;
+  if (a.source === "CATALOG" && b.source === "CATALOG") {
+    const ca = a.catalog === "GLOBAL" ? 0 : 1;
+    const cb = b.catalog === "GLOBAL" ? 0 : 1;
+    if (ca !== cb) return ca - cb;
+  }
+  return a.ticker.localeCompare(b.ticker, "en");
+}
+
+async function fetchPortfolioStrataHoldings(db: Client, userId: string): Promise<PortfolioStrataHoldingRow[]> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT ticker, name, quantity, category
+            FROM holdings
+            WHERE user_id = ? AND quantity > 0
+            ORDER BY ticker`,
+      args: [userId],
+    });
+    const rows = rs.rows as unknown as Record<string, unknown>[];
+    const out: PortfolioStrataHoldingRow[] = [];
+    for (const r of rows) {
+      const tk = String(r.ticker ?? "").trim();
+      if (!tk) continue;
+      const qty = Number(r.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      const catRaw = r.category != null ? String(r.category).trim() : "";
+      const category = catRaw.length > 0 ? catRaw : null;
+      const nm = r.name != null ? String(r.name) : "";
+      const catalog = STRATA_TICKER_CATALOG.get(tk.toUpperCase()) ?? null;
+      if (catalog) {
+        out.push({ source: "CATALOG", ticker: tk, name: nm, quantity: qty, category, catalog });
+        continue;
+      }
+      if (isLikelyEtfOrFundHolding(tk, nm)) {
+        out.push({ source: "DETECTED", ticker: tk, name: nm, quantity: qty, category });
+      }
+    }
+    out.sort(comparePortfolioStrataHoldings);
+    return out;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("holdings")) return [];
+    throw e;
+  }
 }
 
 function phaseShiftFromDailyAlphas(daily: number[]): { z: number | null; phaseShift: boolean; direction: "UP" | "DOWN" | null } {
@@ -427,6 +502,7 @@ export type EtfCollectionSnapshot = {
   etfs: EtfEvaluatedRow[];
   commoditiesEtfs: EtfEvaluatedRow[];
   regionalMomentum: RegionMomentumOutput[];
+  portfolioStrataHoldings: PortfolioStrataHoldingRow[];
 };
 
 export async function getEtfCollectionSnapshot(db: Client, userId: string): Promise<EtfCollectionSnapshot> {
@@ -553,12 +629,15 @@ export async function getEtfCollectionSnapshot(db: Client, userId: string): Prom
   }));
   const regionalMomentum = computeRegionalMomentum(regionInputs, 7);
 
+  const portfolioStrataHoldings = await fetchPortfolioStrataHoldings(db, userId);
+
   return {
     asOf: new Date().toISOString(),
     fxUsdJpy: fxUsdJpy ?? (USD_JPY_RATE_FALLBACK > 0 ? USD_JPY_RATE_FALLBACK : null),
     etfs,
     commoditiesEtfs,
     regionalMomentum,
+    portfolioStrataHoldings,
   };
 }
 

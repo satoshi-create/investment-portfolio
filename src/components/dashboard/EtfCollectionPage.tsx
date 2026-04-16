@@ -6,6 +6,7 @@ import { Globe, RefreshCw } from "lucide-react";
 
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
+import type { PortfolioStrataHoldingRow } from "@/src/lib/etf-collection-data";
 import { EtfTable, type EtfRegionGroup, type EtfRow, type RegionMomentumRow } from "@/src/components/dashboard/EtfTable";
 import { RotationRadarChart, type RotationRadarMode, type RotationRadarSelection } from "@/src/components/dashboard/RotationRadarChart";
 import { WorldMapHeat } from "@/src/components/dashboard/WorldMapHeat";
@@ -19,6 +20,7 @@ type Payload = {
   etfs: EtfRow[];
   commoditiesEtfs: EtfRow[];
   regionalMomentum: RegionMomentumRow[];
+  portfolioStrataHoldings: PortfolioStrataHoldingRow[];
   stale?: boolean;
 };
 
@@ -29,6 +31,7 @@ const EMPTY: Payload = {
   etfs: [],
   commoditiesEtfs: [],
   regionalMomentum: [],
+  portfolioStrataHoldings: [],
 };
 
 function regionLabelJa(region: "ALL" | EtfRegionGroup): string {
@@ -50,6 +53,23 @@ function barColor(region: string): string {
   if (region === "EMERGING_FRONTIER") return "bg-amber-500/55";
   if (region === "THEMATIC_STRATA") return "bg-emerald-500/55";
   return "bg-muted-foreground/40";
+}
+
+/** API 後方互換: `source` 無しはカタログ行として解釈 */
+function parsePortfolioStrataHoldingRow(raw: unknown): PortfolioStrataHoldingRow | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const ticker = String(r.ticker ?? "").trim();
+  const name = r.name != null ? String(r.name) : "";
+  const qty = Number(r.quantity);
+  if (!ticker || !Number.isFinite(qty) || qty <= 0) return null;
+  const catRaw = r.category != null ? String(r.category).trim() : "";
+  const category = catRaw.length > 0 ? catRaw : null;
+  if (r.source === "DETECTED") {
+    return { source: "DETECTED", ticker, name, quantity: qty, category };
+  }
+  const catalog = r.catalog === "COMMODITIES" ? "COMMODITIES" : "GLOBAL";
+  return { source: "CATALOG", ticker, name, quantity: qty, category, catalog };
 }
 
 export function EtfCollectionPage() {
@@ -83,6 +103,11 @@ export function EtfCollectionPage() {
         etfs: (json.etfs ?? []) as EtfRow[],
         commoditiesEtfs: (json.commoditiesEtfs ?? []) as EtfRow[],
         regionalMomentum: (json.regionalMomentum ?? []) as RegionMomentumRow[],
+        portfolioStrataHoldings: Array.isArray(json.portfolioStrataHoldings)
+          ? (json.portfolioStrataHoldings as unknown[])
+              .map(parsePortfolioStrataHoldingRow)
+              .filter((x): x is PortfolioStrataHoldingRow => x != null)
+          : [],
         stale: json.stale,
       });
     } catch (e) {
@@ -117,6 +142,29 @@ export function EtfCollectionPage() {
     uniq.sort((a, b) => a.localeCompare(b, "en"));
     return uniq;
   }, [selectedGroup]);
+
+  const strataEvalByTicker = useMemo(() => {
+    const by = new Map<string, EtfRow>();
+    for (const e of data.etfs ?? []) by.set(e.ticker.trim().toUpperCase(), e);
+    for (const e of data.commoditiesEtfs ?? []) by.set(e.ticker.trim().toUpperCase(), e);
+    return by;
+  }, [data.commoditiesEtfs, data.etfs]);
+
+  const portfolioStrataSorted = useMemo(() => {
+    const rows = [...(data.portfolioStrataHoldings ?? [])];
+    rows.sort((a, b) => {
+      const sa = a.source === "CATALOG" ? 0 : 1;
+      const sb = b.source === "CATALOG" ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+      if (a.source === "CATALOG" && b.source === "CATALOG") {
+        const ca = a.catalog === "GLOBAL" ? 0 : 1;
+        const cb = b.catalog === "GLOBAL" ? 0 : 1;
+        if (ca !== cb) return ca - cb;
+      }
+      return a.ticker.localeCompare(b.ticker, "en");
+    });
+    return rows;
+  }, [data.portfolioStrataHoldings]);
 
   const groupSpillover = useMemo(() => {
     if (!selectedGroup) return [];
@@ -253,6 +301,91 @@ export function EtfCollectionPage() {
             setSelectedTicker(first.length > 0 ? first : null);
           }}
         />
+
+        <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">保有中の Strata ETF</h3>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Strata カタログに掲載の銘柄に加え、ティッカー形式・銘柄名から ETF / 上場投信 / 投信コード（6桁以上）らしき保有を推定して表示します。推定行は下段の一覧に無い場合があります。
+          </p>
+          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[720px] text-left text-[11px]">
+              <thead className="border-b border-border bg-muted/30">
+                <tr className="text-muted-foreground uppercase tracking-wide">
+                  <th className="px-3 py-2 font-bold">掲載</th>
+                  <th className="px-3 py-2 font-bold">ティッカー</th>
+                  <th className="px-3 py-2 font-bold">銘柄名</th>
+                  <th className="px-3 py-2 font-bold text-right">数量</th>
+                  <th className="px-3 py-2 font-bold">区分</th>
+                  <th className="px-3 py-2 font-bold text-right">90日累積α</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-muted-foreground">
+                      読み込み中…
+                    </td>
+                  </tr>
+                ) : portfolioStrataSorted.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-muted-foreground">
+                      該当する保有はありません（Strata カタログの ETF、または推定ルールに合う銘柄を保有すると表示されます）。
+                    </td>
+                  </tr>
+                ) : (
+                  portfolioStrataSorted.map((row) => {
+                    const ev = strataEvalByTicker.get(row.ticker.trim().toUpperCase()) ?? null;
+                    const a90 = ev?.cumulativeAlpha90d;
+                    const isCatalog = row.source === "CATALOG";
+                    return (
+                      <tr
+                        key={`${row.source}:${row.ticker}`}
+                        title={isCatalog ? "クリックで下の一覧へ" : "カタログ外のため下段一覧に行はありません"}
+                        className={`border-b border-border/60 transition-colors ${
+                          isCatalog ? "hover:bg-muted/25 cursor-pointer" : "cursor-default opacity-90"
+                        }`}
+                        onClick={() => {
+                          if (row.source !== "CATALOG") return;
+                          setDataset(row.catalog);
+                          setSelectedGroup(null);
+                          setSelectedTicker(row.ticker.trim());
+                        }}
+                      >
+                        <td className="px-3 py-2 text-foreground/90">
+                          {row.source === "CATALOG" ? (
+                            row.catalog === "GLOBAL" ? (
+                              "Global"
+                            ) : (
+                              "Commodities"
+                            )
+                          ) : (
+                            <span>
+                              カタログ外{" "}
+                              <span className="text-[9px] font-bold uppercase text-muted-foreground">推定</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 font-mono font-bold text-accent-cyan">{row.ticker}</td>
+                        <td className="px-3 py-2 text-foreground/85 max-w-[220px] truncate" title={row.name}>
+                          {row.name || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-foreground/90">
+                          {Number.isInteger(row.quantity)
+                            ? row.quantity.toLocaleString("ja-JP")
+                            : row.quantity.toLocaleString("ja-JP", { maximumFractionDigits: 4 })}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{row.category ?? "—"}</td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-foreground/90">
+                          {a90 == null ? "—" : `${a90 > 0 ? "+" : ""}${a90.toFixed(2)}%`}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         {/* Phase Shift Alerts */}
         <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">

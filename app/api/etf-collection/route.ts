@@ -13,6 +13,7 @@ type EtfCollectionResponseJson = {
   etfs: unknown[];
   commoditiesEtfs: unknown[];
   regionalMomentum: unknown[];
+  portfolioStrataHoldings: unknown[];
   stale?: boolean;
 };
 
@@ -78,6 +79,7 @@ export async function GET(request: Request) {
         etfs: snap.etfs as unknown[],
         commoditiesEtfs: snap.commoditiesEtfs as unknown[],
         regionalMomentum: snap.regionalMomentum as unknown[],
+        portfolioStrataHoldings: snap.portfolioStrataHoldings as unknown[],
       };
     })();
 
