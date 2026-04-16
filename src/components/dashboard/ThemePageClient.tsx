@@ -16,6 +16,7 @@ import type {
   InvestmentThemeRecord,
   ThemeDetailData,
   ThemeEcosystemWatchItem,
+  TickerInstrumentKind,
 } from "@/src/types/investment";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
 import {
@@ -27,6 +28,7 @@ import {
   summarizeThemeAdoptionMaturity,
 } from "@/src/lib/adoption-stage";
 import {
+  classifyTickerInstrument,
   isThemeStructuralTrendPositiveUp,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
 } from "@/src/lib/alpha-logic";
@@ -67,6 +69,27 @@ const jpyFmt = new Intl.NumberFormat("ja-JP", {
   currency: "JPY",
   maximumFractionDigits: 0,
 });
+
+function ecosystemInstrumentKind(item: ThemeEcosystemWatchItem): TickerInstrumentKind {
+  const k = item.instrumentKind;
+  if (k === "US_EQUITY" || k === "JP_INVESTMENT_TRUST" || k === "JP_LISTED_EQUITY") return k;
+  const proxy = item.proxyTicker != null ? String(item.proxyTicker).trim() : "";
+  const eff = item.isUnlisted && proxy.length > 0 ? proxy : String(item.ticker).trim();
+  return classifyTickerInstrument(eff.length > 0 ? eff : String(item.ticker).trim());
+}
+
+/** 現在値: 米株は USD、日本（上場・投信）は円。 */
+function formatEcosystemCurrentPrice(e: ThemeEcosystemWatchItem): string {
+  if (e.currentPrice == null || !Number.isFinite(e.currentPrice) || e.currentPrice <= 0) return "—";
+  const kind = ecosystemInstrumentKind(e);
+  if (kind === "US_EQUITY") {
+    const p = e.currentPrice;
+    return p < 500
+      ? `$${p.toFixed(2)}`
+      : `$${p.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  }
+  return jpyFmt.format(Math.round(e.currentPrice));
+}
 
 function fmtPct(v: number): string {
   if (!Number.isFinite(v)) return "—";
@@ -199,8 +222,21 @@ function normalizeThemeDetailResponse(
   return {
     ...rest,
     ecosystem: Array.isArray(rest.ecosystem)
-      ? rest.ecosystem.map((item) => ({
+      ? rest.ecosystem.map((item) => {
+          const proxy = typeof item.proxyTicker === "string" ? item.proxyTicker.trim() : "";
+          const tk = String(item.ticker ?? "").trim();
+          const isUnlisted = Boolean(item.isUnlisted);
+          const effective = isUnlisted && proxy.length > 0 ? proxy : tk;
+          const inferredKind = classifyTickerInstrument(effective.length > 0 ? effective : tk);
+          const rawKind = (item as Record<string, unknown>).instrumentKind;
+          const instrumentKind: TickerInstrumentKind =
+            rawKind === "US_EQUITY" || rawKind === "JP_INVESTMENT_TRUST" || rawKind === "JP_LISTED_EQUITY"
+              ? rawKind
+              : inferredKind;
+          return {
           ...item,
+          instrumentKind,
+          countryName: instrumentKind === "US_EQUITY" ? "米国" : "日本",
           observationStartedAt:
             typeof item.observationStartedAt === "string" &&
             item.observationStartedAt.length >= 10
@@ -237,7 +273,8 @@ function normalizeThemeDetailResponse(
                   : "";
             return s.length > 0 ? s : null;
           })(),
-        }))
+          };
+        })
       : [],
     cumulativeAlphaSeries: Array.isArray(rest.cumulativeAlphaSeries)
       ? rest.cumulativeAlphaSeries
@@ -2086,12 +2123,7 @@ export function ThemePageClient({
                                 <td className="px-6 py-4 text-right">
                                   <div className="flex flex-col items-end gap-1">
                                     <span className="font-mono text-slate-300 text-xs">
-                                      {e.currentPrice != null &&
-                                      e.currentPrice > 0
-                                        ? e.currentPrice < 500
-                                          ? `$${e.currentPrice.toFixed(2)}`
-                                          : `$${e.currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-                                        : "—"}
+                                      {formatEcosystemCurrentPrice(e)}
                                     </span>
                                     {!e.inPortfolio ? (
                                       <button

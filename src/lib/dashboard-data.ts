@@ -156,7 +156,7 @@ function parseSector(raw: unknown): string | null {
 }
 
 function quoteCurrencyForInstrument(kind: TickerInstrumentKind): "JPY" | "USD" {
-  return kind === "JP_INVESTMENT_TRUST" ? "JPY" : "USD";
+  return kind === "US_EQUITY" ? "USD" : "JPY";
 }
 
 /**
@@ -446,7 +446,7 @@ function buildDraftsFromHoldingRows(
     const tagsJson = rawStructureTags == null ? "[]" : String(rawStructureTags);
     const sector = parseSector(row.sector);
     const instrumentKind = classifyTickerInstrument(ticker);
-    const countryName = instrumentKind === "JP_INVESTMENT_TRUST" ? "日本" : "米国";
+    const countryName = instrumentKind === "US_EQUITY" ? "米国" : "日本";
     const research = researchByTicker.get(ticker.toUpperCase()) ?? null;
     const nextEarningsDate = research?.nextEarningsDate ?? null;
     const annualDividendRate = research?.annualDividendRate ?? null;
@@ -623,7 +623,7 @@ async function enrichEcosystemMemberRow(
     rawObs != null && String(rawObs).trim().length >= 10 ? String(rawObs).trim().slice(0, 10) : null;
 
   const instrumentKind = classifyTickerInstrument(effectiveTicker.length > 0 ? effectiveTicker : ticker);
-  const countryName = instrumentKind === "JP_INVESTMENT_TRUST" ? "日本" : "米国";
+  const countryName = instrumentKind === "US_EQUITY" ? "米国" : "日本";
   const researchKey = effectiveTicker.length > 0 ? effectiveTicker.toUpperCase() : ticker.toUpperCase();
   const research = researchByTicker.get(researchKey) ?? null;
   const nextEarningsDate = research?.nextEarningsDate ?? null;
@@ -756,6 +756,7 @@ async function enrichEcosystemMemberRow(
     isMajorPlayer,
     inPortfolio,
     countryName,
+    instrumentKind,
     nextEarningsDate,
     daysToEarnings,
     annualDividendRate,
@@ -1405,7 +1406,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       ticker,
       name: row.name != null ? String(row.name) : "",
       accountType: null,
-      countryName: instrumentKind === "JP_INVESTMENT_TRUST" ? "日本" : "米国",
+      countryName: instrumentKind === "US_EQUITY" ? "米国" : "日本",
       nextEarningsDate: null,
       daysToEarnings: null,
       annualDividendRate: null,

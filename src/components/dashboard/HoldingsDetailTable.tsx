@@ -11,7 +11,9 @@ const jpyFmt = new Intl.NumberFormat("ja-JP", {
 });
 
 function marketLabel(kind: TickerInstrumentKind): string {
-  return kind === "JP_INVESTMENT_TRUST" ? "日本投信" : "米国株";
+  if (kind === "US_EQUITY") return "米国株";
+  if (kind === "JP_LISTED_EQUITY") return "日本株";
+  return "日本投信";
 }
 
 function formatPriceLocal(kind: TickerInstrumentKind, price: number | null): string {
@@ -48,7 +50,11 @@ function computeFooterAggregates(stocks: Stock[]) {
 
   for (const s of stocks) {
     // 投信などは「口」・米株は「株」で単位が異なるため、数量合計は米国株のみ。
-    if (s.instrumentKind === "US_EQUITY" && Number.isFinite(s.quantity) && s.quantity > 0) {
+    if (
+      (s.instrumentKind === "US_EQUITY" || s.instrumentKind === "JP_LISTED_EQUITY") &&
+      Number.isFinite(s.quantity) &&
+      s.quantity > 0
+    ) {
       sumQty += s.quantity;
     }
     if (s.marketValue > 0 && Number.isFinite(s.marketValue)) {
@@ -321,7 +327,7 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
               <td className="px-4 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
               <td
                 className="px-4 py-3 text-right whitespace-nowrap"
-                title="米国株の株数合計。投信（口・FANG+ 等）は単位が異なるため含みません。"
+                title="米国株・日本株の株数合計。投信（口・FANG+ 等）は単位が異なるため含みません。"
               >
                 <span className="font-mono text-sm font-bold text-foreground">
                   {footer.sumQty > 0 ? footer.sumQty : "—"}

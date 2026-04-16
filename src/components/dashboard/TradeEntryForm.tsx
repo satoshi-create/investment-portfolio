@@ -50,7 +50,7 @@ function todayYmd(): string {
 function formatInitialUnitPriceLocal(ticker: string, price: number): string {
   const kind = classifyTickerInstrument(ticker.trim());
   if (!Number.isFinite(price) || price <= 0) return "";
-  if (kind === "JP_INVESTMENT_TRUST") return String(Math.round(price));
+  if (kind !== "US_EQUITY") return String(Math.round(price));
   return price.toFixed(2);
 }
 
@@ -147,7 +147,7 @@ function TradeEntryFormInner({
     };
   }, [userId, initial?.themeId, initial?.theme]);
 
-  const isJp = useMemo(() => classifyTickerInstrument(ticker) === "JP_INVESTMENT_TRUST", [ticker]);
+  const isJp = useMemo(() => classifyTickerInstrument(ticker) !== "US_EQUITY", [ticker]);
   const isUs = useMemo(() => classifyTickerInstrument(ticker) === "US_EQUITY", [ticker]);
 
   const tickerDatalistId = useId();

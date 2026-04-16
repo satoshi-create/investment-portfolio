@@ -86,7 +86,10 @@ export function toYahooFinanceSymbol(ticker: string, providerSymbol?: string | n
   const raw = ticker.trim();
   if (raw.length === 0) return raw;
   const kind = classifyTickerInstrument(raw);
-  if (kind === "JP_INVESTMENT_TRUST") return `${raw}.T`;
+  if (kind === "JP_INVESTMENT_TRUST" || kind === "JP_LISTED_EQUITY") {
+    const base = raw.replace(/\.T$/i, "").trim();
+    return `${base}.T`;
+  }
   return raw.toUpperCase();
 }
 
@@ -97,7 +100,8 @@ function autoYahooSymbolForFallbacks(ticker: string): string {
 /** Alternate Yahoo symbols for JP codes when `.T` returns no series (extend as needed). */
 function yahooSymbolFallbacks(primary: string, ticker: string): string[] {
   const raw = ticker.trim();
-  if (classifyTickerInstrument(raw) !== "JP_INVESTMENT_TRUST") return [primary];
+  const kind = classifyTickerInstrument(raw);
+  if (kind !== "JP_INVESTMENT_TRUST" && kind !== "JP_LISTED_EQUITY") return [primary];
   const alts = [`${raw}.OK`, raw].filter((s) => s !== primary);
   return [primary, ...alts];
 }

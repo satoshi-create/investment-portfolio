@@ -219,6 +219,7 @@ export function themeEcosystemWatchlistToCsvRows(
     isMajorPlayer: e.isMajorPlayer ? "はい" : "いいえ",
     inPortfolio: e.inPortfolio ? "はい" : "いいえ",
     countryName: e.countryName ?? "",
+    instrumentKind: e.instrumentKind ?? "",
     nextEarningsDate: e.nextEarningsDate ?? "",
     daysToEarnings: e.daysToEarnings,
     dividendYieldPercent: e.dividendYieldPercent,
@@ -253,6 +254,7 @@ export const THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "isMajorPlayer", header: "Major" },
   { key: "inPortfolio", header: "保有中" },
   { key: "countryName", header: "国・市場" },
+  { key: "instrumentKind", header: "銘柄種別（API）" },
   { key: "nextEarningsDate", header: "次回決算日" },
   { key: "daysToEarnings", header: "決算まで日数" },
   { key: "dividendYieldPercent", header: "配当利回り（%）" },
@@ -266,5 +268,5 @@ export const THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "drawdownFromHigh90dPct", header: "90日高値比（%）" },
   { key: "latestCumulativeAlphaPct", header: "累積Alpha（%）" },
   { key: "alphaHistorySeries", header: "累積Alpha系列（JSON）" },
-  { key: "currentPrice", header: "現在値（USD等）" },
+  { key: "currentPrice", header: "現在値（建て通貨）" },
 ];

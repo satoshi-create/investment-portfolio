@@ -190,7 +190,10 @@ export async function fetchPortfolioDailySnapshotsForUser(
 }
 
 function parseInstrumentKind(raw: string): TickerInstrumentKind {
-  return raw === "JP_INVESTMENT_TRUST" ? "JP_INVESTMENT_TRUST" : "US_EQUITY";
+  const s = raw.trim();
+  if (s === "JP_INVESTMENT_TRUST") return "JP_INVESTMENT_TRUST";
+  if (s === "JP_LISTED_EQUITY") return "JP_LISTED_EQUITY";
+  return "US_EQUITY";
 }
 
 /**

@@ -15,7 +15,9 @@ const jpyFmt = new Intl.NumberFormat("ja-JP", {
 });
 
 function marketLabel(kind: TickerInstrumentKind): string {
-  return kind === "JP_INVESTMENT_TRUST" ? "日本投信" : "米国株";
+  if (kind === "US_EQUITY") return "米国株";
+  if (kind === "JP_LISTED_EQUITY") return "日本株";
+  return "日本投信";
 }
 
 function formatPriceLocal(kind: TickerInstrumentKind, price: number | null): string {

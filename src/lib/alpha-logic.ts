@@ -25,18 +25,27 @@ export function convertValueToJpy(value: number, currency: QuoteCurrency, usdJpy
 
 const DIGITS_ONLY = /^\d+$/;
 
+/** TSE 4–5 桁コードは `theme_ecosystem_members` 等で頻出。6 桁以上は投信コード寄りとして分離。 */
 export function classifyTickerInstrument(ticker: string): TickerInstrumentKind {
   const t = ticker.trim();
-  if (DIGITS_ONLY.test(t)) return "JP_INVESTMENT_TRUST";
+  if (t.length === 0) return "US_EQUITY";
+  const upper = t.toUpperCase();
+  if (upper.endsWith(".T")) return "JP_LISTED_EQUITY";
+  if (DIGITS_ONLY.test(t)) {
+    const len = t.length;
+    if (len >= 6) return "JP_INVESTMENT_TRUST";
+    if (len >= 4 && len <= 5) return "JP_LISTED_EQUITY";
+    return "US_EQUITY";
+  }
   return "US_EQUITY";
 }
 
 /**
- * Currency for dashboard market value: digit-only tickers (投信等) → JPY、それ以外 → USD×為替。
+ * Currency for dashboard market value: 日本株・投信 → JPY、米株 → USD×為替。
  * 指数連動のスケールずれは `valuation_factor` で調整（ティッカーが数字でも provider が ^ でも円レートは乗せない）。
  */
 export function quoteCurrencyForDashboardWeights(ticker: string): QuoteCurrency {
-  return classifyTickerInstrument(ticker) === "JP_INVESTMENT_TRUST" ? "JPY" : "USD";
+  return classifyTickerInstrument(ticker) === "US_EQUITY" ? "USD" : "JPY";
 }
 
 /**

@@ -32,6 +32,10 @@ eq(SIGNAL_BENCHMARK_TICKER, "VOO");
 
 eq(classifyTickerInstrument("06311181"), "JP_INVESTMENT_TRUST");
 eq(classifyTickerInstrument(" 06311181 "), "JP_INVESTMENT_TRUST");
+eq(classifyTickerInstrument("4401"), "JP_LISTED_EQUITY");
+eq(classifyTickerInstrument("8035"), "JP_LISTED_EQUITY");
+eq(classifyTickerInstrument("7203.T"), "JP_LISTED_EQUITY");
+eq(classifyTickerInstrument("300"), "US_EQUITY");
 eq(classifyTickerInstrument("NVDA"), "US_EQUITY");
 eq(classifyTickerInstrument("COP"), "US_EQUITY");
 eq(classifyTickerInstrument("BRK.B"), "US_EQUITY");
@@ -62,6 +66,8 @@ eq(convertValueToJpy(2, "USD", TEST_USD_JPY), 2 * TEST_USD_JPY);
 
 eq(quoteCurrencyForDashboardWeights("NVDA"), "USD");
 eq(quoteCurrencyForDashboardWeights("06311181"), "JPY");
+eq(quoteCurrencyForDashboardWeights("4401"), "JPY");
+eq(quoteCurrencyForDashboardWeights("7203.T"), "JPY");
 
 // NVDA: qty × USD price × factor × USD/JPY
 eq(
@@ -73,6 +79,17 @@ eq(
     fxUsdJpy: TEST_USD_JPY,
   }),
   10 * 100 * TEST_USD_JPY,
+);
+// JP listed (4-digit): JPY path (no FX)
+eq(
+  normalizedHoldingValueJpy({
+    ticker: "4401",
+    quantity: 100,
+    currentPrice: 3500,
+    valuationFactor: 1,
+    fxUsdJpy: TEST_USD_JPY,
+  }),
+  100 * 3500,
 );
 // JP fund: JPY path (no FX), factor scales index-style quotes toward NAV
 eq(

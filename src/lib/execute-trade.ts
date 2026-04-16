@@ -46,7 +46,7 @@ export type ExecuteTradeResult =
 function normalizeTicker(raw: string): string {
   const t = raw.trim();
   if (t.length === 0) return t;
-  return classifyTickerInstrument(t) === "JP_INVESTMENT_TRUST" ? t : t.toUpperCase();
+  return classifyTickerInstrument(t) === "US_EQUITY" ? t.toUpperCase() : t;
 }
 
 function assertYmd(d: string): void {

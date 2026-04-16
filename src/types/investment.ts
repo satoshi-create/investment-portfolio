@@ -1,7 +1,7 @@
 export type AlphaHistory = number[];
 
 /** Interpretation of `holdings.ticker` for Alpha inputs (see `src/lib/alpha-logic.ts`). */
-export type TickerInstrumentKind = "JP_INVESTMENT_TRUST" | "US_EQUITY";
+export type TickerInstrumentKind = "JP_INVESTMENT_TRUST" | "JP_LISTED_EQUITY" | "US_EQUITY";
 
 /** DB `holdings` row subset for sync / signals context. */
 export interface Holding {
@@ -215,6 +215,8 @@ export type ThemeEcosystemWatchItem = {
   inPortfolio: boolean;
   /** 国名（現状は銘柄種別から推定）。例: "米国" / "日本" */
   countryName: string;
+  /** 表示通貨・評価額換算（`classifyTickerInstrument` と一致） */
+  instrumentKind: TickerInstrumentKind;
   /** 次回決算予定日（YYYY-MM-DD）。取得できない場合は null */
   nextEarningsDate: string | null;
   /** 次回決算までの日数（今日基準）。取得できない場合は null */
