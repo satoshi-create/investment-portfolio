@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { Layout } from "lucide-react";
+import { Layout, Radar } from "lucide-react";
 
 import type { InvestmentThemeRecord } from "@/src/types/investment";
 
@@ -33,7 +33,17 @@ export function ThemesNavigationSection(props: {
             <div className="text-sm text-foreground/90">保有の有無に関わらず、すべてのテーマへ移動できます</div>
           </div>
         </div>
-        <div className="text-[10px] text-muted-foreground font-mono">{themes.length} themes</div>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Link
+            href="/etf-collection"
+            className="text-[10px] font-bold uppercase tracking-wide text-cyan-300 border border-cyan-500/35 bg-cyan-500/5 px-3 py-2 rounded-lg hover:bg-cyan-500/10 transition-all inline-flex items-center gap-2"
+            title="Global Strata（ETF Collection）へ"
+          >
+            <Radar size={14} />
+            Global Strata
+          </Link>
+          <div className="text-[10px] text-muted-foreground font-mono">{themes.length} themes</div>
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">

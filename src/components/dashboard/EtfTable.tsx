@@ -1,16 +1,19 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Search } from "lucide-react";
 
 import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 export type EtfRegionGroup = "GLOBAL_DEVELOPED" | "EMERGING_FRONTIER" | "THEMATIC_STRATA";
 
+export type RotationRadarPoint = { date: string; rsRatio: number; rsMomentum: number };
+
 export type EtfRow = {
   ticker: string;
   name: string;
   regionGroup: EtfRegionGroup;
+  strataThemeKey?: string | null;
   geographyLabel: string;
   geographyCode: string | null;
   underlyingStructure: string;
@@ -23,6 +26,7 @@ export type EtfRow = {
   phaseShift: boolean;
   phaseShiftDirection: "UP" | "DOWN" | null;
   spilloverHoldings: { ticker: string; name: string; reason: string }[];
+  rotationRadar?: RotationRadarPoint[];
 };
 
 export type RegionMomentumRow = { region: string; cumulativeAlpha: number; gravityWeight: number };
@@ -73,14 +77,22 @@ export function EtfTable({
   etfs,
   fxUsdJpy,
   regionFilter,
+  selectedTicker,
+  onSelectTicker,
+  highlightTickers,
 }: {
   etfs: EtfRow[];
   fxUsdJpy: number | null;
   regionFilter: "ALL" | EtfRegionGroup;
+  selectedTicker?: string | null;
+  onSelectTicker?: (ticker: string) => void;
+  highlightTickers?: string[];
 }) {
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("alpha90d");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map());
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -132,6 +144,28 @@ export function EtfTable({
     return arr;
   }, [filtered, sortDir, sortKey]);
 
+  const selectedRow = useMemo(() => {
+    const tk = (selectedTicker ?? "").trim();
+    if (!tk) return null;
+    return sorted.find((e) => e.ticker === tk) ?? null;
+  }, [selectedTicker, sorted]);
+
+  const highlightSet = useMemo(() => {
+    const hs = (highlightTickers ?? []).map((t) => t.trim()).filter((t) => t.length > 0);
+    return new Set(hs);
+  }, [highlightTickers]);
+
+  useEffect(() => {
+    const tk = (selectedTicker ?? "").trim();
+    if (!tk) return;
+    const el = rowRefs.current.get(tk) ?? null;
+    if (!el) return;
+    // Let layout settle (table might have re-sorted).
+    requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [selectedTicker, sortDir, sortKey]);
+
   function toggleSort(nextKey: SortKey) {
     if (nextKey === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -167,6 +201,68 @@ export function EtfTable({
           </span>
         </div>
       </div>
+
+      {selectedRow ? (
+        <div className="px-5 py-4 border-b border-border bg-background/30">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Selected</div>
+              <div className="mt-1 flex items-center gap-2 flex-wrap">
+                <span className="font-black text-foreground/90">{selectedRow.ticker}</span>
+                <span className="text-[11px] text-muted-foreground line-clamp-1" title={selectedRow.name}>
+                  {selectedRow.name}
+                </span>
+                {selectedRow.phaseShift ? (
+                  <span
+                    className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md border ${
+                      selectedRow.phaseShiftDirection === "UP"
+                        ? "text-emerald-300 border-emerald-500/35 bg-emerald-500/10"
+                        : "text-amber-300 border-amber-500/35 bg-amber-500/10"
+                    }`}
+                  >
+                    Phase {selectedRow.phaseShiftDirection ?? ""}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed max-w-4xl">
+                {selectedRow.underlyingStructure}
+              </div>
+              {selectedRow.spilloverHoldings.length > 0 ? (
+                <div className="mt-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Spillover candidates</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedRow.spilloverHoldings.slice(0, 10).map((h) => (
+                      <span
+                        key={h.ticker}
+                        className="inline-flex items-center gap-2 text-[10px] font-bold border border-border bg-background/60 px-2 py-1 rounded-md"
+                        title={h.name}
+                      >
+                        <span className="font-mono text-foreground/90">{h.ticker}</span>
+                        <span className="text-muted-foreground">{h.reason}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 text-[10px] text-muted-foreground">
+                  Spillover: —（Phase Shift が立ったときに、保有銘柄の structure_tags へ波及候補を提示します）
+                </div>
+              )}
+            </div>
+            <div className="shrink-0 flex items-center gap-2">
+              <button
+                type="button"
+                className="text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border border-border text-muted-foreground hover:bg-muted/40 transition-all"
+                onClick={() => onSelectTicker?.("")}
+                title="選択解除"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="overflow-x-auto overscroll-x-contain touch-pan-x">
         <table className="w-full min-w-[1100px] text-left text-xs lg:text-sm">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
@@ -256,12 +352,27 @@ export function EtfTable({
                       ? "text-emerald-400"
                       : "text-foreground/90";
 
+              const isSelected = (selectedTicker ?? "").trim() === e.ticker;
+              const isHighlighted = highlightSet.has(e.ticker);
               return (
-                <tr key={e.ticker} className="group hover:bg-muted/60 transition-all">
+                <tr
+                  key={e.ticker}
+                  ref={(el) => {
+                    rowRefs.current.set(e.ticker, el);
+                  }}
+                  className={`group hover:bg-muted/60 transition-all ${
+                    isSelected ? "bg-accent-cyan/10" : isHighlighted ? "bg-muted/40" : ""
+                  }`}
+                >
                   <td className={`px-6 py-4 min-w-[12rem] max-w-[14rem] ${stickyTdFirst}`}>
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-start justify-between gap-2">
-                        <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-2 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => onSelectTicker?.(e.ticker)}
+                          className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-2 min-w-0 text-left"
+                          title="Select"
+                        >
                           {e.phaseShift ? (
                             <span
                               className="inline-flex items-center justify-center h-5 w-5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 shrink-0"
@@ -272,7 +383,7 @@ export function EtfTable({
                             </span>
                           ) : null}
                           <span className="truncate">{e.ticker}</span>
-                        </span>
+                        </button>
                       </div>
                       <span className="text-[10px] text-muted-foreground leading-snug line-clamp-2" title={e.name}>
                         {e.name}

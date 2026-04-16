@@ -7,6 +7,7 @@ import { Globe, RefreshCw } from "lucide-react";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
 import { EtfTable, type EtfRegionGroup, type EtfRow, type RegionMomentumRow } from "@/src/components/dashboard/EtfTable";
+import { RotationRadarChart, type RotationRadarMode, type RotationRadarSelection } from "@/src/components/dashboard/RotationRadarChart";
 import { WorldMapHeat } from "@/src/components/dashboard/WorldMapHeat";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
@@ -48,6 +49,9 @@ export function EtfCollectionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [region, setRegion] = useState<"ALL" | EtfRegionGroup>("ALL");
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [radarMode, setRadarMode] = useState<RotationRadarMode>("ETF");
+  const [selectedGroup, setSelectedGroup] = useState<RotationRadarSelection | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,6 +96,33 @@ export function EtfCollectionPage() {
   const regionMomentumTop = useMemo(() => {
     return [...(data.regionalMomentum ?? [])].sort((a, b) => b.gravityWeight - a.gravityWeight).slice(0, 3);
   }, [data.regionalMomentum]);
+
+  const groupTickers = useMemo(() => {
+    if (!selectedGroup) return [];
+    const uniq = [...new Set((selectedGroup.tickers ?? []).map((t) => t.trim()).filter((t) => t.length > 0))];
+    uniq.sort((a, b) => a.localeCompare(b, "en"));
+    return uniq;
+  }, [selectedGroup]);
+
+  const groupSpillover = useMemo(() => {
+    if (!selectedGroup) return [];
+    const by = new Map<string, { ticker: string; name: string; reason: string; hits: number }>();
+    const set = new Set(groupTickers);
+    for (const e of data.etfs ?? []) {
+      if (!set.has(e.ticker)) continue;
+      for (const h of e.spilloverHoldings ?? []) {
+        const tk = String(h.ticker).trim();
+        if (!tk) continue;
+        const cur = by.get(tk) ?? { ticker: tk, name: String(h.name ?? ""), reason: String(h.reason ?? ""), hits: 0 };
+        cur.hits += 1;
+        if (!cur.reason && h.reason) cur.reason = String(h.reason);
+        if (!cur.name && h.name) cur.name = String(h.name);
+        by.set(tk, cur);
+      }
+    }
+    const out = [...by.values()].sort((a, b) => b.hits - a.hits || a.ticker.localeCompare(b.ticker, "en"));
+    return out.slice(0, 12);
+  }, [data.etfs, groupTickers, selectedGroup]);
 
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
@@ -160,6 +191,22 @@ export function EtfCollectionPage() {
             </div>
           ) : null}
         </div>
+
+        <RotationRadarChart
+          etfs={data.etfs ?? []}
+          mode={radarMode}
+          onChangeMode={(next) => {
+            setRadarMode(next);
+            setSelectedGroup(null);
+            setSelectedTicker(null);
+          }}
+          onSelect={(sel) => {
+            setSelectedGroup(sel);
+            // Pick a representative ETF to scroll to (first ticker in group).
+            const first = (sel.tickers ?? []).map((t) => t.trim()).find((t) => t.length > 0) ?? "";
+            setSelectedTicker(first.length > 0 ? first : null);
+          }}
+        />
 
         {/* Phase Shift Alerts moved to top (map gets full width) */}
         <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">
@@ -262,7 +309,88 @@ export function EtfCollectionPage() {
         </div>
 
         {/* Table is always global (no pin-driven filtering). */}
-        <EtfTable etfs={data.etfs ?? []} fxUsdJpy={data.fxUsdJpy ?? null} regionFilter="ALL" />
+        {selectedGroup ? (
+          <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Radar selection</div>
+                <div className="mt-1 text-sm font-black text-foreground/90">
+                  {selectedGroup.kind} — <span className="font-mono">{selectedGroup.key}</span>
+                </div>
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  ETFs: <span className="font-mono text-foreground/90">{groupTickers.length}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {groupTickers.slice(0, 18).map((tk) => (
+                    <button
+                      key={tk}
+                      type="button"
+                      onClick={() => setSelectedTicker(tk)}
+                      className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border transition-all ${
+                        selectedTicker === tk
+                          ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
+                          : "text-muted-foreground border-border hover:bg-muted/40"
+                      }`}
+                      title="Scroll to ETF"
+                    >
+                      {tk}
+                    </button>
+                  ))}
+                  {groupTickers.length > 18 ? (
+                    <span className="text-[10px] text-muted-foreground">+{groupTickers.length - 18}</span>
+                  ) : null}
+                </div>
+                <div className="mt-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Spillover (group)</div>
+                  {groupSpillover.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {groupSpillover.map((h) => (
+                        <span
+                          key={h.ticker}
+                          className="inline-flex items-center gap-2 text-[10px] font-bold border border-border bg-background/60 px-2 py-1 rounded-md"
+                          title={h.name}
+                        >
+                          <span className="font-mono text-foreground/90">{h.ticker}</span>
+                          <span className="text-muted-foreground">{h.reason || "hit"}</span>
+                          <span className="text-muted-foreground/70 font-mono">×{h.hits}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-[10px] text-muted-foreground">
+                      —（Phase Shift が発生しているETFがある場合に波及候補が現れます）
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGroup(null);
+                    setSelectedTicker(null);
+                  }}
+                  className="text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border border-border text-muted-foreground hover:bg-muted/40 transition-all"
+                  title="選択解除"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <EtfTable
+          etfs={data.etfs ?? []}
+          fxUsdJpy={data.fxUsdJpy ?? null}
+          regionFilter="ALL"
+          selectedTicker={selectedTicker}
+          highlightTickers={selectedGroup ? groupTickers : undefined}
+          onSelectTicker={(ticker) => {
+            const t = ticker.trim();
+            setSelectedTicker(t.length > 0 ? t : null);
+          }}
+        />
       </div>
     </div>
   );

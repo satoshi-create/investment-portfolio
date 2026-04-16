@@ -2,6 +2,7 @@ import type { Client } from "@libsql/client";
 
 import {
   calculateCumulativeAlpha,
+  computeRotationRadarVector,
   computeAlphaDeviationZScore,
   computeEtfTrackingAlphaPercent,
   computeExpenseRatioDragPercent,
@@ -11,6 +12,7 @@ import {
   ymdDaysAgoUtc,
   type DatedAlphaRow,
   type RegionMomentumOutput,
+  type RotationRadarPoint,
 } from "@/src/lib/alpha-logic";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { themeFromStructureTags } from "@/src/lib/structure-tags";
@@ -22,6 +24,8 @@ export type EtfDescriptor = {
   ticker: string;
   name: string;
   regionGroup: Exclude<EtfRegionFilter, "ALL">;
+  /** Thematic Strata の細分類キー（Rotation Radar の Theme 集約用）。 */
+  strataThemeKey?: string;
   geographyLabel: string; // e.g. "US", "EU", "India"
   geographyCode?: string; // e.g. "US", "EU", "IN"
   underlyingStructure: string;
@@ -37,6 +41,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "VOO",
     name: "Vanguard S&P 500 ETF",
     regionGroup: "GLOBAL_DEVELOPED",
+    strataThemeKey: "US_EQUITY_CORE",
     geographyLabel: "United States",
     geographyCode: "US",
     underlyingStructure: "米国の企業利益サイクル（世界の最終需要×自社株買い×資本効率）",
@@ -50,6 +55,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "QQQ",
     name: "Invesco QQQ Trust (NASDAQ-100)",
     regionGroup: "GLOBAL_DEVELOPED",
+    strataThemeKey: "US_TECH_PLATFORM",
     geographyLabel: "United States",
     geographyCode: "US",
     underlyingStructure: "米国テック覇権（AI・クラウド・ソフトウェアの利益プラットフォーム）",
@@ -63,6 +69,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "VGK",
     name: "Vanguard FTSE Europe ETF",
     regionGroup: "GLOBAL_DEVELOPED",
+    strataThemeKey: "EU_EQUITY",
     geographyLabel: "Europe",
     geographyCode: "EU",
     underlyingStructure: "欧州の価値・製造・資源循環（エネルギー転換と産業再配置）",
@@ -76,6 +83,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "EPI",
     name: "WisdomTree India Earnings Fund",
     regionGroup: "EMERGING_FRONTIER",
+    strataThemeKey: "INDIA_EQUITY",
     geographyLabel: "India",
     geographyCode: "IN",
     underlyingStructure: "インド人口ボーナス×内需金融化（所得層の厚みと都市化）",
@@ -89,6 +97,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "INDA",
     name: "iShares MSCI India ETF",
     regionGroup: "EMERGING_FRONTIER",
+    strataThemeKey: "INDIA_EQUITY",
     geographyLabel: "India",
     geographyCode: "IN",
     underlyingStructure: "インドの広い株式市場（内需・製造・サービスの複合）",
@@ -102,6 +111,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "MCHI",
     name: "iShares MSCI China ETF",
     regionGroup: "EMERGING_FRONTIER",
+    strataThemeKey: "CHINA_EQUITY",
     geographyLabel: "China",
     geographyCode: "CN",
     underlyingStructure: "中国の政策・景気循環と巨大内需（製造・プラットフォーム・金融の再編）",
@@ -115,6 +125,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "EWJ",
     name: "iShares MSCI Japan ETF",
     regionGroup: "GLOBAL_DEVELOPED",
+    strataThemeKey: "JAPAN_EQUITY",
     geographyLabel: "Japan",
     geographyCode: "JP",
     underlyingStructure: "日本の企業統治・円資産・輸出の質（高配当化と再投資の均衡）",
@@ -128,6 +139,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "VNM",
     name: "VanEck Vietnam ETF",
     regionGroup: "EMERGING_FRONTIER",
+    strataThemeKey: "SEA_EQUITY",
     geographyLabel: "Southeast Asia",
     geographyCode: "SEA",
     underlyingStructure: "東南アジアの製造代替と内需拡張（若年人口×都市化×サプライチェーン移転）",
@@ -141,6 +153,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "EZA",
     name: "iShares MSCI South Africa ETF",
     regionGroup: "EMERGING_FRONTIER",
+    strataThemeKey: "AFRICA_EQUITY",
     geographyLabel: "Africa",
     geographyCode: "AF",
     underlyingStructure: "南アフリカを中心とした資源・金融の循環（新興フロンティアの入口）",
@@ -154,6 +167,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "EWW",
     name: "iShares MSCI Mexico ETF",
     regionGroup: "EMERGING_FRONTIER",
+    strataThemeKey: "MEXICO_EQUITY",
     geographyLabel: "Mexico",
     geographyCode: "MX",
     underlyingStructure: "メキシコ近接移転（ニアショア）×米国供給網の再編",
@@ -167,6 +181,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "FM",
     name: "iShares MSCI Frontier and Select EM ETF",
     regionGroup: "EMERGING_FRONTIER",
+    strataThemeKey: "FRONTIER_EQUITY",
     geographyLabel: "Frontier",
     geographyCode: "FR",
     underlyingStructure: "フロンティア市場の“薄い成長”の束（資本の空白地帯）",
@@ -180,6 +195,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "SMH",
     name: "VanEck Semiconductor ETF",
     regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "AI_SEMICONDUCTOR",
     geographyLabel: "Global",
     geographyCode: "GL",
     underlyingStructure: "半導体（計算資本）—AI/産業の“電気”そのもの",
@@ -193,6 +209,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "LIT",
     name: "Global X Lithium & Battery Tech ETF",
     regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "EV_BATTERY",
     geographyLabel: "Global",
     geographyCode: "GL",
     underlyingStructure: "電池・リチウム（エネルギー密度）—EV/蓄電の心臓部",
@@ -206,6 +223,7 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
     ticker: "2244.T",
     name: "グローバルX FANG+ ETF",
     regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "US_TECH_PLATFORM",
     geographyLabel: "Japan Listed",
     geographyCode: "JP",
     underlyingStructure: "FANG+（プラットフォーム覇権）—広告/EC/クラウドの収穫機",
@@ -271,6 +289,7 @@ export type EtfEvaluatedRow = {
   ticker: string;
   name: string;
   regionGroup: EtfDescriptor["regionGroup"];
+  strataThemeKey: string | null;
   geographyLabel: string;
   geographyCode: string | null;
   underlyingStructure: string;
@@ -291,6 +310,9 @@ export type EtfEvaluatedRow = {
 
   // Spillover
   spilloverHoldings: { ticker: string; name: string; reason: string }[];
+
+  // Rotation Radar (capital flow)
+  rotationRadar: RotationRadarPoint[];
 };
 
 export type EtfCollectionSnapshot = {
@@ -348,10 +370,13 @@ export async function getEtfCollectionSnapshot(db: Client, userId: string): Prom
           ? matchSpilloverHoldings(holdings, d.relatedKeywords, 6)
           : [];
 
+        const rotationRadar = computeRotationRadarVector(rows, { lookbackDays: 20, momentumLagDays: 5 });
+
         results[i] = {
           ticker: d.ticker,
           name: d.name,
           regionGroup: d.regionGroup,
+          strataThemeKey: d.strataThemeKey != null && String(d.strataThemeKey).trim().length > 0 ? String(d.strataThemeKey).trim() : null,
           geographyLabel: d.geographyLabel,
           geographyCode: d.geographyCode ?? null,
           underlyingStructure: d.underlyingStructure,
@@ -364,12 +389,14 @@ export async function getEtfCollectionSnapshot(db: Client, userId: string): Prom
           phaseShift,
           phaseShiftDirection: direction,
           spilloverHoldings,
+          rotationRadar,
         };
       } catch {
         results[i] = {
           ticker: d.ticker,
           name: d.name,
           regionGroup: d.regionGroup,
+          strataThemeKey: d.strataThemeKey != null && String(d.strataThemeKey).trim().length > 0 ? String(d.strataThemeKey).trim() : null,
           geographyLabel: d.geographyLabel,
           geographyCode: d.geographyCode ?? null,
           underlyingStructure: d.underlyingStructure,
@@ -387,6 +414,7 @@ export async function getEtfCollectionSnapshot(db: Client, userId: string): Prom
           phaseShift: false,
           phaseShiftDirection: null,
           spilloverHoldings: [],
+          rotationRadar: [],
         };
       }
     }

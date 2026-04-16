@@ -296,6 +296,102 @@ export function isThemeStructuralTrendPositiveUp(
 }
 
 /**
+ * ===== Capital Flow Rotation Radar (RRG-like) =====
+ *
+ * We derive rotation coordinates from the Alpha series (daily excess return vs benchmark).
+ * - RS-Ratio: "relative strength" index (centered at 100).
+ * - RS-Momentum: short-term acceleration of RS-Ratio (also centered at 100).
+ *
+ * Notes:
+ * - Alpha is already "relative" vs benchmark, so compounding is approximated by cumulative sum.
+ * - This is intentionally light-weight and deterministic (no external I/O).
+ */
+
+export type RotationRadarPoint = {
+  date: string; // YYYY-MM-DD
+  rsRatio: number; // centered at 100
+  rsMomentum: number; // centered at 100
+};
+
+export type RotationQuadrant = "LEADING" | "WEAKENING" | "LAGGING" | "IMPROVING";
+
+export function rotationQuadrantOf(p: { rsRatio: number; rsMomentum: number }): RotationQuadrant {
+  const x = Number.isFinite(p.rsRatio) ? p.rsRatio : 100;
+  const y = Number.isFinite(p.rsMomentum) ? p.rsMomentum : 100;
+  if (x >= 100 && y >= 100) return "LEADING";
+  if (x >= 100 && y < 100) return "WEAKENING";
+  if (x < 100 && y < 100) return "LAGGING";
+  return "IMPROVING";
+}
+
+export type RotationRadarEvent = "HARVEST" | "NONLINEAR_BREAKOUT";
+
+export function rotationEventsForTransition(prev: RotationQuadrant, next: RotationQuadrant): RotationRadarEvent[] {
+  const out: RotationRadarEvent[] = [];
+  if (prev === "LEADING" && next === "WEAKENING") out.push("HARVEST");
+  if (prev === "IMPROVING" && next === "LEADING") out.push("NONLINEAR_BREAKOUT");
+  return out;
+}
+
+/**
+ * Compute rotation radar vectors (chronological).
+ *
+ * - `lookbackDays`: number of output points (default 20).
+ * - `momentumLagDays`: lag used to estimate acceleration (default 5).
+ *
+ * Output is a vector of up to `lookbackDays` points (may be shorter if not enough history).
+ */
+export function computeRotationRadarVector(
+  alphaRows: DatedAlphaRow[],
+  options?: { lookbackDays?: number; momentumLagDays?: number },
+): RotationRadarPoint[] {
+  const lookbackDays = Math.max(6, Math.floor(options?.lookbackDays ?? 20));
+  const momentumLagDays = Math.max(2, Math.floor(options?.momentumLagDays ?? 5));
+  if (alphaRows.length === 0) return [];
+
+  const sorted = [...alphaRows]
+    .map((r) => ({ date: toYmd(r.recordedAt), alpha: Number(r.alphaValue) }))
+    .filter((r) => r.date.length === 10)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (sorted.length < 3) return [];
+
+  // Need enough points for momentum lag; keep a small buffer.
+  const need = lookbackDays + momentumLagDays + 2;
+  const slice = sorted.slice(-Math.min(sorted.length, need));
+  if (slice.length < Math.max(lookbackDays, momentumLagDays + 3)) return [];
+
+  // Anchor at the first point in slice so rsRatio is comparable within the vector.
+  const anchor = slice[0]!.date;
+  const cum = calculateCumulativeAlpha(
+    slice.map((r) => ({ recordedAt: r.date, alphaValue: r.alpha })),
+    anchor,
+  );
+
+  // Build rsRatio series around 100.
+  const ratio: { date: string; v: number }[] = cum.map((p) => ({
+    date: p.date,
+    v: roundAlphaMetric(100 + (Number.isFinite(p.cumulative) ? p.cumulative : 0)),
+  }));
+
+  // Momentum as a lag-difference (also centered at 100).
+  const byDate = new Map<string, number>();
+  for (const r of ratio) byDate.set(r.date, r.v);
+
+  const points: RotationRadarPoint[] = [];
+  for (let i = 0; i < ratio.length; i++) {
+    const cur = ratio[i]!;
+    const lagIdx = i - momentumLagDays;
+    const lag = lagIdx >= 0 ? ratio[lagIdx]!.v : cur.v;
+    const delta = cur.v - lag;
+    const mom = roundAlphaMetric(100 + delta);
+    points.push({ date: cur.date, rsRatio: cur.v, rsMomentum: mom });
+  }
+
+  return points.slice(-lookbackDays);
+}
+
+/**
  * ===== ETF gravity logic =====
  *
  * ETFs are "structures" rather than individual companies.
