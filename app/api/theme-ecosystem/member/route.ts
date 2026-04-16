@@ -14,6 +14,18 @@ import { fetchCompanyNameForTicker } from "@/src/lib/price-service";
 
 export const dynamic = "force-dynamic";
 
+function parseOptionalObservationDate(raw: unknown): string | null | "invalid" {
+  if (raw == null) return null;
+  if (typeof raw !== "string") return "invalid";
+  const s = raw.trim();
+  if (s.length === 0) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "invalid";
+  const [y, mo, d] = s.split("-").map((x) => Number(x));
+  const dt = new Date(y, mo - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return "invalid";
+  return s;
+}
+
 type Body = {
   userId?: string;
   themeId?: string;
@@ -21,6 +33,8 @@ type Body = {
   role?: string | null;
   isMajorPlayer?: boolean;
   companyName?: string | null;
+  /** 銘柄投入日（観測開始）YYYY-MM-DD */
+  observationStartedAt?: string | null;
   memberId?: string;
 };
 
@@ -46,6 +60,13 @@ export async function POST(request: Request) {
   const isMajorPlayer = body.isMajorPlayer === true;
   const companyName =
     body.companyName == null ? null : typeof body.companyName === "string" ? body.companyName.trim() : null;
+  const parsedObs = parseOptionalObservationDate(body.observationStartedAt);
+  if (parsedObs === "invalid") {
+    return NextResponse.json(
+      { error: "追加日は YYYY-MM-DD 形式の有効な日付で指定してください" },
+      { status: 400 },
+    );
+  }
 
   if (!themeId) {
     return NextResponse.json({ error: "themeId is required" }, { status: 400 });
@@ -56,7 +77,15 @@ export async function POST(request: Request) {
 
   try {
     const resolvedName = companyName && companyName.length > 0 ? companyName : await fetchCompanyNameForTicker(ticker);
-    await addMemberToEcosystem(getDb(), { userId, themeId, ticker, role, isMajorPlayer, companyName: resolvedName });
+    await addMemberToEcosystem(getDb(), {
+      userId,
+      themeId,
+      ticker,
+      role,
+      isMajorPlayer,
+      companyName: resolvedName,
+      observationStartedAt: parsedObs,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof EcosystemMemberAuthError) {

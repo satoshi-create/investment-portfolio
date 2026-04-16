@@ -104,6 +104,23 @@ function fmtDdCol(v: number | null): string {
   return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
 }
 
+/** ローカル日付の YYYY-MM-DD（追加日入力の既定値用） */
+function localCalendarIsoDate(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function ecosystemMatchesMarketFilter(
+  e: ThemeEcosystemWatchItem,
+  filter: "all" | "jp" | "us",
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "jp") return e.countryName === "日本";
+  return e.countryName === "米国";
+}
+
 function ecoOpportunityRow(
   e: ThemeEcosystemWatchItem,
   themeUp: boolean,
@@ -339,9 +356,15 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
   /** アーリーマジョリティ以降のみ（キャズム超え・割安性フィルターと AND） */
   const [postChasmOnly, setPostChasmOnly] = useState(false);
   const [ecosystemSearchQuery, setEcosystemSearchQuery] = useState("");
+  const [ecoMarketFilter, setEcoMarketFilter] = useState<"all" | "jp" | "us">(
+    "all",
+  );
   const [addTicker, setAddTicker] = useState("");
   const [addImportance, setAddImportance] = useState<"standard" | "major">(
     "standard",
+  );
+  const [addObservationStartedAt, setAddObservationStartedAt] = useState(
+    () => localCalendarIsoDate(),
   );
   const [addRole, setAddRole] = useState("");
   const [addCompanyName, setAddCompanyName] = useState<string | null>(null);
@@ -592,6 +615,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
             isMajorPlayer: addImportance === "major",
             role: addRole.trim() || null,
             companyName: addCompanyName,
+            observationStartedAt:
+              addObservationStartedAt.trim().length >= 10
+                ? addObservationStartedAt.trim().slice(0, 10)
+                : null,
           }),
         });
         let json: { error?: string; code?: string } = {};
@@ -612,6 +639,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         setAddTicker("");
         setAddRole("");
         setAddImportance("standard");
+        setAddObservationStartedAt(localCalendarIsoDate());
         setAddCompanyName(null);
         await refetchThemeDetailQuiet(ac.signal);
       } catch (e) {
@@ -626,6 +654,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
       addTicker,
       addRole,
       addImportance,
+      addObservationStartedAt,
       addCompanyName,
       addTickerDuplicate,
       addSubmitting,
@@ -756,13 +785,24 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
         ecosystemMatchesSearchQuery(e, ecosystemSearchQuery),
       );
     }
+    if (ecoMarketFilter !== "all") {
+      out = out.filter((e) => ecosystemMatchesMarketFilter(e, ecoMarketFilter));
+    }
     if (isDefensiveTheme && holderFilterSet.size > 0) {
       out = out.filter((e) =>
         (e.holderTags ?? []).some((h) => holderFilterSet.has(String(h).trim())),
       );
     }
     return out;
-  }, [ecosystem, patrolOn, postChasmOnly, ecosystemSearchQuery, holderFilterSet, isDefensiveTheme]);
+  }, [
+    ecosystem,
+    patrolOn,
+    postChasmOnly,
+    ecosystemSearchQuery,
+    ecoMarketFilter,
+    holderFilterSet,
+    isDefensiveTheme,
+  ]);
 
   const themeAdoptionMaturity = useMemo(
     () => summarizeThemeAdoptionMaturity(ecosystem.map((e) => e.adoptionStage)),
@@ -1124,7 +1164,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                       Ecosystem · 銘柄を追加
                     </h2>
                     <p className="text-[10px] text-slate-600 mt-0.5">
-                      Ticker・Importance・Role
+                      Ticker・追加日（観測開始）・Importance・Role
                       を登録してウォッチリストへ追加します（同一テーマ内の
                       ticker 重複は不可）
                     </p>
@@ -1134,7 +1174,7 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                   onSubmit={handleAddEcosystemMember}
                   className="flex flex-col gap-4"
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-[7.5rem_11rem_1fr_auto] gap-4 items-end">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[7.5rem_10.5rem_11rem_1fr_auto] gap-4 items-end">
                     <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-ticker"
@@ -1155,6 +1195,21 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                             : undefined,
                         )}
                         autoComplete="off"
+                      />
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <label
+                        htmlFor="eco-add-started-at"
+                        className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
+                      >
+                        追加日（観測開始）
+                      </label>
+                      <Input
+                        id="eco-add-started-at"
+                        type="date"
+                        value={addObservationStartedAt}
+                        onChange={(e) => setAddObservationStartedAt(e.target.value)}
+                        className="font-mono"
                       />
                     </div>
                     <div className="space-y-1.5 min-w-0">
@@ -1282,6 +1337,48 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                             autoComplete="off"
                           />
                         </label>
+                        <div
+                          className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/40 p-1"
+                          role="group"
+                          aria-label="市場フィルター"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setEcoMarketFilter("all")}
+                            className={cn(
+                              "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-colors",
+                              ecoMarketFilter === "all"
+                                ? "text-cyan-300 border-cyan-500/45 bg-cyan-500/10"
+                                : "text-slate-500 border-transparent hover:bg-slate-800/60",
+                            )}
+                          >
+                            すべて
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEcoMarketFilter("jp")}
+                            className={cn(
+                              "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-colors",
+                              ecoMarketFilter === "jp"
+                                ? "text-emerald-300 border-emerald-500/45 bg-emerald-500/10"
+                                : "text-slate-500 border-transparent hover:bg-slate-800/60",
+                            )}
+                          >
+                            日本
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEcoMarketFilter("us")}
+                            className={cn(
+                              "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-colors",
+                              ecoMarketFilter === "us"
+                                ? "text-sky-300 border-sky-500/45 bg-sky-500/10"
+                                : "text-slate-500 border-transparent hover:bg-slate-800/60",
+                            )}
+                          >
+                            米国
+                          </button>
+                        </div>
                         <button
                           type="button"
                           onClick={() => setEcoShowValueCols((v) => !v)}
@@ -1444,7 +1541,8 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         <span>
                           {patrolOn ||
                           postChasmOnly ||
-                          ecosystemSearchQuery.trim().length > 0
+                          ecosystemSearchQuery.trim().length > 0 ||
+                          ecoMarketFilter !== "all"
                             ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
                             : `計 ${ecosystem.length} 銘柄`}
                         </span>
@@ -1539,19 +1637,36 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
                         {ecosystemSorted.length === 0 &&
                         (patrolOn ||
                           postChasmOnly ||
-                          ecosystemSearchQuery.trim().length > 0) ? (
+                          ecosystemSearchQuery.trim().length > 0 ||
+                          ecoMarketFilter !== "all") ? (
                           <tr>
                             <td
                               colSpan={ecoShowValueCols ? 9 : 7}
                               className="px-6 py-8 text-center text-sm text-slate-500"
                             >
-                              {ecosystemSearchQuery.trim().length > 0
-                                ? "該当する構造が見つかりません"
-                                : postChasmOnly && !patrolOn
-                                  ? "キャズム超え（アーリー／レイトマジョリティ）に該当する銘柄がありません。DB の adoption_stage を設定してください。"
-                                  : patrolOn && !postChasmOnly
-                                    ? "割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。"
-                                    : "フィルター条件に合う銘柄がありません（割安パトロール ＋ キャズム超え）。"}
+                              {(() => {
+                                const q =
+                                  ecosystemSearchQuery.trim().length > 0;
+                                const marketOnly =
+                                  ecoMarketFilter !== "all" &&
+                                  !patrolOn &&
+                                  !postChasmOnly &&
+                                  !q;
+                                if (q) return "該当する構造が見つかりません";
+                                if (marketOnly && ecoMarketFilter === "jp") {
+                                  return "日本市場に該当する銘柄がありません。";
+                                }
+                                if (marketOnly && ecoMarketFilter === "us") {
+                                  return "米国市場に該当する銘柄がありません。";
+                                }
+                                if (postChasmOnly && !patrolOn) {
+                                  return "キャズム超え（アーリー／レイトマジョリティ）に該当する銘柄がありません。DB の adoption_stage を設定してください。";
+                                }
+                                if (patrolOn && !postChasmOnly) {
+                                  return "割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。";
+                                }
+                                return "フィルター条件に合う銘柄がありません。";
+                              })()}
                             </td>
                           </tr>
                         ) : null}

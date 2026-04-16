@@ -21,6 +21,8 @@ export type AddEcosystemMemberInput = {
   role: string | null;
   isMajorPlayer: boolean;
   companyName?: string | null;
+  /** `theme_ecosystem_members.observation_started_at`（YYYY-MM-DD）。未指定は NULL */
+  observationStartedAt?: string | null;
 };
 
 export type UpdateEcosystemMemberInput = {
@@ -52,6 +54,10 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
   const role = input.role != null && input.role.trim().length > 0 ? input.role.trim() : null;
   const companyName =
     input.companyName != null && String(input.companyName).trim().length > 0 ? String(input.companyName).trim() : null;
+  const observationStartedAt =
+    input.observationStartedAt != null && String(input.observationStartedAt).trim().length > 0
+      ? String(input.observationStartedAt).trim()
+      : null;
 
   try {
     await db.execute({
@@ -62,9 +68,17 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
       ) VALUES (
         ?, ?, ?,
         0, NULL, NULL, NULL, NULL,
-        ?, NULL, ?, ?, NULL
+        ?, NULL, ?, ?, ?
       )`,
-      args: [randomUUID(), input.themeId, ticker, companyName, role, input.isMajorPlayer ? 1 : 0],
+      args: [
+        randomUUID(),
+        input.themeId,
+        ticker,
+        companyName,
+        role,
+        input.isMajorPlayer ? 1 : 0,
+        observationStartedAt,
+      ],
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
