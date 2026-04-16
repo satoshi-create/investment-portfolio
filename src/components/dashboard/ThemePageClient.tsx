@@ -41,7 +41,7 @@ import {
   themeEcosystemWatchlistCsvFileName,
 } from "@/src/lib/csv-export";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
-import { SemiconductorEquipmentObservationPanel } from "@/src/components/dashboard/SemiconductorEquipmentObservationPanel";
+import { SemiconductorSupplyChainObservationPanel } from "@/src/components/dashboard/SemiconductorSupplyChainObservationPanel";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import {
@@ -55,7 +55,10 @@ import {
   stickyTdFirst,
   stickyThFirst,
 } from "@/src/components/dashboard/table-sticky";
-import { SEMICONDUCTOR_EQUIPMENT_THEME_NAME } from "@/src/lib/semiconductor-equipment-catalog";
+import {
+  SEMICONDUCTOR_SUPPLY_CHAIN_THEME_NAME,
+  type SemiconductorSupplyChainCatalogRow,
+} from "@/src/lib/semiconductor-supply-chain-catalog";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
@@ -94,6 +97,13 @@ function mapThemeLabelForQuery(raw: string): {
       query: "ディフェンシブ銘柄",
       display: "ディフェンシブ銘柄",
       slug: "defensive-stocks",
+    };
+  }
+  if (s === "半導体製造装置") {
+    return {
+      query: "半導体サプライチェーン",
+      display: "半導体サプライチェーン",
+      slug: "半導体製造装置",
     };
   }
   return { query: s, display: s, slug: s };
@@ -327,14 +337,21 @@ function extractGeopoliticalPotential(
   return null;
 }
 
-export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
+export function ThemePageClient({
+  themeLabel,
+  supplyChainCatalogRows = null,
+}: {
+  themeLabel: string;
+  /** 半導体サプライチェーン: サーバーで CSV を読み込んだカタログ（任意） */
+  supplyChainCatalogRows?: SemiconductorSupplyChainCatalogRow[] | null;
+}) {
   const { query: themeQueryName, display: themeDisplayName } = useMemo(
     () => mapThemeLabelForQuery(themeLabel),
     [themeLabel],
   );
   const isDefensiveTheme = themeQueryName === "ディフェンシブ銘柄";
-  const isSemiconductorEquipmentTheme =
-    themeQueryName === SEMICONDUCTOR_EQUIPMENT_THEME_NAME;
+  const isSemiconductorSupplyChainTheme =
+    themeQueryName === SEMICONDUCTOR_SUPPLY_CHAIN_THEME_NAME;
   const [holderFilter, setHolderFilter] = useState<string[]>([]);
 
   const [data, setData] = useState<ThemeDetailData | null>(null);
@@ -1032,8 +1049,10 @@ export function ThemePageClient({ themeLabel }: { themeLabel: string }) {
           <>
             <ThemeMetaBlock theme={theme} themeName={themeLabel} />
 
-            {isSemiconductorEquipmentTheme ? (
-              <SemiconductorEquipmentObservationPanel />
+            {isSemiconductorSupplyChainTheme ? (
+              <SemiconductorSupplyChainObservationPanel
+                rows={supplyChainCatalogRows ?? []}
+              />
             ) : null}
 
             <section aria-labelledby="theme-performance-heading">

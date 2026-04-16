@@ -38,6 +38,7 @@ import { parseExpectationCategory } from "@/src/lib/expectation-category";
 import {
   aggregateByHoldingSector,
   aggregateByTheme,
+  portfolioThemeTagMatchesThemePage,
   sanitizeMarketValueForAggregation,
   sectorFromStructureTags,
   themeFromStructureTags,
@@ -999,7 +1000,7 @@ export async function getThemeDetailData(
 
   const matching = holdingRows.filter((row) => {
     const tagsJson = row.structure_tags == null ? "[]" : String(row.structure_tags);
-    return themeFromStructureTags(tagsJson) === themeName;
+    return portfolioThemeTagMatchesThemePage(themeFromStructureTags(tagsJson), themeName);
   });
 
   const [researchByTicker, hybridPriceByHoldingKey] = await Promise.all([

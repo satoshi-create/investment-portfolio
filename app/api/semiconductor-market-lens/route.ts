@@ -5,7 +5,7 @@ import { fetchLatestPriceWithChangePct } from "@/src/lib/price-service";
 export const dynamic = "force-dynamic";
 
 /**
- * 半導体製造装置テーマ向けの薄いマーケット・レンズ（SOX / NDX）。
+ * 半導体サプライチェーン等向けの薄いマーケット・レンズ（SOX / NDX）。
  * ダッシュボード全体の `fetchGlobalMarketIndicators` より軽量。
  */
 export async function GET() {

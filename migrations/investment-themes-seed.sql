@@ -31,8 +31,8 @@ INSERT OR REPLACE INTO investment_themes (id, user_id, name, description, goal, 
 (
   'theme-seed-semiconductor-equipment',
   'user-satoshi',
-  '半導体製造装置',
-  'ウェハをチップへ変換する「物理 OS」レイヤー。成膜・エッチ・露光・洗浄・検査・テスト・ダイシング等の前後工程ツールに焦点を当て、ファウンドリの設備投資サイクルと相関しやすい銘柄群を観測する。',
-  'SOX・主要ファウンドリの CapEx コメントと照らし、テーマ加重累積 Alpha（VOO 比）と各銘柄の Z・落率で「在庫調整 vs 構造需要」を分解して読む。',
+  '半導体サプライチェーン',
+  '材料・装置・設計（ファブレス）・IDM・後工程まで、半導体バリューチェーン全体を一枚の地図で観測する。CSV の各プレイヤーをエコシステムに載せ、VOO 対 Alpha と決算・地政イベントで分解する。',
+  'SOX/NDX とファウンドリ設備投資・メモリ価格を併読し、テーマ加重累積 Alpha と銘柄別 Z・落率で「全体β」と「チェーン内相対」を切り分ける。',
   datetime('now')
 );
