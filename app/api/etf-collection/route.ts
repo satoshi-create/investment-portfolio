@@ -11,6 +11,7 @@ type EtfCollectionResponseJson = {
   asOf: string;
   fxUsdJpy: number | null;
   etfs: unknown[];
+  commoditiesEtfs: unknown[];
   regionalMomentum: unknown[];
   stale?: boolean;
 };
@@ -75,6 +76,7 @@ export async function GET(request: Request) {
         asOf: snap.asOf,
         fxUsdJpy: snap.fxUsdJpy,
         etfs: snap.etfs as unknown[],
+        commoditiesEtfs: snap.commoditiesEtfs as unknown[],
         regionalMomentum: snap.regionalMomentum as unknown[],
       };
     })();
