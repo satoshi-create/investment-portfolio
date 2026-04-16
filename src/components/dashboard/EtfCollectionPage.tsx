@@ -17,11 +17,19 @@ type Payload = {
   asOf: string;
   fxUsdJpy: number | null;
   etfs: EtfRow[];
+  commoditiesEtfs: EtfRow[];
   regionalMomentum: RegionMomentumRow[];
   stale?: boolean;
 };
 
-const EMPTY: Payload = { userId: DEFAULT_USER_ID, asOf: "", fxUsdJpy: null, etfs: [], regionalMomentum: [] };
+const EMPTY: Payload = {
+  userId: DEFAULT_USER_ID,
+  asOf: "",
+  fxUsdJpy: null,
+  etfs: [],
+  commoditiesEtfs: [],
+  regionalMomentum: [],
+};
 
 function regionLabelJa(region: "ALL" | EtfRegionGroup): string {
   if (region === "ALL") return "World";
@@ -52,6 +60,7 @@ export function EtfCollectionPage() {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<RotationRadarMode>("ETF");
   const [selectedGroup, setSelectedGroup] = useState<RotationRadarSelection | null>(null);
+  const [dataset, setDataset] = useState<"GLOBAL" | "COMMODITIES">("GLOBAL");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +81,7 @@ export function EtfCollectionPage() {
         asOf: json.asOf ?? "",
         fxUsdJpy: json.fxUsdJpy ?? null,
         etfs: (json.etfs ?? []) as EtfRow[],
+        commoditiesEtfs: (json.commoditiesEtfs ?? []) as EtfRow[],
         regionalMomentum: (json.regionalMomentum ?? []) as RegionMomentumRow[],
         stale: json.stale,
       });
@@ -87,11 +97,15 @@ export function EtfCollectionPage() {
     void load();
   }, [load]);
 
+  const activeEtfs = useMemo(() => {
+    return dataset === "COMMODITIES" ? (data.commoditiesEtfs ?? []) : (data.etfs ?? []);
+  }, [data.commoditiesEtfs, data.etfs, dataset]);
+
   const phaseAlerts = useMemo(() => {
-    const hits = data.etfs.filter((e) => e.phaseShift);
+    const hits = activeEtfs.filter((e) => e.phaseShift);
     hits.sort((a, b) => (Math.abs(b.dailyAlphaZ ?? 0) - Math.abs(a.dailyAlphaZ ?? 0)));
     return hits.slice(0, 3);
-  }, [data.etfs]);
+  }, [activeEtfs]);
 
   const regionMomentumTop = useMemo(() => {
     return [...(data.regionalMomentum ?? [])].sort((a, b) => b.gravityWeight - a.gravityWeight).slice(0, 3);
@@ -108,7 +122,7 @@ export function EtfCollectionPage() {
     if (!selectedGroup) return [];
     const by = new Map<string, { ticker: string; name: string; reason: string; hits: number }>();
     const set = new Set(groupTickers);
-    for (const e of data.etfs ?? []) {
+    for (const e of activeEtfs ?? []) {
       if (!set.has(e.ticker)) continue;
       for (const h of e.spilloverHoldings ?? []) {
         const tk = String(h.ticker).trim();
@@ -122,7 +136,7 @@ export function EtfCollectionPage() {
     }
     const out = [...by.values()].sort((a, b) => b.hits - a.hits || a.ticker.localeCompare(b.ticker, "en"));
     return out.slice(0, 12);
-  }, [data.etfs, groupTickers, selectedGroup]);
+  }, [activeEtfs, groupTickers, selectedGroup]);
 
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
@@ -142,6 +156,38 @@ export function EtfCollectionPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDataset("GLOBAL");
+                    setSelectedGroup(null);
+                    setSelectedTicker(null);
+                  }}
+                  className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
+                    dataset === "GLOBAL"
+                      ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
+                      : "text-muted-foreground border-border hover:bg-muted/50"
+                  }`}
+                  title="Global Strata"
+                >
+                  Global
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDataset("COMMODITIES");
+                    setSelectedGroup(null);
+                    setSelectedTicker(null);
+                  }}
+                  className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
+                    dataset === "COMMODITIES"
+                      ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
+                      : "text-muted-foreground border-border hover:bg-muted/50"
+                  }`}
+                  title="Commodities (vs VOO)"
+                >
+                  Commodities
+                </button>
                 {(["ALL", "GLOBAL_DEVELOPED", "EMERGING_FRONTIER", "THEMATIC_STRATA"] as const).map((k) => (
                   <button
                     key={k}
@@ -193,7 +239,7 @@ export function EtfCollectionPage() {
         </div>
 
         <RotationRadarChart
-          etfs={data.etfs ?? []}
+          etfs={activeEtfs ?? []}
           mode={radarMode}
           onChangeMode={(next) => {
             setRadarMode(next);
@@ -208,7 +254,7 @@ export function EtfCollectionPage() {
           }}
         />
 
-        {/* Phase Shift Alerts moved to top (map gets full width) */}
+        {/* Phase Shift Alerts */}
         <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Phase Shift Alerts</h3>
           <p className="text-[11px] text-muted-foreground mt-2">
@@ -256,57 +302,66 @@ export function EtfCollectionPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Regional Momentum（資本の重力）</h3>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              直近90日累積Alpha（対VOO）の平均を地域ごとに集約し、softmaxで「重力」を可視化。
-            </p>
-            <div className="mt-4">
-              <WorldMapHeat
-                etfs={data.etfs ?? []}
-                selectedFilter={region}
-                onSelectFilter={(next) => setRegion(next)}
-              />
-            </div>
-            <div className="mt-4 space-y-3">
-              {(data.regionalMomentum ?? []).length === 0 ? (
-                <div className="text-xs text-muted-foreground">—</div>
-              ) : (
-                (data.regionalMomentum ?? []).map((m) => (
-                  <div key={m.region} className="flex items-center gap-3">
-                    <div className="w-44 text-[10px] font-bold uppercase tracking-wide text-foreground/90">
-                      {regionLabelJa(m.region as EtfRegionGroup)}
-                    </div>
-                    <div className="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden border border-border">
-                      <div
-                        className={`h-full ${barColor(m.region)}`}
-                        style={{ width: `${Math.max(2, Math.round(m.gravityWeight * 100))}%` }}
-                        aria-hidden
-                      />
-                    </div>
-                    <div className="w-28 text-right font-mono text-[10px] text-foreground/90 tabular-nums">
-                      {(m.gravityWeight * 100).toFixed(1)}%
-                    </div>
-                    <div className="w-24 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
-                      {m.cumulativeAlpha > 0 ? "+" : ""}
-                      {m.cumulativeAlpha.toFixed(2)}%
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            {regionMomentumTop.length > 0 ? (
-              <div className="mt-4 text-[11px] text-muted-foreground">
-                <span className="font-bold text-foreground/80">Gravity Top</span>{" "}
-                {regionMomentumTop.map((m) => (
-                  <span key={m.region} className="mr-2">
-                    <span className="font-bold text-accent-cyan">{regionLabelJa(m.region as EtfRegionGroup)}</span>
-                    <span className="ml-1 font-mono">{(m.gravityWeight * 100).toFixed(0)}%</span>
-                  </span>
-                ))}
+        {dataset === "GLOBAL" ? (
+          <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Regional Momentum（資本の重力）</h3>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                直近90日累積Alpha（対VOO）の平均を地域ごとに集約し、softmaxで「重力」を可視化。
+              </p>
+              <div className="mt-4">
+                <WorldMapHeat
+                  etfs={data.etfs ?? []}
+                  selectedFilter={region}
+                  onSelectFilter={(next) => setRegion(next)}
+                />
               </div>
-            ) : null}
-        </div>
+              <div className="mt-4 space-y-3">
+                {(data.regionalMomentum ?? []).length === 0 ? (
+                  <div className="text-xs text-muted-foreground">—</div>
+                ) : (
+                  (data.regionalMomentum ?? []).map((m) => (
+                    <div key={m.region} className="flex items-center gap-3">
+                      <div className="w-44 text-[10px] font-bold uppercase tracking-wide text-foreground/90">
+                        {regionLabelJa(m.region as EtfRegionGroup)}
+                      </div>
+                      <div className="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden border border-border">
+                        <div
+                          className={`h-full ${barColor(m.region)}`}
+                          style={{ width: `${Math.max(2, Math.round(m.gravityWeight * 100))}%` }}
+                          aria-hidden
+                        />
+                      </div>
+                      <div className="w-28 text-right font-mono text-[10px] text-foreground/90 tabular-nums">
+                        {(m.gravityWeight * 100).toFixed(1)}%
+                      </div>
+                      <div className="w-24 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
+                        {m.cumulativeAlpha > 0 ? "+" : ""}
+                        {m.cumulativeAlpha.toFixed(2)}%
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {regionMomentumTop.length > 0 ? (
+                <div className="mt-4 text-[11px] text-muted-foreground">
+                  <span className="font-bold text-foreground/80">Gravity Top</span>{" "}
+                  {regionMomentumTop.map((m) => (
+                    <span key={m.region} className="mr-2">
+                      <span className="font-bold text-accent-cyan">{regionLabelJa(m.region as EtfRegionGroup)}</span>
+                      <span className="ml-1 font-mono">{(m.gravityWeight * 100).toFixed(0)}%</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Commodities（実物資産の潮流）</h3>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              VOO（株式ベンチ）に対して、金・原油・銅など「実物」へ資金が向かっているかを Rotation Radar で読む。
+            </p>
+          </div>
+        )}
 
         {/* Table is always global (no pin-driven filtering). */}
         {selectedGroup ? (
@@ -381,7 +436,7 @@ export function EtfCollectionPage() {
         ) : null}
 
         <EtfTable
-          etfs={data.etfs ?? []}
+          etfs={activeEtfs ?? []}
           fxUsdJpy={data.fxUsdJpy ?? null}
           regionFilter="ALL"
           selectedTicker={selectedTicker}

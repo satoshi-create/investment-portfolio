@@ -235,6 +235,83 @@ export const GLOBAL_STRATA_ETFS: EtfDescriptor[] = [
   },
 ];
 
+/**
+ * Commodities Strata (materials & energy) — interpreted as "flow into real assets"
+ * relative to equity benchmark (VOO).
+ */
+export const COMMODITIES_STRATA_ETFS: EtfDescriptor[] = [
+  {
+    ticker: "GLD",
+    name: "SPDR Gold Shares",
+    regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "COMMODITY_GOLD",
+    geographyLabel: "Global",
+    geographyCode: "GL",
+    underlyingStructure: "金（安全資産/実質金利）—リスク回避とインフレヘッジの受け皿",
+    currency: "USD",
+    expenseRatioPercent: 0.40,
+    purityScore: 0.80,
+    liquidityScore: 0.92,
+    relatedKeywords: ["金", "Gold", "安全資産", "実質金利", "インフレ"],
+  },
+  {
+    ticker: "USO",
+    name: "United States Oil Fund",
+    regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "COMMODITY_OIL",
+    geographyLabel: "Global",
+    geographyCode: "GL",
+    underlyingStructure: "原油（エネルギーの血流）—需給ショック/地政学/インフレ期待の温度計",
+    currency: "USD",
+    expenseRatioPercent: 0.60,
+    purityScore: 0.72,
+    liquidityScore: 0.88,
+    relatedKeywords: ["原油", "Oil", "エネルギー", "インフレ", "地政学"],
+  },
+  {
+    ticker: "CPER",
+    name: "United States Copper Index Fund",
+    regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "COMMODITY_COPPER",
+    geographyLabel: "Global",
+    geographyCode: "GL",
+    underlyingStructure: "銅（景気の血圧）—製造/建設/電化投資の前兆",
+    currency: "USD",
+    expenseRatioPercent: 0.65,
+    purityScore: 0.70,
+    liquidityScore: 0.72,
+    relatedKeywords: ["銅", "Copper", "景気", "製造", "電化"],
+  },
+  {
+    ticker: "DBA",
+    name: "Invesco DB Agriculture Fund",
+    regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "COMMODITY_AGRI",
+    geographyLabel: "Global",
+    geographyCode: "GL",
+    underlyingStructure: "農産物（生活コスト）—天候/供給制約/インフレの持続性",
+    currency: "USD",
+    expenseRatioPercent: 0.85,
+    purityScore: 0.68,
+    liquidityScore: 0.70,
+    relatedKeywords: ["農産物", "Agriculture", "食料", "インフレ", "天候"],
+  },
+  {
+    ticker: "DBB",
+    name: "Invesco DB Base Metals Fund",
+    regionGroup: "THEMATIC_STRATA",
+    strataThemeKey: "COMMODITY_BASE_METALS",
+    geographyLabel: "Global",
+    geographyCode: "GL",
+    underlyingStructure: "ベースメタル（産業の骨格）—景気循環/在庫サイクル/供給制約",
+    currency: "USD",
+    expenseRatioPercent: 0.79,
+    purityScore: 0.70,
+    liquidityScore: 0.70,
+    relatedKeywords: ["金属", "ベースメタル", "在庫", "景気", "供給制約"],
+  },
+];
+
 type HoldingRow = { ticker: string; name: string; structure_tags: string | null };
 
 async function fetchHoldingsForSpillover(db: Client, userId: string): Promise<HoldingRow[]> {
@@ -319,6 +396,7 @@ export type EtfCollectionSnapshot = {
   asOf: string;
   fxUsdJpy: number | null;
   etfs: EtfEvaluatedRow[];
+  commoditiesEtfs: EtfEvaluatedRow[];
   regionalMomentum: RegionMomentumOutput[];
 };
 
@@ -335,93 +413,102 @@ export async function getEtfCollectionSnapshot(db: Client, userId: string): Prom
 
   const holdings = await fetchHoldingsForSpillover(db, userId);
 
-  // Fetch daily alpha series concurrently (but bounded) to avoid timeouts.
-  const MAX = GLOBAL_STRATA_ETFS.length;
-  const CONCURRENCY = Math.min(10, Math.max(2, MAX));
-  const results: (EtfEvaluatedRow | null)[] = new Array(MAX).fill(null);
-  let nextIdx = 0;
+  async function evaluateEtfs(descriptors: EtfDescriptor[]): Promise<EtfEvaluatedRow[]> {
+    const MAX = descriptors.length;
+    if (MAX === 0) return [];
+    const CONCURRENCY = Math.min(10, Math.max(2, MAX));
+    const results: (EtfEvaluatedRow | null)[] = new Array(MAX).fill(null);
+    let nextIdx = 0;
 
-  async function worker() {
-    while (true) {
-      const i = nextIdx;
-      nextIdx += 1;
-      if (i >= MAX) return;
-      const d = GLOBAL_STRATA_ETFS[i]!;
-      try {
-        const { rows } = await fetchRecentDatedDailyAlphasVsVoo(d.ticker, 120, null);
-        const daily = rows.map((r) => Number(r.alphaValue)).filter((x) => Number.isFinite(x));
-        const latestDailyAlpha = daily.length > 0 ? roundAlphaMetric(daily[daily.length - 1]!) : null;
-        const { z, phaseShift, direction } = phaseShiftFromDailyAlphas(daily);
+    async function worker() {
+      while (true) {
+        const i = nextIdx;
+        nextIdx += 1;
+        if (i >= MAX) return;
+        const d = descriptors[i]!;
+        const themeKey =
+          d.strataThemeKey != null && String(d.strataThemeKey).trim().length > 0
+            ? String(d.strataThemeKey).trim()
+            : null;
+        try {
+          const { rows } = await fetchRecentDatedDailyAlphasVsVoo(d.ticker, 120, null);
+          const daily = rows.map((r) => Number(r.alphaValue)).filter((x) => Number.isFinite(x));
+          const latestDailyAlpha = daily.length > 0 ? roundAlphaMetric(daily[daily.length - 1]!) : null;
+          const { z, phaseShift, direction } = phaseShiftFromDailyAlphas(daily);
 
-        const start = ymdDaysAgoUtc(90);
-        const filtered: DatedAlphaRow[] = rows.filter((r) => toYmd(r.recordedAt) >= start);
-        const cum = filtered.length >= 2 ? calculateCumulativeAlpha(filtered, start) : [];
-        const cumulativeAlpha90d = cum.length > 0 ? cum[cum.length - 1]!.cumulative : null;
+          const start = ymdDaysAgoUtc(90);
+          const filtered: DatedAlphaRow[] = rows.filter((r) => toYmd(r.recordedAt) >= start);
+          const cum = filtered.length >= 2 ? calculateCumulativeAlpha(filtered, start) : [];
+          const cumulativeAlpha90d = cum.length > 0 ? cum[cum.length - 1]!.cumulative : null;
 
-        const expenseDrag5y = computeExpenseRatioDragPercent(d.expenseRatioPercent, 5);
-        const trackingAlphaScore = computeEtfTrackingAlphaPercent({
-          purityScore: d.purityScore,
-          liquidityScore: d.liquidityScore,
-          expenseRatioPercent: d.expenseRatioPercent,
-          feeHorizonYears: 5,
-        });
-
-        const spilloverHoldings = phaseShift
-          ? matchSpilloverHoldings(holdings, d.relatedKeywords, 6)
-          : [];
-
-        const rotationRadar = computeRotationRadarVector(rows, { lookbackDays: 20, momentumLagDays: 5 });
-
-        results[i] = {
-          ticker: d.ticker,
-          name: d.name,
-          regionGroup: d.regionGroup,
-          strataThemeKey: d.strataThemeKey != null && String(d.strataThemeKey).trim().length > 0 ? String(d.strataThemeKey).trim() : null,
-          geographyLabel: d.geographyLabel,
-          geographyCode: d.geographyCode ?? null,
-          underlyingStructure: d.underlyingStructure,
-          currency: d.currency,
-          latestDailyAlpha,
-          dailyAlphaZ: z,
-          cumulativeAlpha90d,
-          trackingAlphaScore,
-          expenseDrag5y,
-          phaseShift,
-          phaseShiftDirection: direction,
-          spilloverHoldings,
-          rotationRadar,
-        };
-      } catch {
-        results[i] = {
-          ticker: d.ticker,
-          name: d.name,
-          regionGroup: d.regionGroup,
-          strataThemeKey: d.strataThemeKey != null && String(d.strataThemeKey).trim().length > 0 ? String(d.strataThemeKey).trim() : null,
-          geographyLabel: d.geographyLabel,
-          geographyCode: d.geographyCode ?? null,
-          underlyingStructure: d.underlyingStructure,
-          currency: d.currency,
-          latestDailyAlpha: null,
-          dailyAlphaZ: null,
-          cumulativeAlpha90d: null,
-          trackingAlphaScore: computeEtfTrackingAlphaPercent({
+          const expenseDrag5y = computeExpenseRatioDragPercent(d.expenseRatioPercent, 5);
+          const trackingAlphaScore = computeEtfTrackingAlphaPercent({
             purityScore: d.purityScore,
             liquidityScore: d.liquidityScore,
             expenseRatioPercent: d.expenseRatioPercent,
             feeHorizonYears: 5,
-          }),
-          expenseDrag5y: computeExpenseRatioDragPercent(d.expenseRatioPercent, 5),
-          phaseShift: false,
-          phaseShiftDirection: null,
-          spilloverHoldings: [],
-          rotationRadar: [],
-        };
+          });
+
+          const spilloverHoldings = phaseShift ? matchSpilloverHoldings(holdings, d.relatedKeywords, 6) : [];
+
+          const rotationRadar = computeRotationRadarVector(rows, { lookbackDays: 20, momentumLagDays: 5 });
+
+          results[i] = {
+            ticker: d.ticker,
+            name: d.name,
+            regionGroup: d.regionGroup,
+            strataThemeKey: themeKey,
+            geographyLabel: d.geographyLabel,
+            geographyCode: d.geographyCode ?? null,
+            underlyingStructure: d.underlyingStructure,
+            currency: d.currency,
+            latestDailyAlpha,
+            dailyAlphaZ: z,
+            cumulativeAlpha90d,
+            trackingAlphaScore,
+            expenseDrag5y,
+            phaseShift,
+            phaseShiftDirection: direction,
+            spilloverHoldings,
+            rotationRadar,
+          };
+        } catch {
+          results[i] = {
+            ticker: d.ticker,
+            name: d.name,
+            regionGroup: d.regionGroup,
+            strataThemeKey: themeKey,
+            geographyLabel: d.geographyLabel,
+            geographyCode: d.geographyCode ?? null,
+            underlyingStructure: d.underlyingStructure,
+            currency: d.currency,
+            latestDailyAlpha: null,
+            dailyAlphaZ: null,
+            cumulativeAlpha90d: null,
+            trackingAlphaScore: computeEtfTrackingAlphaPercent({
+              purityScore: d.purityScore,
+              liquidityScore: d.liquidityScore,
+              expenseRatioPercent: d.expenseRatioPercent,
+              feeHorizonYears: 5,
+            }),
+            expenseDrag5y: computeExpenseRatioDragPercent(d.expenseRatioPercent, 5),
+            phaseShift: false,
+            phaseShiftDirection: null,
+            spilloverHoldings: [],
+            rotationRadar: [],
+          };
+        }
       }
     }
+
+    await Promise.allSettled(Array.from({ length: Math.min(CONCURRENCY, MAX) }, () => worker()));
+    return results.filter((x): x is EtfEvaluatedRow => x != null);
   }
 
-  await Promise.allSettled(Array.from({ length: Math.min(CONCURRENCY, MAX) }, () => worker()));
-  const etfs = results.filter((x): x is EtfEvaluatedRow => x != null);
+  const [etfs, commoditiesEtfs] = await Promise.all([
+    evaluateEtfs(GLOBAL_STRATA_ETFS),
+    evaluateEtfs(COMMODITIES_STRATA_ETFS),
+  ]);
 
   // Regional momentum computed from cumulative 90d alpha by region group.
   const byRegion = new Map<string, number[]>();
@@ -441,6 +528,7 @@ export async function getEtfCollectionSnapshot(db: Client, userId: string): Prom
     asOf: new Date().toISOString(),
     fxUsdJpy: fxUsdJpy ?? (USD_JPY_RATE_FALLBACK > 0 ? USD_JPY_RATE_FALLBACK : null),
     etfs,
+    commoditiesEtfs,
     regionalMomentum,
   };
 }
