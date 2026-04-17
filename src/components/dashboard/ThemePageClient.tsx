@@ -594,13 +594,23 @@ export function ThemePageClient({
     [holderFilter],
   );
 
+  const ecosystemMatchesHolderFilter = useCallback(
+    (e: ThemeEcosystemWatchItem): boolean => {
+      if (!isDefensiveTheme) return true;
+      if (holderFilterSet.size === 0) return true;
+      const tags = new Set((e.holderTags ?? []).map((h) => String(h).trim()).filter(Boolean));
+      for (const need of holderFilterSet) {
+        if (!tags.has(need)) return false;
+      }
+      return true;
+    },
+    [holderFilterSet, isDefensiveTheme],
+  );
+
   const defensiveHolderStats = useMemo(() => {
     if (!isDefensiveTheme) return null;
     const base = ecosystem.filter((e) => {
-      if (holderFilterSet.size === 0) return true;
-      return (e.holderTags ?? []).some((h) =>
-        holderFilterSet.has(String(h).trim()),
-      );
+      return ecosystemMatchesHolderFilter(e);
     });
     const alphas = base
       .map((e) =>
@@ -630,7 +640,7 @@ export function ThemePageClient({
       avgDeviationZ: avg(zs),
       avgDividendYield: avg(yields),
     };
-  }, [ecosystem, holderFilterSet, isDefensiveTheme]);
+  }, [ecosystem, ecosystemMatchesHolderFilter, isDefensiveTheme]);
 
   const ecosystemTickersUpper = useMemo(
     () => new Set(ecosystem.map((e) => e.ticker.trim().toUpperCase())),
@@ -869,9 +879,7 @@ export function ThemePageClient({
       out = out.filter((e) => ecosystemMatchesMarketFilter(e, ecoMarketFilter));
     }
     if (isDefensiveTheme && holderFilterSet.size > 0) {
-      out = out.filter((e) =>
-        (e.holderTags ?? []).some((h) => holderFilterSet.has(String(h).trim())),
-      );
+      out = out.filter((e) => ecosystemMatchesHolderFilter(e));
     }
     const peMin = ecoPeMin.trim().length > 0 ? Number(ecoPeMin) : null;
     const peMax = ecoPeMax.trim().length > 0 ? Number(ecoPeMax) : null;
@@ -905,6 +913,7 @@ export function ThemePageClient({
     ecoMarketFilter,
     holderFilterSet,
     isDefensiveTheme,
+    ecosystemMatchesHolderFilter,
     ecoPeMin,
     ecoPeMax,
     ecoEpsPositiveOnly,
