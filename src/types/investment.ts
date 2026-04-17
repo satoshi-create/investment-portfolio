@@ -240,6 +240,11 @@ export type ThemeEcosystemWatchItem = {
   annualDividendRate: number | null;
   /** 年間配当利回り %。取得できない場合は null */
   dividendYieldPercent: number | null;
+  /** Yahoo 等のバリュエーション指標（無い場合は null）。未上場・投信などは通常 null。 */
+  trailingPe: number | null;
+  forwardPe: number | null;
+  trailingEps: number | null;
+  forwardEps: number | null;
   /** `theme_ecosystem_members.observation_started_at`（銘柄投入日・累積 Alpha の第一優先起点）。未設定時は null */
   observationStartedAt: string | null;
   /** テーマ `created_at` 起点の累積 Alpha %（日次超過の合計）。`alpha_history` 優先、不足時は Yahoo 日次から算出 */

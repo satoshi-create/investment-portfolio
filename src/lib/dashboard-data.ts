@@ -678,6 +678,10 @@ async function enrichEcosystemMemberRow(
   const exDividendDate = research?.exDividendDate ?? null;
   const annualDividendRate = research?.annualDividendRate ?? null;
   const dividendYieldPercent = research?.dividendYieldPercent ?? null;
+  const trailingPe = research?.trailingPe ?? null;
+  const forwardPe = research?.forwardPe ?? null;
+  const trailingEps = research?.trailingEps ?? null;
+  const forwardEps = research?.forwardEps ?? null;
   const daysToEarnings =
     nextEarningsDate != null
       ? (() => {
@@ -822,6 +826,10 @@ async function enrichEcosystemMemberRow(
     daysToExDividend,
     annualDividendRate,
     dividendYieldPercent,
+    trailingPe,
+    forwardPe,
+    trailingEps,
+    forwardEps,
     observationStartedAt,
     alphaHistory,
     currentPrice: displayPrice,

@@ -109,6 +109,29 @@ function fmtZsigma(v: number | null): string {
   return `${v > 0 ? "+" : ""}${v.toFixed(2)}σ`;
 }
 
+function ecoPeOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.trailingPe ?? e.forwardPe ?? null;
+  return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function ecoEpsOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.trailingEps ?? e.forwardEps ?? null;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
+function fmtPe(v: number | null): string {
+  if (v == null || !Number.isFinite(v) || v <= 0) return "—";
+  return v >= 100 ? v.toFixed(0) : v.toFixed(1);
+}
+
+function fmtEps(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const abs = Math.abs(v);
+  if (abs >= 100) return v.toFixed(0);
+  if (abs >= 10) return v.toFixed(2);
+  return v.toFixed(3);
+}
+
 function mapThemeLabelForQuery(raw: string): {
   query: string;
   display: string;
@@ -402,7 +425,7 @@ export function ThemePageClient({
     null,
   );
   const [ecoSortKey, setEcoSortKey] = useState<
-    "asset" | "research" | "alpha" | "trend" | "last" | "deviation" | "drawdown"
+    "asset" | "research" | "pe" | "eps" | "alpha" | "trend" | "last" | "deviation" | "drawdown"
   >("alpha");
   const [ecoSortDir, setEcoSortDir] = useState<"asc" | "desc">("desc");
   const [ecoShowValueCols, setEcoShowValueCols] = useState(false);
@@ -413,6 +436,9 @@ export function ThemePageClient({
   const [ecoMarketFilter, setEcoMarketFilter] = useState<"all" | "jp" | "us">(
     "all",
   );
+  const [ecoPeMin, setEcoPeMin] = useState("");
+  const [ecoPeMax, setEcoPeMax] = useState("");
+  const [ecoEpsPositiveOnly, setEcoEpsPositiveOnly] = useState(false);
   const [addTicker, setAddTicker] = useState("");
   const [addImportance, setAddImportance] = useState<"standard" | "major">(
     "standard",
@@ -847,6 +873,29 @@ export function ThemePageClient({
         (e.holderTags ?? []).some((h) => holderFilterSet.has(String(h).trim())),
       );
     }
+    const peMin = ecoPeMin.trim().length > 0 ? Number(ecoPeMin) : null;
+    const peMax = ecoPeMax.trim().length > 0 ? Number(ecoPeMax) : null;
+    const hasPeMin = peMin != null && Number.isFinite(peMin);
+    const hasPeMax = peMax != null && Number.isFinite(peMax);
+    if (hasPeMin || hasPeMax || ecoEpsPositiveOnly) {
+      out = out.filter((e) => {
+        const pe = ecoPeOf(e);
+        const eps = ecoEpsOf(e);
+        if (ecoEpsPositiveOnly) {
+          if (eps == null) return false;
+          if (!(eps > 0)) return false;
+        }
+        if (hasPeMin) {
+          if (pe == null) return false;
+          if (pe < (peMin as number)) return false;
+        }
+        if (hasPeMax) {
+          if (pe == null) return false;
+          if (pe > (peMax as number)) return false;
+        }
+        return true;
+      });
+    }
     return out;
   }, [
     ecosystem,
@@ -856,6 +905,9 @@ export function ThemePageClient({
     ecoMarketFilter,
     holderFilterSet,
     isDefensiveTheme,
+    ecoPeMin,
+    ecoPeMax,
+    ecoEpsPositiveOnly,
   ]);
 
   const themeAdoptionMaturity = useMemo(
@@ -896,6 +948,8 @@ export function ThemePageClient({
     const arr = [...ecosystemFiltered];
     arr.sort((a, b) => {
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
+      if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
+      if (ecoSortKey === "eps") return dir * cmpNum(ecoEpsOf(a), ecoEpsOf(b));
       if (ecoSortKey === "alpha")
         return dir * cmpNum(a.latestAlpha, b.latestAlpha);
       if (ecoSortKey === "trend")
@@ -918,6 +972,13 @@ export function ThemePageClient({
     });
     return arr;
   }, [ecosystemFiltered, ecoSortDir, ecoSortKey]);
+
+  const ecosystemColSpan = useMemo(() => {
+    const base = 1 /* Asset */ + 1 /* キャズム */ + 2 /* PE + EPS */ + 3 /* Cumα + Trend + Last */;
+    const mid = isDefensiveTheme ? 3 : 2; // defensive: Holder/Dividend/Def role, else: Research/役割
+    const value = ecoShowValueCols ? 2 : 0;
+    return base + mid + value;
+  }, [ecoShowValueCols, isDefensiveTheme]);
 
   function toggleEcoSort(next: typeof ecoSortKey) {
     if (next === ecoSortKey)
@@ -1514,6 +1575,41 @@ export function ThemePageClient({
                         >
                           乖離・落率
                         </button>
+                        <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                            PE
+                          </span>
+                          <input
+                            inputMode="decimal"
+                            value={ecoPeMin}
+                            onChange={(e) => setEcoPeMin(e.target.value)}
+                            placeholder="min"
+                            className="w-14 rounded-md border border-slate-800 bg-slate-950/70 px-2 py-1 text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
+                            aria-label="PE 最小"
+                          />
+                          <span className="text-[10px] text-slate-700">-</span>
+                          <input
+                            inputMode="decimal"
+                            value={ecoPeMax}
+                            onChange={(e) => setEcoPeMax(e.target.value)}
+                            placeholder="max"
+                            className="w-14 rounded-md border border-slate-800 bg-slate-950/70 px-2 py-1 text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
+                            aria-label="PE 最大"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEcoEpsPositiveOnly((v) => !v)}
+                          className={cn(
+                            "text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors",
+                            ecoEpsPositiveOnly
+                              ? "text-rose-200 border-rose-500/45 bg-rose-500/10"
+                              : "text-slate-500 border-slate-700 hover:bg-slate-800/60",
+                          )}
+                          title="EPS > 0（黒字）の銘柄のみ"
+                        >
+                          黒字のみ
+                        </button>
                         <button
                           type="button"
                           onClick={() => setPatrolOn((p) => !p)}
@@ -1734,6 +1830,20 @@ export function ThemePageClient({
                             </>
                           ) : null}
                           <th
+                            className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            onClick={() => toggleEcoSort("pe")}
+                            title="Sort"
+                          >
+                            PE{ecoSortMark("pe")}
+                          </th>
+                          <th
+                            className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            onClick={() => toggleEcoSort("eps")}
+                            title="Sort"
+                          >
+                            EPS{ecoSortMark("eps")}
+                          </th>
+                          <th
                             className="px-6 py-4 text-right cursor-pointer select-none"
                             onClick={() => toggleEcoSort("alpha")}
                             title="Sort"
@@ -1761,10 +1871,13 @@ export function ThemePageClient({
                         (patrolOn ||
                           postChasmOnly ||
                           ecosystemSearchQuery.trim().length > 0 ||
-                          ecoMarketFilter !== "all") ? (
+                          ecoMarketFilter !== "all" ||
+                          ecoPeMin.trim().length > 0 ||
+                          ecoPeMax.trim().length > 0 ||
+                          ecoEpsPositiveOnly) ? (
                           <tr>
                             <td
-                              colSpan={ecoShowValueCols ? 9 : 7}
+                              colSpan={ecosystemColSpan}
                               className="px-6 py-8 text-center text-sm text-slate-500"
                             >
                               {(() => {
@@ -1824,7 +1937,7 @@ export function ThemePageClient({
                                     {field}
                                   </td>
                                   <td
-                                    colSpan={ecoShowValueCols ? 8 : 6}
+                                    colSpan={Math.max(1, ecosystemColSpan - 1)}
                                     className="border-b border-slate-800 bg-slate-950/90 px-6 py-2"
                                     aria-hidden
                                   />
@@ -2154,6 +2267,34 @@ export function ThemePageClient({
                                     </td>
                                   </>
                                 ) : null}
+                                <td
+                                  className="px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap text-slate-200"
+                                  title={
+                                    e.trailingPe != null || e.forwardPe != null
+                                      ? `PE trailing=${e.trailingPe ?? "—"} / forward=${e.forwardPe ?? "—"}`
+                                      : "PE: 未取得"
+                                  }
+                                >
+                                  {fmtPe(ecoPeOf(e))}
+                                </td>
+                                <td
+                                  className={cn(
+                                    "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap",
+                                    (() => {
+                                      const eps = ecoEpsOf(e);
+                                      if (eps == null) return "text-slate-500";
+                                      if (eps <= 0) return "text-rose-300";
+                                      return "text-slate-200";
+                                    })(),
+                                  )}
+                                  title={
+                                    e.trailingEps != null || e.forwardEps != null
+                                      ? `EPS trailing=${e.trailingEps ?? "—"} / forward=${e.forwardEps ?? "—"}`
+                                      : "EPS: 未取得"
+                                  }
+                                >
+                                  {fmtEps(ecoEpsOf(e))}
+                                </td>
                                 <td
                                   className={`px-6 py-4 text-right font-mono font-bold ${
                                     e.latestAlpha != null &&
