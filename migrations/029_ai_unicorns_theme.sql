@@ -41,42 +41,42 @@ INSERT OR REPLACE INTO theme_ecosystem_members
    is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, last_round_valuation, private_credit_backing, observation_notes)
 VALUES
   ('eco-unicorn-anthropic', 'theme-seed-ai-unicorns', 'N/A:ANTHROPIC', 'Anthropic', '基盤モデル', '安全重視の知性', 1, '2026-01-01',
-    1, 'AMZN', '2026.10', 'TBD', 60000000000, 'Amazon 60; Google 40',
-    '構造: Google/Amazonの巨額資本による安全性重視のLLM\n観測: proxy=AMZN で「影のAlpha」を追う'),
+    1, 'AMZN', '2027.Q1', 'TBD', 380000000000, 'Amazon 60; Google 40; Apollo 20 (Infra)',
+    '構造: Google/Amazonとの深化した提携。Claude Codeが開発市場を席巻。'),
 
   ('eco-unicorn-openai', 'theme-seed-ai-unicorns', 'N/A:OPENAI', 'OpenAI', '基盤モデル', '絶対的王者', 1, '2026-01-01',
-    1, 'MSFT', NULL, 'TBD', 80000000000, 'Microsoft 70; Apollo 15; Blackstone 15',
-    '構造: 業界のOSを狙うAGI開発の先駆者\nProxy: MSFT（相関の地表）'),
+    1, 'MSFT', '2027.H2', 'TBD', 730000000000, 'SoftBank 30; Nvidia 30; Amazon 50; Apollo-Blackstone Consortium 100(Debt)',
+    '構造: AGI開発に向けた歴史上最大の資本投下。週次アクティブ1.6MのCodexが牽引。'),
 
   ('eco-unicorn-xai', 'theme-seed-ai-unicorns', 'N/A:XAI', 'xAI', '基盤モデル', '加速する特異点', 1, '2026-01-01',
-    1, 'TSLA', '2026.06', 'TBD', 50000000000, 'Elon network 60; Apollo 20; Ares 20',
-    '構造: イーロン・マスクによる宇宙・防衛・AGIの垂直統合\nProxy: TSLA（物語β）'),
+    1, 'TSLA', '2026.12', 'TBD', 100000000000, 'Elon network 60; Apollo 25; Ares 15',
+    '構造: GPUクラスタ「Colossus」の拡張をデットで加速。Tesla/Xとの垂直統合。'),
 
   ('eco-unicorn-databricks', 'theme-seed-ai-unicorns', 'N/A:DATABRICKS', 'Databricks', 'データ基盤', 'データの貯水池', 1, '2026-01-01',
-    1, 'SNOW', NULL, 'TBD', 45000000000, 'Microsoft 50; Blackstone 30; Apollo 20',
-    '構造: エンタープライズAIの基盤となるレイクハウス\nProxy: SNOW（同領域の地表）'),
+    1, 'SNOW', '2026.Q4', 'TBD', 134000000000, 'Microsoft 40; Blackstone 30; Apollo 30; $2B Debt Capacity',
+    '構造: 収益ランレート$5.4B到達。Lakebaseによるエージェント基盤の覇権。'),
 
   ('eco-unicorn-cerebras', 'theme-seed-ai-unicorns', 'N/A:CEREBRAS', 'Cerebras', 'AIハードウェア', '巨大回路の彫刻家', 0, '2026-01-01',
-    1, 'NVDA', NULL, 'TBD', 4000000000, 'Apollo 40; Blackstone 30; KKR 30',
-    '構造: NVIDIA対抗のAI特有巨大チップ\nProxy: NVDA（GPU市場の地表）'),
+    1, 'NVDA', '2026.06', 'TBD', 23000000000, 'OpenAI Partnership 10B; Apollo 40',
+    '構造: OpenAI向け10Bドルの計算機供給契約を背景にIPO直前。'),
 
   ('eco-unicorn-coreweave', 'theme-seed-ai-unicorns', 'N/A:COREWEAVE', 'CoreWeave', '計算資源', '計算資源のインフラ', 1, '2026-01-01',
-    1, 'NVDA', NULL, 'TBD', 19000000000, 'Blackstone 45; Apollo 35; Nvidia 20',
-    '構造: GPU特化型クラウドの供給源\nProxy: NVDA（需要源泉）'),
+    1, 'NVDA', '2026.H2', 'TBD', 50000000000, 'Blackstone 45; Apollo 35; Nvidia 20; $31B Capex Financing',
+    '構造: GPU担保融資の旗手。2026年中に電力容量1.7GWを達成予定。'),
 
   ('eco-unicorn-canva', 'theme-seed-ai-unicorns', 'N/A:CANVA', 'Canva', 'アプリ層', '創造性の民主化', 1, '2026-01-01',
-    1, 'ADBE', NULL, 'TBD', 26000000000, 'TPG 40; Blackstone 30; Sequoia 30',
-    '構造: デザインSaaSの覇者、Adobeへの挑戦状\nProxy: ADBE（既存覇権の地表）'),
+    1, 'ADBE', '2027.Q2', 'TBD', 32000000000, 'TPG 40; Blackstone 30; Sequoia 30',
+    '構造: 非上場最大のデザインSaaS。AI編集機能のサブスク好調。'),
 
   ('eco-unicorn-cohere', 'theme-seed-ai-unicorns', 'N/A:COHERE', 'Cohere', '企業特化', '企業特化の言語エンジン', 0, '2026-01-01',
-    1, 'MSFT', NULL, 'TBD', 5500000000, 'Oracle 40; Nvidia 20; Blackstone 40',
-    '構造: エンタープライズ特化LLM（データ境界内で動く実務エンジン）\nProxy: MSFT'),
+    1, 'MSFT', NULL, 'TBD', 7000000000, 'Oracle 40; Nvidia 20; Blackstone 40',
+    '構造: エンタープライズ特化。Series D1でセキュリティ重視の地位を確立。'),
 
   ('eco-unicorn-anduril', 'theme-seed-ai-unicorns', 'N/A:ANDURIL', 'Anduril', '国防AI', '国防AIの実装層', 1, '2026-01-01',
-    1, 'LMT', NULL, 'TBD', 20000000000, 'Palantir network 40; Blackstone 30; Apollo 30',
-    '構造: 防衛×自律の「現場OS」\nProxy: LMT（国防予算β）'),
+    1, 'LMT', '2027.Q3', 'TBD', 60000000000, 'Series H Post-Money; Blackstone 30',
+    '構造: 宇宙・ミサイル防衛契約の相次ぐ獲得。国防OSのデファクト。'),
 
-  ('eco-unicorn-entire', 'theme-seed-ai-unicorns', 'N/A:ENTIRE', 'Entire', 'AIエージェント管理', 'AIエージェントの管制塔', 0, '2026-01-01',
-    1, 'NOW', NULL, 'TBD', 1500000000, 'Apollo 50; Blackstone 50',
-    '構造: エージェント群の「権限・監査・実行」レイヤー\nProxy: NOW（業務OSの地表）');
+  ('eco-unicorn-cognition', 'theme-seed-ai-unicorns', 'N/A:COGNITION', 'Cognition AI', 'AIエージェント管理', 'AIエージェントの管制塔', 0, '2026-01-01',
+    1, 'NOW', NULL, 'TBD', 2000000000, 'Apollo 50; Blackstone 50',
+    '構造: 自律型エンジニアDevinを起点とする、企業内エージェントの指揮系統。');
 

@@ -43,6 +43,9 @@ import {
   themeEcosystemWatchlistCsvFileName,
 } from "@/src/lib/csv-export";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
+import { AiUnicornTrendPulse } from "@/src/components/dashboard/AiUnicornTrendPulse";
+import { AiUnicornMiningSchedule } from "@/src/components/dashboard/AiUnicornMiningSchedule";
+import { AiUnicornCreditSeam } from "@/src/components/dashboard/AiUnicornCreditSeam";
 import { SemiconductorSupplyChainObservationPanel } from "@/src/components/dashboard/SemiconductorSupplyChainObservationPanel";
 import { SaaSApocalypseLensPanel } from "@/src/components/dashboard/SaaSApocalypseLensPanel";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
@@ -1574,12 +1577,17 @@ export function ThemePageClient({
             {ecosystem.length > 0 ? (
               <section aria-labelledby="theme-ecosystem-heading">
                 {isAiUnicornTheme ? (
-                  <div className="mb-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
-                    {ecosystem
-                      .filter((e) => e.isUnlisted)
-                      .map((e) => (
-                        <UnicornCard key={e.id} item={e} />
-                      ))}
+                  <div className="mb-4 space-y-4">
+                    <AiUnicornTrendPulse ecosystem={ecosystem} />
+                    <AiUnicornMiningSchedule ecosystem={ecosystem} />
+                    <AiUnicornCreditSeam ecosystem={ecosystem} />
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      {ecosystem
+                        .filter((e) => e.isUnlisted)
+                        .map((e) => (
+                          <UnicornCard key={e.id} item={e} />
+                        ))}
+                    </div>
                   </div>
                 ) : null}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
