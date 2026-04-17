@@ -1178,6 +1178,68 @@ export function ThemePageClient({
             ) : null}
 
             {stocks.length > 0 ? (
+              <section aria-labelledby="theme-charts-heading">
+                <h2
+                  id="theme-charts-heading"
+                  className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3"
+                >
+                  Momentum cluster（保有銘柄 Alpha）
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {stocks.map((s) => (
+                    <div
+                      key={s.id}
+                      className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 flex flex-col gap-2 min-h-[7.5rem]"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-mono font-bold text-slate-100 text-sm">
+                            {s.ticker}
+                          </p>
+                          {s.name ? (
+                            <p
+                              className="text-[9px] text-slate-500 truncate"
+                              title={s.name}
+                            >
+                              {s.name}
+                            </p>
+                          ) : null}
+                        </div>
+                        {s.alphaHistory.length > 0 ? (
+                          <span
+                            className={`text-[10px] font-mono font-bold shrink-0 ${
+                              s.alphaHistory[s.alphaHistory.length - 1]! > 0
+                                ? "text-emerald-400"
+                                : s.alphaHistory[s.alphaHistory.length - 1]! < 0
+                                  ? "text-rose-400"
+                                  : "text-slate-400"
+                            }`}
+                          >
+                            {s.alphaHistory[s.alphaHistory.length - 1]! > 0
+                              ? "+"
+                              : ""}
+                            {s.alphaHistory[s.alphaHistory.length - 1]}%
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-600">—</span>
+                        )}
+                      </div>
+                      <div className="flex-1 flex items-center justify-center min-h-[3rem]">
+                        {s.alphaHistory.length === 0 ? (
+                          <span className="text-[10px] text-slate-600">
+                            No series
+                          </span>
+                        ) : (
+                          <TrendMiniChart history={s.alphaHistory} />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {stocks.length > 0 ? (
               <InventoryTable
                 stocks={stocks}
                 totalHoldings={stocks.length}
@@ -2193,71 +2255,11 @@ export function ThemePageClient({
             ) : null}
             */}
 
-            {stocks.length > 0 ? (
-              <section aria-labelledby="theme-charts-heading">
-                <h2
-                  id="theme-charts-heading"
-                  className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3"
-                >
-                  Momentum cluster（保有銘柄 Alpha）
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {stocks.map((s) => (
-                    <div
-                      key={s.id}
-                      className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 flex flex-col gap-2 min-h-[7.5rem]"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-mono font-bold text-slate-100 text-sm">
-                            {s.ticker}
-                          </p>
-                          {s.name ? (
-                            <p
-                              className="text-[9px] text-slate-500 truncate"
-                              title={s.name}
-                            >
-                              {s.name}
-                            </p>
-                          ) : null}
-                        </div>
-                        {s.alphaHistory.length > 0 ? (
-                          <span
-                            className={`text-[10px] font-mono font-bold shrink-0 ${
-                              s.alphaHistory[s.alphaHistory.length - 1]! > 0
-                                ? "text-emerald-400"
-                                : s.alphaHistory[s.alphaHistory.length - 1]! < 0
-                                  ? "text-rose-400"
-                                  : "text-slate-400"
-                            }`}
-                          >
-                            {s.alphaHistory[s.alphaHistory.length - 1]! > 0
-                              ? "+"
-                              : ""}
-                            {s.alphaHistory[s.alphaHistory.length - 1]}%
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-600">—</span>
-                        )}
-                      </div>
-                      <div className="flex-1 flex items-center justify-center min-h-[3rem]">
-                        {s.alphaHistory.length === 0 ? (
-                          <span className="text-[10px] text-slate-600">
-                            No series
-                          </span>
-                        ) : (
-                          <TrendMiniChart history={s.alphaHistory} />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : (
+            {stocks.length === 0 ? (
               <p className="text-sm text-slate-500">
                 このテーマに該当する保有がありません。
               </p>
-            )}
+            ) : null}
           </>
         ) : null}
 

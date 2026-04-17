@@ -72,6 +72,23 @@ export function ThemeStructuralTrendChart({
           : "text-slate-300"
       : "text-slate-500";
 
+  const prevDayDelta =
+    hasSeries && series.length >= 2
+      ? series[series.length - 1]!.cumulative - series[series.length - 2]!.cumulative
+      : null;
+  const dodStr =
+    prevDayDelta != null && Number.isFinite(prevDayDelta)
+      ? `${prevDayDelta > 0 ? "+" : ""}${prevDayDelta.toFixed(2)}%`
+      : "—";
+  const dodClass =
+    prevDayDelta != null && Number.isFinite(prevDayDelta)
+      ? prevDayDelta > 0
+        ? "text-emerald-400"
+        : prevDayDelta < 0
+          ? "text-rose-400"
+          : "text-slate-300"
+      : "text-slate-500";
+
   const data = hasSeries ? series.map((p) => ({ ...p })) : [];
 
   return (
@@ -94,9 +111,24 @@ export function ThemeStructuralTrendChart({
               <span className="text-slate-400">{startDateLabel ?? "—"}</span> 以降の累積）
             </p>
           </div>
-          <div className="shrink-0 text-left lg:text-right">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">期間終端の加重累積</p>
-            <p className={`text-2xl md:text-3xl font-mono font-bold tabular-nums ${totalClass}`}>{totalStr}</p>
+          <div className="shrink-0 flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-8 text-left lg:justify-end lg:text-right">
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">
+                期間終端の加重累積
+              </p>
+              <p className={`text-2xl md:text-3xl font-mono font-bold tabular-nums ${totalClass}`}>
+                {totalStr}
+              </p>
+            </div>
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">前日比</p>
+              <p
+                className={`text-xl md:text-2xl font-mono font-bold tabular-nums ${dodClass}`}
+                title="累積 Alpha の直近2営業日分の差（ポイント）"
+              >
+                {dodStr}
+              </p>
+            </div>
           </div>
         </div>
       </div>
