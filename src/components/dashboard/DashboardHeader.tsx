@@ -5,6 +5,7 @@ import { LineChart, Target, X } from "lucide-react";
 
 import { EventCalendarModal } from "@/src/components/dashboard/EventCalendarModal";
 import { MarketBar } from "@/src/components/dashboard/MarketBar";
+import { RiskRegimeGauge } from "@/src/components/dashboard/RiskRegimeGauge";
 import { StatBox } from "@/src/components/dashboard/StatBox";
 import { ThemeToggle } from "@/src/components/dashboard/ThemeToggle";
 import type { MarketIndicator } from "@/src/types/investment";
@@ -162,6 +163,7 @@ export function DashboardHeader({
             subLabel={benchSubLabel}
             title={benchAsOfTitle}
           />
+          <RiskRegimeGauge indicators={marketIndicators} />
           <div className="flex items-center gap-2">
             <ThemeToggle />
           </div>
