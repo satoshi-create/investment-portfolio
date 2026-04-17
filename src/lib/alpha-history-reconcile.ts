@@ -3,6 +3,7 @@ import type { Client } from "@libsql/client";
 import {
   computeAlphaPercent,
   dailyReturnPercent,
+  defaultBenchmarkTickerForTicker,
   SIGNAL_BENCHMARK_TICKER,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
 } from "@/src/lib/alpha-logic";
@@ -23,9 +24,9 @@ const MIN_RECENT_ALPHA_ROWS = 12;
  */
 const STALE_ALPHA_CALENDAR_LAG_DAYS = 5;
 
-function sharedSortedDates(stockBars: PriceBar[], vooBars: PriceBar[]): string[] {
-  const vooSet = new Set(vooBars.map((b) => b.date));
-  return [...new Set(stockBars.map((b) => b.date).filter((d) => vooSet.has(d)))].sort();
+function sharedSortedDates(stockBars: PriceBar[], benchBars: PriceBar[]): string[] {
+  const benchSet = new Set(benchBars.map((b) => b.date));
+  return [...new Set(stockBars.map((b) => b.date).filter((d) => benchSet.has(d)))].sort();
 }
 
 /** エコシステム行から Alpha バックフィル対象（上場ティッカー文字列）を一意化して返す。 */
@@ -130,19 +131,21 @@ export async function backfillAlphaHistoryForTicker(
     providerSymbol?: string | null;
     holdingId?: string | null;
   },
-  vooBars: PriceBar[],
+  benchBars: PriceBar[],
+  benchmarkTicker: string,
   days: number,
 ): Promise<number> {
-  const vooByDate = new Map(vooBars.map((b) => [b.date, b.close]));
+  const benchByDate = new Map(benchBars.map((b) => [b.date, b.close]));
   const stockBars = await fetchPriceHistory(args.ticker, days, args.providerSymbol ?? null);
   const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
-  const shared = sharedSortedDates(stockBars, vooBars);
+  const shared = sharedSortedDates(stockBars, benchBars);
   if (shared.length < 2) {
     signalsDebug("backfillAlphaHistoryForTicker: insufficient overlapping dates", {
       ticker: args.ticker,
       stockBars: stockBars.length,
-      vooBars: vooBars.length,
+      benchBars: benchBars.length,
       sharedDates: shared.length,
+      benchmark: benchmarkTicker,
     });
     return 0;
   }
@@ -153,8 +156,8 @@ export async function backfillAlphaHistoryForTicker(
     const dCur = shared[i]!;
     const s0 = stockBy.get(dPrev);
     const s1 = stockBy.get(dCur);
-    const b0 = vooByDate.get(dPrev);
-    const b1 = vooByDate.get(dCur);
+    const b0 = benchByDate.get(dPrev);
+    const b1 = benchByDate.get(dCur);
     if (s0 == null || s1 == null || b0 == null || b1 == null) continue;
 
     const rStock = dailyReturnPercent(s0, s1);
@@ -170,7 +173,7 @@ export async function backfillAlphaHistoryForTicker(
         recordedAtYmd: dCur,
         closePrice: s1,
         alphaValue: alpha,
-        benchmarkTicker: SIGNAL_BENCHMARK_TICKER,
+        benchmarkTicker,
       });
       written += 1;
     } catch (e) {
@@ -185,14 +188,16 @@ async function backfillOneHolding(
   db: Client,
   userId: string,
   holding: Holding,
-  vooBars: PriceBar[],
+  benchBars: PriceBar[],
+  benchmarkTicker: string,
   days: number,
 ): Promise<number> {
   return backfillAlphaHistoryForTicker(
     db,
     userId,
     { ticker: holding.ticker, providerSymbol: holding.providerSymbol, holdingId: holding.id },
-    vooBars,
+    benchBars,
+    benchmarkTicker,
     days,
   );
 }
@@ -222,24 +227,27 @@ export async function reconcileAlphaHistoryForWatchlistTickers(
 
   let rowsBackfilled = 0;
   const backfilledTickers: string[] = [];
-  let vooBars: PriceBar[] | null = null;
+  const benchBarsCache = new Map<string, PriceBar[]>();
 
   const capped = targets.slice(0, maxTickers);
 
   for (let i = 0; i < capped.length; i++) {
     const t = capped[i]!;
     try {
-      const total = await countAlphaHistoryTotal(db, userId, t.ticker, SIGNAL_BENCHMARK_TICKER);
-      const recent = await countAlphaHistoryRecent(db, userId, t.ticker, SIGNAL_BENCHMARK_TICKER);
-      const latestYmd = await getLatestAlphaHistoryYmd(db, userId, t.ticker, SIGNAL_BENCHMARK_TICKER);
+      const benchmarkTicker = defaultBenchmarkTickerForTicker(t.ticker);
+      const total = await countAlphaHistoryTotal(db, userId, t.ticker, benchmarkTicker);
+      const recent = await countAlphaHistoryRecent(db, userId, t.ticker, benchmarkTicker);
+      const latestYmd = await getLatestAlphaHistoryYmd(db, userId, t.ticker, benchmarkTicker);
       if (!needsBackfill(total, recent, latestYmd)) continue;
 
-      if (!vooBars) {
-        vooBars = await fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, days, null);
+      let benchBars = benchBarsCache.get(benchmarkTicker) ?? null;
+      if (!benchBars) {
+        benchBars = await fetchPriceHistory(benchmarkTicker, days, null);
+        benchBarsCache.set(benchmarkTicker, benchBars);
       }
-      if (vooBars.length < 2) break;
+      if (benchBars.length < 2) break;
 
-      const n = await backfillAlphaHistoryForTicker(db, userId, t, vooBars, days);
+      const n = await backfillAlphaHistoryForTicker(db, userId, t, benchBars, benchmarkTicker, days);
       rowsBackfilled += n;
       if (n > 0) backfilledTickers.push(t.ticker);
     } catch (e) {
@@ -280,18 +288,19 @@ export async function reconcileAlphaHistoryForUser(
     userId,
     holdingCount: holdings.length,
     backfillWindowDays: days,
-    benchmark: SIGNAL_BENCHMARK_TICKER,
+    benchmarkDefaultFallback: SIGNAL_BENCHMARK_TICKER,
   });
 
-  let vooBars: PriceBar[] | null = null;
+  const benchBarsCache = new Map<string, PriceBar[]>();
 
   for (const h of holdings) {
-    await linkAlphaHistoryHoldingForTicker(db, userId, h.ticker, h.id);
+    const benchmarkTicker = defaultBenchmarkTickerForTicker(h.ticker);
+    await linkAlphaHistoryHoldingForTicker(db, userId, h.ticker, h.id, benchmarkTicker);
     linkedTickers.push(h.ticker);
 
-    const total = await countAlphaHistoryTotal(db, userId, h.ticker, SIGNAL_BENCHMARK_TICKER);
-    const recent = await countAlphaHistoryRecent(db, userId, h.ticker, SIGNAL_BENCHMARK_TICKER);
-    const latestYmd = await getLatestAlphaHistoryYmd(db, userId, h.ticker, SIGNAL_BENCHMARK_TICKER);
+    const total = await countAlphaHistoryTotal(db, userId, h.ticker, benchmarkTicker);
+    const recent = await countAlphaHistoryRecent(db, userId, h.ticker, benchmarkTicker);
+    const latestYmd = await getLatestAlphaHistoryYmd(db, userId, h.ticker, benchmarkTicker);
     const need = needsBackfill(total, recent, latestYmd);
     signalsDebug("reconcile holding", {
       ticker: h.ticker,
@@ -302,22 +311,28 @@ export async function reconcileAlphaHistoryForUser(
       wallClockStale: isAlphaHistoryWallClockStale(latestYmd),
       staleAfterCalendarDays: STALE_ALPHA_CALENDAR_LAG_DAYS,
       needsBackfill: need,
+      benchmark: benchmarkTicker,
     });
     if (!need) continue;
 
-    if (!vooBars) {
-      vooBars = await fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, days, null);
-      signalsDebug("fetched VOO bars for reconcile", { count: vooBars.length, days });
+    let benchBars = benchBarsCache.get(benchmarkTicker) ?? null;
+    if (!benchBars) {
+      benchBars = await fetchPriceHistory(benchmarkTicker, days, null);
+      benchBarsCache.set(benchmarkTicker, benchBars);
+      signalsDebug("fetched benchmark bars for reconcile", { benchmark: benchmarkTicker, count: benchBars.length, days });
     }
-    if (vooBars.length < 2) {
-      signalsDebug("reconcile aborted: VOO history too short", { vooBarCount: vooBars.length });
+    if (benchBars.length < 2) {
+      signalsDebug("reconcile aborted: benchmark history too short", {
+        benchmark: benchmarkTicker,
+        barCount: benchBars.length,
+      });
       break;
     }
 
-    const n = await backfillOneHolding(db, userId, h, vooBars, days);
+    const n = await backfillOneHolding(db, userId, h, benchBars, benchmarkTicker, days);
     rowsBackfilled += n;
     if (n > 0) backfilledTickers.push(h.ticker);
-    signalsDebug("backfillOneHolding result", { ticker: h.ticker, rowsWritten: n });
+    signalsDebug("backfillOneHolding result", { ticker: h.ticker, benchmark: benchmarkTicker, rowsWritten: n });
   }
 
   signalsDebug("reconcileAlphaHistoryForUser end", {

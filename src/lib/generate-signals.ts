@@ -4,7 +4,7 @@ import {
   reconcileAlphaHistoryForUser,
   type ReconcileAlphaHistoryResult,
 } from "@/src/lib/alpha-history-reconcile";
-import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+import { defaultBenchmarkTickerForTicker, roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
 import { getDb } from "@/src/lib/db";
 import { fetchHoldingsWithProviderForUser } from "@/src/lib/holdings-queries";
 import type { HoldingPriceInput } from "@/src/lib/price-service";
@@ -107,12 +107,13 @@ export async function generateSignalsForUser(
 
   for (const h of holdings) {
     const holdingId = h.id;
+    const benchmarkTicker = defaultBenchmarkTickerForTicker(h.ticker);
     const alphaRs = await db.execute({
       sql: `SELECT recorded_at, alpha_value FROM alpha_history
             WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?
             ORDER BY recorded_at DESC
             LIMIT 3`,
-      args: [userId, h.ticker, SIGNAL_BENCHMARK_TICKER],
+      args: [userId, h.ticker, benchmarkTicker],
     });
 
     if (alphaRs.rows.length === 0) {
@@ -120,7 +121,7 @@ export async function generateSignalsForUser(
         holdingId,
         ticker: h.ticker,
         userId,
-        benchmark: SIGNAL_BENCHMARK_TICKER,
+        benchmark: benchmarkTicker,
       });
       continue;
     }

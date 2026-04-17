@@ -20,6 +20,12 @@ async function main() {
     args: ["VOO", "Vanguard S&P 500 ETF"],
   });
   console.log("Benchmark seed OK: VOO");
+
+  await db.execute({
+    sql: `INSERT OR IGNORE INTO benchmarks (ticker, name) VALUES (?, ?)`,
+    args: ["1306.T", "TOPIX ETF (1306.T)"],
+  });
+  console.log("Benchmark seed OK: 1306.T");
 }
 
 main().catch((e) => {

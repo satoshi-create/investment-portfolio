@@ -5,10 +5,16 @@
  * For **portfolio valuation weights** (dashboard), pass a live `usdJpyRate` from `price-service` (`JPY=X`).
  */
 
-import type { TickerInstrumentKind } from "@/src/types/investment";
+import { DEFAULT_BENCHMARK_BY_INSTRUMENT_KIND, type TickerInstrumentKind } from "@/src/types/investment";
 
 /** Benchmark ticker persisted in `alpha_history` / used by signal rules (must exist in `benchmarks`). */
 export const SIGNAL_BENCHMARK_TICKER = "VOO";
+
+/**
+ * Explicit fallback benchmark ticker (keep stable for legacy paths).
+ * NOTE: Do not remove — some callers intentionally omit benchmark selection.
+ */
+export const DEFAULT_BENCHMARK_TICKER = "VOO";
 
 export type QuoteCurrency = "JPY" | "USD";
 
@@ -38,6 +44,14 @@ export function classifyTickerInstrument(ticker: string): TickerInstrumentKind {
     return "US_EQUITY";
   }
   return "US_EQUITY";
+}
+
+export function defaultBenchmarkTickerForInstrumentKind(kind: TickerInstrumentKind): string {
+  return DEFAULT_BENCHMARK_BY_INSTRUMENT_KIND[kind] ?? DEFAULT_BENCHMARK_TICKER;
+}
+
+export function defaultBenchmarkTickerForTicker(ticker: string): string {
+  return defaultBenchmarkTickerForInstrumentKind(classifyTickerInstrument(ticker));
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 
-import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+import { DEFAULT_BENCHMARK_TICKER, roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
 
 export type UpsertAlphaHistoryRow = {
   userId: string;
@@ -25,7 +25,7 @@ function assertYmd(dateYmd: string): void {
  * On conflict: updates alpha/close; `holding_id` is set from the new row when non-NULL, else preserved.
  */
 export async function upsertAlphaHistoryRow(db: Client, row: UpsertAlphaHistoryRow): Promise<void> {
-  const benchmark = row.benchmarkTicker ?? SIGNAL_BENCHMARK_TICKER;
+  const benchmark = row.benchmarkTicker ?? DEFAULT_BENCHMARK_TICKER;
   assertYmd(row.recordedAtYmd);
 
   const id = crypto.randomUUID();
@@ -48,11 +48,12 @@ export async function linkAlphaHistoryHoldingForTicker(
   userId: string,
   ticker: string,
   holdingId: string,
+  benchmarkTicker: string = SIGNAL_BENCHMARK_TICKER,
 ): Promise<void> {
   await db.execute({
     sql: `UPDATE alpha_history SET holding_id = ?
           WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?`,
-    args: [holdingId, userId, ticker, SIGNAL_BENCHMARK_TICKER],
+    args: [holdingId, userId, ticker, benchmarkTicker],
   });
 }
 

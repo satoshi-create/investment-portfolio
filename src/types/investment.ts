@@ -3,6 +3,17 @@ export type AlphaHistory = number[];
 /** Interpretation of `holdings.ticker` for Alpha inputs (see `src/lib/alpha-logic.ts`). */
 export type TickerInstrumentKind = "JP_INVESTMENT_TRUST" | "JP_LISTED_EQUITY" | "US_EQUITY";
 
+/**
+ * Default benchmark ticker per instrument kind (regional benchmark separation).
+ * - US: VOO
+ * - JP listed equity / investment trust: TOPIX ETF (1306.T)
+ */
+export const DEFAULT_BENCHMARK_BY_INSTRUMENT_KIND: Record<TickerInstrumentKind, string> = {
+  US_EQUITY: "VOO",
+  JP_LISTED_EQUITY: "1306.T",
+  JP_INVESTMENT_TRUST: "1306.T",
+} as const;
+
 /** DB `holdings` row subset for sync / signals context. */
 export interface Holding {
   id: string;

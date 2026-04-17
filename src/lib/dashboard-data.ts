@@ -19,6 +19,7 @@ import {
   computeAlphaDeviationZScore,
   computePriceDrawdownFromHighPercent,
   convertValueToJpy,
+  defaultBenchmarkTickerForTicker,
   dailyReturnPercent,
   mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
@@ -48,7 +49,7 @@ import {
   fetchGlobalMarketIndicators,
   fetchLatestPrice,
   fetchEquityResearchSnapshots,
-  fetchRecentDatedDailyAlphasVsVoo,
+  fetchRecentDatedDailyAlphasVsBenchmark,
   fetchLatestPriceWithChangePct,
   fetchLiveQuoteSnapshot,
   fetchHoldingsHybridPriceSnapshots,
@@ -77,6 +78,37 @@ function parseJsonTextArray(raw: unknown): string[] {
   } catch {
     return [];
   }
+}
+
+async function fetchAlphaHistoryRowsForTickers(
+  db: Client,
+  userId: string,
+  tickers: string[],
+): Promise<Record<string, unknown>[]> {
+  const unique = [...new Set(tickers.map((t) => String(t).trim()).filter((t) => t.length > 0))];
+  if (unique.length === 0) return [];
+
+  const byBench = new Map<string, string[]>();
+  for (const t of unique) {
+    const bench = defaultBenchmarkTickerForTicker(t);
+    const arr = byBench.get(bench) ?? [];
+    arr.push(t);
+    byBench.set(bench, arr);
+  }
+
+  const allRows: Record<string, unknown>[] = [];
+  for (const [bench, ts] of byBench) {
+    const placeholders = ts.map(() => "?").join(",");
+    const rs = await db.execute({
+      sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
+            WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${placeholders})
+            ORDER BY ticker ASC, recorded_at ASC`,
+      args: [userId, bench, ...ts],
+    });
+    allRows.push(...(rs.rows as Record<string, unknown>[]));
+  }
+
+  return allRows;
 }
 
 function parseJsonIntArray(raw: unknown): number[] {
@@ -718,7 +750,7 @@ async function enrichEcosystemMemberRow(
           sql: `SELECT alpha_value, close_price, recorded_at FROM alpha_history
                 WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?
                 ORDER BY recorded_at ASC`,
-          args: [userId, effectiveTicker, SIGNAL_BENCHMARK_TICKER],
+          args: [userId, effectiveTicker, defaultBenchmarkTickerForTicker(effectiveTicker)],
         })
       : { rows: [] as Record<string, unknown>[] };
 
@@ -744,7 +776,8 @@ async function enrichEcosystemMemberRow(
   if (datedRows.length < 2) {
     if (effectiveTicker.length > 0) {
       if (!(fast && !inPortfolio)) {
-        const live = await fetchRecentDatedDailyAlphasVsVoo(effectiveTicker, 120, null);
+        const bench = defaultBenchmarkTickerForTicker(effectiveTicker);
+        const live = await fetchRecentDatedDailyAlphasVsBenchmark(effectiveTicker, 120, bench, null);
         if (live.rows.length >= 2) {
           datedRows = live.rows;
           if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
@@ -1170,19 +1203,14 @@ export async function getThemeDetailData(
 
   if (matching.length > 0) {
     const tickers = [...new Set(matching.map((r) => String(r.ticker)))];
-    const tPlaceholders = tickers.map(() => "?").join(",");
     const tAlphaQ = perf.enabled ? Date.now() : 0;
-    const a = await db.execute({
-      sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
-            WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
-            ORDER BY ticker ASC, recorded_at ASC`,
-      args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers],
-    });
+    const rows = await fetchAlphaHistoryRowsForTickers(db, userId, tickers);
     if (perf.enabled && perf.requestId) {
-      console.log(`[perf] ${perf.requestId} alphaHistoryQuery ms=${Date.now() - tAlphaQ} tickers=${tickers.length}`);
+      console.log(
+        `[perf] ${perf.requestId} alphaHistoryQuery ms=${Date.now() - tAlphaQ} tickers=${tickers.length}`,
+      );
     }
 
-    const rows = a.rows as Record<string, unknown>[];
     const byTicker = buildByTickerFromAlphaRows(rows);
     const byTickerDated = buildByTickerDatedAlphaRows(rows);
     const drafts = buildDraftsFromHoldingRows(
@@ -1292,14 +1320,7 @@ export async function getThemeDetailData(
 
     const tickersForQuery = [...tickerSqlByUpper.values()];
     if (tickersForQuery.length > 0) {
-      const tPlaceholders = tickersForQuery.map(() => "?").join(",");
-      const aEco = await db.execute({
-        sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
-              WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
-              ORDER BY ticker ASC, recorded_at ASC`,
-        args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickersForQuery],
-      });
-      const ecoRows = aEco.rows as Record<string, unknown>[];
+      const ecoRows = await fetchAlphaHistoryRowsForTickers(db, userId, tickersForQuery);
       const byTickerDatedEco = buildByTickerDatedAlphaRows(ecoRows);
       const byUpper = new Map<string, DatedAlphaRow[]>();
       for (const [k, v] of byTickerDatedEco) {
@@ -1404,23 +1425,16 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   }
 
   const tickers = [...new Set(h.rows.map((r) => String(r.ticker)))];
-  const tPlaceholders = tickers.map(() => "?").join(",");
-  const [allThemes, a, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
+  const [allThemes, alphaRows, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
     fetchAllInvestmentThemes(db, userId),
-    db.execute({
-      // Match by user + benchmark + ticker only; `holding_id` may be NULL (orphaned rows still chart).
-      sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
-            WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${tPlaceholders})
-            ORDER BY ticker ASC, recorded_at ASC`,
-      args: [userId, SIGNAL_BENCHMARK_TICKER, ...tickers],
-    }),
+    fetchAlphaHistoryRowsForTickers(db, userId, tickers),
     resolveBenchmarkSnapshot(),
     resolveFxUsdJpyRate(),
     fetchTotalRealizedPnlJpy(db, userId),
     fetchGlobalMarketIndicators(),
   ]);
 
-  const byTicker = buildByTickerFromAlphaRows(a.rows as Record<string, unknown>[]);
+  const byTicker = buildByTickerFromAlphaRows(alphaRows);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
   const holdingRowsForDash = h.rows as unknown as HoldingQueryRow[];
   const [researchByTicker, hybridPriceByHoldingKey] = await Promise.all([

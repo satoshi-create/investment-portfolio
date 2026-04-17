@@ -6,7 +6,12 @@
 import { config } from "dotenv";
 
 import { defaultProfileUserId } from "../src/lib/authorize-signals";
-import { computeAlphaPercent, dailyReturnPercent, SIGNAL_BENCHMARK_TICKER } from "../src/lib/alpha-logic";
+import {
+  computeAlphaPercent,
+  dailyReturnPercent,
+  defaultBenchmarkTickerForTicker,
+  SIGNAL_BENCHMARK_TICKER,
+} from "../src/lib/alpha-logic";
 import { upsertAlphaHistoryRow } from "../src/lib/db-operations";
 import { getDb, isDbConfigured } from "../src/lib/db";
 import { generateSignalsForUser } from "../src/lib/generate-signals";
@@ -20,22 +25,23 @@ config();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function sharedSortedDates(stockBars: PriceBar[], vooBars: PriceBar[]): string[] {
-  const vooSet = new Set(vooBars.map((b) => b.date));
-  return [...new Set(stockBars.map((b) => b.date).filter((d) => vooSet.has(d)))].sort();
+function sharedSortedDates(stockBars: PriceBar[], benchBars: PriceBar[]): string[] {
+  const benchSet = new Set(benchBars.map((b) => b.date));
+  return [...new Set(stockBars.map((b) => b.date).filter((d) => benchSet.has(d)))].sort();
 }
 
 async function backfillOneHolding(
   db: Awaited<ReturnType<typeof getDb>>,
   userId: string,
   holding: Holding,
-  vooBars: PriceBar[],
+  benchBars: PriceBar[],
+  benchmarkTicker: string,
   days: number,
 ): Promise<number> {
-  const vooByDate = new Map(vooBars.map((b) => [b.date, b.close]));
+  const benchByDate = new Map(benchBars.map((b) => [b.date, b.close]));
   const stockBars = await fetchPriceHistory(holding.ticker, days, holding.providerSymbol);
   const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
-  const shared = sharedSortedDates(stockBars, vooBars);
+  const shared = sharedSortedDates(stockBars, benchBars);
   if (shared.length < 2) return 0;
 
   let written = 0;
@@ -44,8 +50,8 @@ async function backfillOneHolding(
     const dCur = shared[i]!;
     const s0 = stockBy.get(dPrev);
     const s1 = stockBy.get(dCur);
-    const b0 = vooByDate.get(dPrev);
-    const b1 = vooByDate.get(dCur);
+    const b0 = benchByDate.get(dPrev);
+    const b1 = benchByDate.get(dCur);
     if (s0 == null || s1 == null || b0 == null || b1 == null) continue;
 
     const rStock = dailyReturnPercent(s0, s1);
@@ -60,7 +66,7 @@ async function backfillOneHolding(
       recordedAtYmd: dCur,
       closePrice: s1,
       alphaValue: alpha,
-      benchmarkTicker: SIGNAL_BENCHMARK_TICKER,
+      benchmarkTicker,
     });
     written += 1;
   }
@@ -88,16 +94,10 @@ async function main() {
   }
 
   console.log(
-    `Backfill alpha_history: userId=${userId}, days≈${backfillDays} bars/holding, delay=${delayMs}ms, benchmark=${SIGNAL_BENCHMARK_TICKER}`,
+    `Backfill alpha_history: userId=${userId}, days≈${backfillDays} bars/holding, delay=${delayMs}ms, defaultBenchmarkFallback=${SIGNAL_BENCHMARK_TICKER}`,
   );
 
-  console.log(`Fetching ${SIGNAL_BENCHMARK_TICKER} history…`);
-  const vooBars = await fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, backfillDays, null);
-  if (vooBars.length < 2) {
-    console.error(`Benchmark ${SIGNAL_BENCHMARK_TICKER} returned insufficient bars (${vooBars.length}). Abort.`);
-    process.exit(1);
-  }
-  console.log(`VOO: ${vooBars.length} daily bars (${vooBars[0]!.date} … ${vooBars[vooBars.length - 1]!.date})`);
+  const benchBarsCache = new Map<string, PriceBar[]>();
 
   const total = holdings.length;
   let grandTotalRows = 0;
@@ -107,9 +107,20 @@ async function main() {
     const label = `${h.ticker}${h.providerSymbol ? ` [${h.providerSymbol}]` : ""}`;
     process.stdout.write(`Processing ${label} (${i + 1}/${total})… `);
     try {
-      const n = await backfillOneHolding(db, userId, h, vooBars, backfillDays);
-      grandTotalRows += n;
-      console.log(`Done (${n} row(s) upserted)`);
+      const benchmarkTicker = defaultBenchmarkTickerForTicker(h.ticker);
+      let benchBars = benchBarsCache.get(benchmarkTicker) ?? null;
+      if (!benchBars) {
+        process.stdout.write(`(fetch ${benchmarkTicker}) `);
+        benchBars = await fetchPriceHistory(benchmarkTicker, backfillDays, null);
+        benchBarsCache.set(benchmarkTicker, benchBars);
+      }
+      if (benchBars.length < 2) {
+        console.log(`Skip (benchmark ${benchmarkTicker} insufficient bars: ${benchBars.length})`);
+      } else {
+        const n = await backfillOneHolding(db, userId, h, benchBars, benchmarkTicker, backfillDays);
+        grandTotalRows += n;
+        console.log(`Done (${n} row(s) upserted, benchmark=${benchmarkTicker})`);
+      }
     } catch (e) {
       console.log(`Error: ${e instanceof Error ? e.message : String(e)}`);
     }
