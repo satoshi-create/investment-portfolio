@@ -4,6 +4,8 @@ import { Layout, Radar } from "lucide-react";
 
 import type { InvestmentThemeRecord } from "@/src/types/investment";
 
+const AI_UNICORNS_THEME_NAME = "AIユニコーン";
+
 function excerpt(text: string | null, max = 96): string {
   if (text == null) return "";
   const s = text.replace(/\s+/g, " ").trim();
@@ -34,6 +36,14 @@ export function ThemesNavigationSection(props: {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Link
+            href={`/themes/${encodeURIComponent(AI_UNICORNS_THEME_NAME)}`}
+            className="text-[10px] font-bold uppercase tracking-wide text-violet-300 border border-violet-500/35 bg-violet-500/5 px-3 py-2 rounded-lg hover:bg-violet-500/10 transition-all inline-flex items-center gap-2"
+            title="AIユニコーン（未上場×資本の源流）へ"
+          >
+            <span className="text-[12px] leading-none">AI</span>
+            AIユニコーン
+          </Link>
           <Link
             href="/etf-collection"
             className="text-[10px] font-bold uppercase tracking-wide text-cyan-300 border border-cyan-500/35 bg-cyan-500/5 px-3 py-2 rounded-lg hover:bg-cyan-500/10 transition-all inline-flex items-center gap-2"

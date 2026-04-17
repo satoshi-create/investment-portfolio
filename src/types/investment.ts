@@ -216,6 +216,10 @@ export type ThemeEcosystemWatchItem = {
   estimatedIpoDate: string | null;
   /** 想定時価総額（文字列） */
   estimatedValuation: string | null;
+  /** 未上場: 最新ラウンド評価額（数値）。不明なら null */
+  lastRoundValuation: number | null;
+  /** 未上場を支える資本の供給源（例: "Amazon 40; Google 20; Apollo 10"）。 */
+  privateCreditBacking: string | null;
   /** 企業特徴・リスク要因（ツールチップ等で表示） */
   observationNotes: string | null;
   companyName: string;
@@ -273,6 +277,18 @@ export type ThemeEcosystemWatchItem = {
   holderTags: string[];
   dividendMonths: number[];
   defensiveStrength: string | null;
+};
+
+/**
+ * Unlisted unicorn holding schema (seed / import-friendly, snake_case).
+ * NOTE: Runtime/UI uses `ThemeEcosystemWatchItem` (camelCase) as the canonical shape.
+ */
+export type UnicornHolding = {
+  is_unlisted: true;
+  expected_ipo_date: string;
+  last_round_valuation: number;
+  proxy_ticker: string;
+  private_credit_backing: string;
 };
 
 /** テーマ起点正規化後の累積 Alpha（日次超過の合計、パーセントポイント）。 */

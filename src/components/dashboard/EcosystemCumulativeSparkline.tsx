@@ -5,7 +5,14 @@ import React from "react";
 /**
  * 累積 Alpha 系列用ミニチャート。Y 軸中央を 0 とし、長期の「スタートラインからの距離」を視覚化する。
  */
-export function EcosystemCumulativeSparkline({ history }: { history: number[] }) {
+export function EcosystemCumulativeSparkline({
+  history,
+  tone = "normal",
+}: {
+  history: number[];
+  /** `shadow`: 未上場の proxy 観測など、薄く「影」として出す */
+  tone?: "normal" | "shadow";
+}) {
   if (history.length === 0) {
     return <span className="text-slate-600 text-xs">No data</span>;
   }
@@ -25,6 +32,10 @@ export function EcosystemCumulativeSparkline({ history }: { history: number[] })
   const yAt = (v: number) => midY - (v / maxAbs) * (midY - padY);
 
   const points = vals.map((v, i) => ({ x: xAt(i), y: yAt(v), v }));
+  const isShadow = tone === "shadow";
+  const segmentOpacity = isShadow ? 0.35 : 1;
+  const segmentWidth = isShadow ? 1.25 : 2;
+  const dash = isShadow ? "3 3" : undefined;
 
   return (
     <div className="flex justify-center w-full min-w-[7rem] max-w-[13rem] mx-auto">
@@ -69,8 +80,10 @@ export function EcosystemCumulativeSparkline({ history }: { history: number[] })
                 x2={b.x}
                 y2={b.y}
                 stroke={stroke}
-                strokeWidth={2}
+                strokeWidth={segmentWidth}
                 strokeLinecap="round"
+                opacity={segmentOpacity}
+                strokeDasharray={dash}
               />
             );
           })

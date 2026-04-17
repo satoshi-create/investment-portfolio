@@ -642,6 +642,15 @@ async function enrichEcosystemMemberRow(
     row["estimated_valuation"] != null && String(row["estimated_valuation"]).trim().length > 0
       ? String(row["estimated_valuation"]).trim()
       : null;
+  const lastRoundValuationRaw = row["last_round_valuation"];
+  const lastRoundValuation =
+    lastRoundValuationRaw != null && Number.isFinite(Number(lastRoundValuationRaw)) && Number(lastRoundValuationRaw) > 0
+      ? Number(lastRoundValuationRaw)
+      : null;
+  const privateCreditBacking =
+    row["private_credit_backing"] != null && String(row["private_credit_backing"]).trim().length > 0
+      ? String(row["private_credit_backing"]).trim()
+      : null;
   const observationNotes =
     row["observation_notes"] != null && String(row["observation_notes"]).trim().length > 0
       ? String(row["observation_notes"]).trim()
@@ -812,6 +821,8 @@ async function enrichEcosystemMemberRow(
     proxyTicker,
     estimatedIpoDate,
     estimatedValuation,
+    lastRoundValuation,
+    privateCreditBacking,
     observationNotes,
     companyName,
     field,
@@ -861,6 +872,15 @@ function ecosystemMissingExpectationCategoryColumn(e: unknown): boolean {
   return lower.includes("no such column") && lower.includes("expectation_category");
 }
 
+function ecosystemMissingUnicornColumns(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("no such column") &&
+    (lower.includes("last_round_valuation") || lower.includes("private_credit_backing"))
+  );
+}
+
 async function fetchEnrichedThemeEcosystem(
   db: Client,
   userId: string,
@@ -874,7 +894,8 @@ async function fetchEnrichedThemeEcosystem(
     let rows: Record<string, unknown>[];
     try {
       const rs = await db.execute({
-        sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+        sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                     last_round_valuation, private_credit_backing, observation_notes,
                      company_name, field, role, is_major_player, observation_started_at,
                      adoption_stage, adoption_stage_rationale, expectation_category,
                      holder_tags, dividend_months, defensive_strength
@@ -885,10 +906,28 @@ async function fetchEnrichedThemeEcosystem(
       });
       rows = rs.rows as unknown as Record<string, unknown>[];
     } catch (e) {
-      if (ecosystemMissingExpectationCategoryColumn(e)) {
+      if (ecosystemMissingUnicornColumns(e)) {
+        // Older DB without unicorn fields: fallback and inject nulls.
+        const rs = await db.execute({
+          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                       company_name, field, role, is_major_player, observation_started_at,
+                       adoption_stage, adoption_stage_rationale, expectation_category,
+                       holder_tags, dividend_months, defensive_strength
+                FROM theme_ecosystem_members
+                WHERE theme_id = ?
+                ORDER BY field ASC, ticker ASC`,
+          args: [themeId],
+        });
+        rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+          ...r,
+          last_round_valuation: null,
+          private_credit_backing: null,
+        }));
+      } else if (ecosystemMissingExpectationCategoryColumn(e)) {
         try {
           const rs = await db.execute({
-            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                         last_round_valuation, private_credit_backing, observation_notes,
                          company_name, field, role, is_major_player, observation_started_at,
                          adoption_stage, adoption_stage_rationale,
                          holder_tags, dividend_months, defensive_strength
@@ -904,7 +943,8 @@ async function fetchEnrichedThemeEcosystem(
         } catch (e2) {
           if (!ecosystemMissingAdoptionColumns(e2)) throw e2;
           const rs = await db.execute({
-            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                         last_round_valuation, private_credit_backing, observation_notes,
                          company_name, field, role, is_major_player, observation_started_at
                   FROM theme_ecosystem_members
                   WHERE theme_id = ?
@@ -923,7 +963,8 @@ async function fetchEnrichedThemeEcosystem(
         }
       } else if (ecosystemMissingAdoptionColumns(e)) {
         const rs = await db.execute({
-          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                       last_round_valuation, private_credit_backing, observation_notes,
                        company_name, field, role, is_major_player, observation_started_at
               FROM theme_ecosystem_members
               WHERE theme_id = ?

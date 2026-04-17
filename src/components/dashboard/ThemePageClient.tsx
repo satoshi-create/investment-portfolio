@@ -47,6 +47,7 @@ import { SemiconductorSupplyChainObservationPanel } from "@/src/components/dashb
 import { SaaSApocalypseLensPanel } from "@/src/components/dashboard/SaaSApocalypseLensPanel";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
+import { UnicornCard } from "@/src/components/dashboard/UnicornCard";
 import {
   TradeEntryForm,
   type TradeEntryInitial,
@@ -261,6 +262,19 @@ function normalizeThemeDetailResponse(
           ...item,
           instrumentKind,
           countryName: instrumentKind === "US_EQUITY" ? "米国" : "日本",
+          lastRoundValuation: (() => {
+            const v =
+              (item as Record<string, unknown>).lastRoundValuation ??
+              (item as Record<string, unknown>).last_round_valuation;
+            return v != null && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null;
+          })(),
+          privateCreditBacking: (() => {
+            const a =
+              (item as Record<string, unknown>).privateCreditBacking ??
+              (item as Record<string, unknown>).private_credit_backing;
+            const s = typeof a === "string" ? a.trim() : "";
+            return s.length > 0 ? s : null;
+          })(),
           observationStartedAt:
             typeof item.observationStartedAt === "string" &&
             item.observationStartedAt.length >= 10
@@ -413,6 +427,7 @@ export function ThemePageClient({
   const isDefensiveTheme = themeQueryName === "ディフェンシブ銘柄";
   const isSemiconductorSupplyChainTheme =
     themeQueryName === SEMICONDUCTOR_SUPPLY_CHAIN_THEME_NAME;
+  const isAiUnicornTheme = themeQueryName === "AIユニコーン";
   const [holderFilter, setHolderFilter] = useState<string[]>([]);
 
   const [data, setData] = useState<ThemeDetailData | null>(null);
@@ -1051,9 +1066,9 @@ export function ThemePageClient({
       return "テーブル見出しクリックで 1 軸ソート。人間の直感で追うモード。";
     }
     if (mode === "dip_rank") {
-      return "構造は維持（Z=日次Alpha乖離のZ-Score。平均との差が 0σ 付近＝統計的トレンドは崩れていない）しているのに、価格だけ深く剥離（落率が大）。押し目候補を上位に集めます。";
+      return "押し目（Dip）探索。Z=日次Alpha乖離のZ-Score（短期の温度差。ニュース/需給ノイズも含む）は 0σ 付近＝「短期的には平常」を優先しつつ、落率が深い銘柄を上位へ。構造の強さは CUM・A（累積Alpha）で見ます。";
     }
-    return "統計的に冷え込みが深い（Z=日次Alpha乖離のZ-Score が強くマイナス＝平均より大きく下振れ）。構造疑義も混ざるので「深掘り調査用」に上位へ。";
+    return "深掘り（Deep）探索。Z（短期の温度差）が強くマイナス＝直近だけ相対的に冷えた銘柄を上位へ（構造毀損の断定ではない）。落率と CUM・A（構造の年輪）を併読して、調査優先度を作ります。";
   }
 
   function toggleEcoSort(next: typeof ecoSortKey) {
@@ -1558,6 +1573,15 @@ export function ThemePageClient({
 
             {ecosystem.length > 0 ? (
               <section aria-labelledby="theme-ecosystem-heading">
+                {isAiUnicornTheme ? (
+                  <div className="mb-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {ecosystem
+                      .filter((e) => e.isUnlisted)
+                      .map((e) => (
+                        <UnicornCard key={e.id} item={e} />
+                      ))}
+                  </div>
+                ) : null}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
                   <div className="p-5 border-b border-slate-800 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between bg-slate-900/50">
                     <div className="flex items-start gap-2 min-w-0">
