@@ -426,9 +426,24 @@ export function ThemePageClient({
     null,
   );
   const [ecoSortKey, setEcoSortKey] = useState<
-    "asset" | "research" | "pe" | "eps" | "alpha" | "trend" | "last" | "deviation" | "drawdown"
+    | "asset"
+    | "research"
+    | "pe"
+    | "eps"
+    | "alpha"
+    | "trend"
+    | "last"
+    | "deviation"
+    | "drawdown"
   >("alpha");
   const [ecoSortDir, setEcoSortDir] = useState<"asc" | "desc">("desc");
+  const [ecoSortMode, setEcoSortMode] = useState<
+    "column" | "dip_rank" | "deep_value_rank"
+  >("column");
+  const [ecoSortModeOpen, setEcoSortModeOpen] = useState(false);
+  const [ecoSortModeHover, setEcoSortModeHover] = useState<
+    "column" | "dip_rank" | "deep_value_rank" | null
+  >(null);
   const [ecoShowValueCols, setEcoShowValueCols] = useState(false);
   const [patrolOn, setPatrolOn] = useState(false);
   /** アーリーマジョリティ以降のみ（キャズム超え・割安性フィルターと AND） */
@@ -931,7 +946,6 @@ export function ThemePageClient({
   );
 
   const ecosystemSorted = useMemo(() => {
-    const dir = ecoSortDir === "asc" ? 1 : -1;
     const cmpStr = (a: string, b: string) => a.localeCompare(b, "ja");
     const cmpNum = (a: number | null, b: number | null) => {
       const ax = a == null || !Number.isFinite(a) ? null : a;
@@ -941,6 +955,7 @@ export function ThemePageClient({
       if (by == null) return -1;
       return ax < by ? -1 : ax > by ? 1 : 0;
     };
+    const dir = ecoSortDir === "asc" ? 1 : -1;
     const lastAlpha = (e: ThemeEcosystemWatchItem) =>
       e.alphaHistory.length > 0
         ? e.alphaHistory[e.alphaHistory.length - 1]!
@@ -954,9 +969,44 @@ export function ThemePageClient({
       Number.isFinite(e.drawdownFromHigh90dPct)
         ? e.drawdownFromHigh90dPct
         : null;
+    const absZ = (e: ThemeEcosystemWatchItem) => {
+      const z = devZ(e);
+      return z == null ? null : Math.abs(z);
+    };
+
+    function cmpNumDir(a: number | null, b: number | null, d: 1 | -1) {
+      return d * cmpNum(a, b);
+    }
 
     const arr = [...ecosystemFiltered];
     arr.sort((a, b) => {
+      if (ecoSortMode === "dip_rank") {
+        // Structural Dip priority:
+        // - drawdown deeper first (more negative)
+        // - Z closer to 0 first (trend not statistically broken)
+        // - Cumα higher first (structure quality)
+        const c1 = cmpNumDir(ddOf(a), ddOf(b), 1); // asc: -40 before -10
+        if (c1 !== 0) return c1;
+        const c2 = cmpNumDir(absZ(a), absZ(b), 1);
+        if (c2 !== 0) return c2;
+        const c3 = cmpNumDir(a.latestAlpha, b.latestAlpha, -1);
+        if (c3 !== 0) return c3;
+        return cmpStr(a.ticker, b.ticker);
+      }
+      if (ecoSortMode === "deep_value_rank") {
+        // Deep Value priority:
+        // - Z more negative first
+        // - drawdown deeper first
+        // - Cumα higher first (if structure still holds)
+        const c1 = cmpNumDir(devZ(a), devZ(b), 1);
+        if (c1 !== 0) return c1;
+        const c2 = cmpNumDir(ddOf(a), ddOf(b), 1);
+        if (c2 !== 0) return c2;
+        const c3 = cmpNumDir(a.latestAlpha, b.latestAlpha, -1);
+        if (c3 !== 0) return c3;
+        return cmpStr(a.ticker, b.ticker);
+      }
+
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
       if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
       if (ecoSortKey === "eps") return dir * cmpNum(ecoEpsOf(a), ecoEpsOf(b));
@@ -981,7 +1031,7 @@ export function ThemePageClient({
       return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
     });
     return arr;
-  }, [ecosystemFiltered, ecoSortDir, ecoSortKey]);
+  }, [ecosystemFiltered, ecoSortDir, ecoSortKey, ecoSortMode]);
 
   const ecosystemColSpan = useMemo(() => {
     const base = 1 /* Asset */ + 1 /* キャズム */ + 2 /* PE + EPS */ + 3 /* Cumα + Trend + Last */;
@@ -989,6 +1039,22 @@ export function ThemePageClient({
     const value = ecoShowValueCols ? 2 : 0;
     return base + mid + value;
   }, [ecoShowValueCols, isDefensiveTheme]);
+
+  function ecoSortModeLabel(mode: "column" | "dip_rank" | "deep_value_rank"): string {
+    if (mode === "column") return "通常: 列で並べ替え";
+    if (mode === "dip_rank") return "押し目優先: 落率→乖離→CUM・A";
+    return "深掘り優先: 乖離→落率→CUM・A";
+  }
+
+  function ecoSortModeHelp(mode: "column" | "dip_rank" | "deep_value_rank"): string {
+    if (mode === "column") {
+      return "テーブル見出しクリックで 1 軸ソート。人間の直感で追うモード。";
+    }
+    if (mode === "dip_rank") {
+      return "構造は維持（Z=日次Alpha乖離のZ-Score。平均との差が 0σ 付近＝統計的トレンドは崩れていない）しているのに、価格だけ深く剥離（落率が大）。押し目候補を上位に集めます。";
+    }
+    return "統計的に冷え込みが深い（Z=日次Alpha乖離のZ-Score が強くマイナス＝平均より大きく下振れ）。構造疑義も混ざるので「深掘り調査用」に上位へ。";
+  }
 
   function toggleEcoSort(next: typeof ecoSortKey) {
     if (next === ecoSortKey)
@@ -1587,6 +1653,105 @@ export function ThemePageClient({
                         >
                           乖離・落率
                         </button>
+                        <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                            分析
+                          </span>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setEcoSortModeOpen((v) => !v)}
+                              className={cn(
+                                "rounded-md border px-2 py-1 text-[11px] font-bold transition-colors",
+                                "border-slate-800 bg-slate-950/70 text-slate-200 hover:bg-slate-900/60",
+                                "focus:outline-none focus:ring-1 focus:ring-cyan-500/40",
+                              )}
+                              aria-label="Ecosystem 分析ソート"
+                              title="CUM・A / 乖離 / 落率を組み合わせて優先順位を作る"
+                            >
+                              {ecoSortModeLabel(ecoSortMode)}
+                            </button>
+                            {ecoSortModeOpen ? (
+                              <div
+                                className="absolute right-0 mt-2 w-[22rem] max-w-[86vw] rounded-xl border border-slate-800 bg-slate-950/95 shadow-2xl z-30 overflow-hidden"
+                                role="listbox"
+                                aria-label="分析ソート選択肢"
+                              >
+                                {(
+                                  [
+                                    "column",
+                                    "dip_rank",
+                                    "deep_value_rank",
+                                  ] as const
+                                ).map((mode) => {
+                                  const selected = mode === ecoSortMode;
+                                  const hovered = mode === ecoSortModeHover;
+                                  return (
+                                    <button
+                                      key={mode}
+                                      type="button"
+                                      role="option"
+                                      aria-selected={selected}
+                                      onMouseEnter={() => setEcoSortModeHover(mode)}
+                                      onMouseLeave={() => setEcoSortModeHover(null)}
+                                      onClick={() => {
+                                        setEcoSortMode(mode);
+                                        setEcoSortModeOpen(false);
+                                      }}
+                                      className={cn(
+                                        "w-full text-left px-3 py-2.5 border-b border-slate-800/80",
+                                        "hover:bg-slate-900/60 transition-colors",
+                                        selected
+                                          ? "bg-cyan-500/10"
+                                          : "bg-transparent",
+                                      )}
+                                      title={ecoSortModeHelp(mode)}
+                                    >
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <p
+                                            className={cn(
+                                              "text-[11px] font-bold",
+                                              selected
+                                                ? "text-cyan-200"
+                                                : "text-slate-200",
+                                            )}
+                                          >
+                                            {ecoSortModeLabel(mode)}
+                                          </p>
+                                          <p
+                                            className={cn(
+                                              "text-[10px] leading-relaxed mt-1",
+                                              hovered || selected
+                                                ? "text-slate-400"
+                                                : "text-slate-600",
+                                            )}
+                                          >
+                                            {ecoSortModeHelp(mode)}
+                                          </p>
+                                        </div>
+                                        {selected ? (
+                                          <span className="text-[10px] font-bold text-cyan-300 shrink-0">
+                                            選択中
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                                <div className="px-3 py-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEcoSortModeOpen(false)}
+                                    className="text-[10px] font-bold uppercase tracking-wide text-slate-500 hover:text-slate-300 transition-colors"
+                                  >
+                                    閉じる
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
                         <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1.5">
                           <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
                             PE
