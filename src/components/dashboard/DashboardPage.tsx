@@ -336,6 +336,8 @@ export function DashboardPage() {
           stocks={stocks}
           totalHoldings={summary.totalHoldings}
           averageAlpha={summary.portfolioAverageAlpha}
+          userId={DEFAULT_USER_ID}
+          onEarningsNoteSaved={() => void loadDashboard()}
           onTrade={(init) => openTradeForm(init)}
           onTradeNew={() => openTradeForm(null)}
         />

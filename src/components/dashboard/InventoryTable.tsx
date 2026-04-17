@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileSpreadsheet, Search } from "lucide-react";
+import { FileSpreadsheet, NotebookPen, Search, X } from "lucide-react";
 
 import type { ExpectationCategory, Stock } from "@/src/types/investment";
 import { EXPECTATION_CATEGORY_KEYS, EXPECTATION_CATEGORY_LABEL_JA } from "@/src/types/investment";
 import { expectationCategoryBadgeClass, expectationCategoryBadgeShortJa } from "@/src/lib/expectation-category";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
+import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import { fetchWithTimeout } from "@/src/lib/fetch-utils";
+import { EarningsNoteMarkdownPreview } from "@/src/components/dashboard/EarningsNoteMarkdownPreview";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
@@ -20,6 +23,8 @@ const jpyFmt = new Intl.NumberFormat("ja-JP", {
 });
 
 type SortKey = "asset" | "alpha" | "trend" | "position" | "research" | "deviation" | "drawdown";
+
+type EarningsNoteModalTab = "edit" | "preview";
 
 function deviationOf(s: Stock): number | null {
   const z = s.alphaDeviationZ;
@@ -41,6 +46,8 @@ export function InventoryTable({
   stocks,
   totalHoldings,
   averageAlpha,
+  userId,
+  onEarningsNoteSaved,
   onTrade,
   onTradeNew,
   themeStructuralTrendUp = false,
@@ -48,11 +55,70 @@ export function InventoryTable({
   stocks: Stock[];
   totalHoldings: number;
   averageAlpha: number;
+  /** 決算メモ保存 API 用 */
+  userId: string;
+  /** メモ保存成功後にダッシュボード / テーマを再取得する */
+  onEarningsNoteSaved?: () => void | Promise<void>;
   onTrade?: (initial: TradeEntryInitial) => void;
   onTradeNew?: () => void;
   /** テーマページなどで加重累積 Alpha が上向きのとき true（✨ の条件に使用） */
   themeStructuralTrendUp?: boolean;
 }) {
+  const [noteModalStock, setNoteModalStock] = useState<Stock | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteModalTab, setNoteModalTab] = useState<EarningsNoteModalTab>("edit");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteErr, setNoteErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (noteModalStock) {
+      setNoteDraft(noteModalStock.earningsSummaryNote ?? "");
+      setNoteErr(null);
+      setNoteModalTab("edit");
+    }
+  }, [noteModalStock]);
+
+  useEffect(() => {
+    if (!noteModalStock) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !noteSaving) setNoteModalStock(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [noteModalStock, noteSaving]);
+
+  async function saveEarningsNote() {
+    if (!noteModalStock) return;
+    setNoteSaving(true);
+    setNoteErr(null);
+    try {
+      const res = await fetchWithTimeout(
+        "/api/holdings/earnings-summary-note",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            holdingId: noteModalStock.id,
+            earningsSummaryNote: noteDraft,
+          }),
+        },
+        { timeoutMs: 12_000 },
+      );
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setNoteErr(json.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setNoteModalStock(null);
+      await onEarningsNoteSaved?.();
+    } catch (e) {
+      setNoteErr(e instanceof Error ? e.message : "保存に失敗しました");
+    } finally {
+      setNoteSaving(false);
+    }
+  }
+
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showValueCols, setShowValueCols] = useState(false);
@@ -384,6 +450,19 @@ export function InventoryTable({
                             還流
                           </span>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setNoteModalStock(stock)}
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide border px-2 py-0.5 rounded-md transition-colors ${
+                            stock.earningsSummaryNote != null && stock.earningsSummaryNote.trim().length > 0
+                              ? "text-violet-200 border-violet-500/45 bg-violet-500/15 hover:bg-violet-500/25"
+                              : "text-muted-foreground border-border bg-background/60 hover:bg-muted/70 hover:text-foreground/90"
+                          }`}
+                          title="決算要約メモを表示・編集"
+                        >
+                          <NotebookPen size={12} className="shrink-0" aria-hidden />
+                          メモ
+                        </button>
                       </div>
                       <span className="text-[10px] text-muted-foreground">
                         {stock.accountType ?? "特定"}
@@ -527,6 +606,150 @@ export function InventoryTable({
           </tfoot>
         </table>
       </div>
+
+      {noteModalStock ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
+          role="presentation"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
+            aria-label="モーダルを閉じる"
+            onClick={() => !noteSaving && setNoteModalStock(null)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="earnings-note-title"
+            className="relative z-10 flex max-h-[min(90dvh,42rem)] w-[min(100%,26rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl min-h-0 sm:max-w-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+              <div className="min-w-0 space-y-1">
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Research</p>
+                <h2 id="earnings-note-title" className="text-base font-bold tracking-tight text-foreground sm:text-lg">
+                  決算要約メモ
+                </h2>
+                <p className="text-[11px] font-mono text-accent-cyan truncate">{noteModalStock.ticker}</p>
+                {noteModalStock.name ? (
+                  <p className="text-[11px] text-muted-foreground line-clamp-2">{noteModalStock.name}</p>
+                ) : null}
+                {noteModalStock.nextEarningsDate ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    次回決算: {noteModalStock.nextEarningsDate}
+                    {noteModalStock.daysToEarnings != null ? `（あと ${noteModalStock.daysToEarnings} 日）` : ""}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">次回決算日: 未取得</p>
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={noteSaving}
+                onClick={() => setNoteModalStock(null)}
+                className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div
+              className="flex shrink-0 gap-1 border-b border-border px-3 pt-2 sm:px-4"
+              role="tablist"
+              aria-label="メモ表示切替"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={noteModalTab === "edit"}
+                disabled={noteSaving}
+                onClick={() => setNoteModalTab("edit")}
+                className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
+                  noteModalTab === "edit"
+                    ? "bg-background text-foreground border border-b-0 border-border -mb-px"
+                    : "text-muted-foreground hover:text-foreground/90"
+                }`}
+              >
+                編集
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={noteModalTab === "preview"}
+                disabled={noteSaving}
+                onClick={() => setNoteModalTab("preview")}
+                className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
+                  noteModalTab === "preview"
+                    ? "bg-background text-foreground border border-b-0 border-border -mb-px"
+                    : "text-muted-foreground hover:text-foreground/90"
+                }`}
+              >
+                プレビュー
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 flex flex-col gap-3 px-4 py-3 sm:px-5 sm:py-4 bg-background">
+              {noteModalTab === "edit" ? (
+                <>
+                  <label htmlFor="earnings-summary-note" className="sr-only">
+                    決算要約メモ
+                  </label>
+                  <textarea
+                    id="earnings-summary-note"
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    maxLength={EARNINGS_SUMMARY_NOTE_MAX_LEN}
+                    rows={10}
+                    disabled={noteSaving}
+                    className="min-h-[12rem] w-full resize-y rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 disabled:opacity-50"
+                    placeholder="Markdown 対応（見出し・リスト・表・コードブロックなど）。空にして保存で削除。"
+                  />
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                    <span>
+                      {noteDraft.length} / {EARNINGS_SUMMARY_NOTE_MAX_LEN}
+                    </span>
+                    {noteErr ? (
+                      <span className="text-destructive font-bold text-right flex-1">{noteErr}</span>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-[10px] text-muted-foreground -mt-1 mb-1">
+                    入力中の内容を Markdown として表示します（未保存の編集も反映）。
+                  </p>
+                  <div className="min-h-[12rem] max-h-[min(52vh,24rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
+                    <EarningsNoteMarkdownPreview markdown={noteDraft} />
+                  </div>
+                  {noteErr ? (
+                    <div className="flex items-center justify-end text-[10px] text-destructive font-bold">{noteErr}</div>
+                  ) : null}
+                </>
+              )}
+              <div className="flex flex-wrap justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={noteSaving}
+                  onClick={() => setNoteModalStock(null)}
+                  className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60 disabled:opacity-40"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  disabled={noteSaving}
+                  onClick={() => void saveEarningsNote()}
+                  className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
+                >
+                  {noteSaving ? "保存中…" : "保存"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

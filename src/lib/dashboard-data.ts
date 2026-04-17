@@ -361,7 +361,15 @@ type HoldingQueryRow = {
   provider_symbol: unknown;
   valuation_factor: unknown;
   expectation_category?: unknown;
+  earnings_summary_note?: unknown;
 };
+
+function parseEarningsSummaryNote(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw);
+  if (s.trim().length === 0) return null;
+  return s;
+}
 
 type StockDraft = Omit<Stock, "weight"> & { structureTagsJson: string };
 
@@ -526,6 +534,7 @@ function buildDraftsFromHoldingRows(
       providerSymbol,
       structureTagsJson: tagsJson,
       expectationCategory: parseExpectationCategory(row.expectation_category),
+      earningsSummaryNote: parseEarningsSummaryNote(row.earnings_summary_note),
     };
   });
 }
@@ -1020,7 +1029,7 @@ export async function getThemeDetailData(
     (async () => {
       const t = perf.enabled ? Date.now() : 0;
       const out = await db.execute({
-        sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category
+        sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note
               FROM holdings
               WHERE user_id = ? AND quantity > 0
               ORDER BY ticker`,
@@ -1283,7 +1292,7 @@ export async function getThemeDetailData(
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
   const h = await db.execute({
-    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category
+    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note
           FROM holdings
           WHERE user_id = ? AND quantity > 0
           ORDER BY ticker`,
@@ -1476,6 +1485,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       providerSymbol:
         row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
       expectationCategory: parseExpectationCategory(row.expectation_category),
+      earningsSummaryNote: null,
     };
   });
 }

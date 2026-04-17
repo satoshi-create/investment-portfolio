@@ -1,31 +1,19 @@
 import { NextResponse } from "next/server";
 
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
+import {
+  getFreshDashboardCache,
+  getRawDashboardCache,
+  setDashboardCache,
+  type DashboardResponseJson,
+} from "@/src/lib/dashboard-api-cache";
 import { fetchUnresolvedSignalsForUser, getDashboardData } from "@/src/lib/dashboard-data";
 import { getDb, isDbConfigured } from "@/src/lib/db";
 
 export const dynamic = "force-dynamic";
 
-type DashboardResponseJson = {
-  userId: string;
-  stocks: unknown[];
-  allThemes: unknown[];
-  signals: unknown[];
-  structureByTheme: unknown[];
-  structureBySector: unknown[];
-  coreSatellite: unknown;
-  totalMarketValue: number;
-  summary: unknown;
-  /** When returning cached snapshot under pressure */
-  stale?: boolean;
-};
-
-type CacheEntry = { at: number; json: DashboardResponseJson };
-
-const CACHE_TTL_MS = 30_000;
 const SOFT_BUDGET_MS = 10_000;
 
-const cacheByUser = new Map<string, CacheEntry>();
 const inflightByUser = new Map<string, Promise<DashboardResponseJson>>();
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -45,13 +33,6 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-function cached(userId: string): CacheEntry | null {
-  const e = cacheByUser.get(userId) ?? null;
-  if (!e) return null;
-  if (Date.now() - e.at > CACHE_TTL_MS) return null;
-  return e;
-}
-
 export async function GET(request: Request) {
   if (!isDbConfigured()) {
     return NextResponse.json(
@@ -64,9 +45,9 @@ export async function GET(request: Request) {
   const userId = searchParams.get("userId") ?? defaultProfileUserId();
 
   try {
-    const hit = cached(userId);
+    const hit = getFreshDashboardCache(userId);
     if (hit) {
-      return NextResponse.json(hit.json, { headers: { "x-cache": "HIT" } });
+      return NextResponse.json(hit, { headers: { "x-cache": "HIT" } });
     }
 
     const db = getDb();
@@ -102,7 +83,7 @@ export async function GET(request: Request) {
       json = await withTimeout(work, SOFT_BUDGET_MS);
     } catch (e) {
       // Under heavy Yahoo/network slowness, return last known snapshot if any.
-      const last = cacheByUser.get(userId) ?? null;
+      const last = getRawDashboardCache(userId);
       if (last) {
         json = { ...last.json, stale: true };
         return NextResponse.json(json, { headers: { "x-cache": "STALE" } });
@@ -112,7 +93,7 @@ export async function GET(request: Request) {
       inflightByUser.delete(userId);
     }
 
-    cacheByUser.set(userId, { at: Date.now(), json });
+    setDashboardCache(userId, json);
     return NextResponse.json(json, { headers: { "x-cache": "MISS" } });
   } catch (e) {
     const err = e instanceof Error ? e : new Error("Unknown error");

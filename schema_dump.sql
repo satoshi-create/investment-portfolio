@@ -98,6 +98,7 @@ CREATE TABLE "holdings" (
     expectation_category IS NULL
     OR expectation_category IN ('Growth', 'Recovery', 'Quality', 'Value', 'Heritage')
   ),
+  `earnings_summary_note` text,
   CONSTRAINT `fk_holdings_user_id_profiles_id_fk` FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`) ON DELETE CASCADE,
   CONSTRAINT "holdings_check_1" CHECK(category IN ('Core','Satellite')),
   CONSTRAINT "holdings_account_type_check" CHECK(account_type IN ('特定','NISA'))

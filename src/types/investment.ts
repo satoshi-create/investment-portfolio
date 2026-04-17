@@ -108,6 +108,8 @@ export interface Stock {
   providerSymbol?: string | null;
   /** `holdings.expectation_category`。未設定は null */
   expectationCategory: ExpectationCategory | null;
+  /** `holdings.earnings_summary_note`（決算要約メモ）。未設定は null */
+  earningsSummaryNote: string | null;
 }
 
 export interface Signal extends Stock {

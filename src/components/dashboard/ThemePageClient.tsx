@@ -1244,6 +1244,11 @@ export function ThemePageClient({
                 stocks={stocks}
                 totalHoldings={stocks.length}
                 averageAlpha={data.themeAverageAlpha}
+                userId={DEFAULT_USER_ID}
+                onEarningsNoteSaved={() => {
+                  const ac = new AbortController();
+                  void load(ac.signal);
+                }}
                 onTrade={(init) =>
                   openTradeForm({ ...init, themeId: theme?.id ?? init.themeId })
                 }
