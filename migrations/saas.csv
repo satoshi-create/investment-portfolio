@@ -1,0 +1,14 @@
+id,theme_id,ticker,company_name,field,role,is_major_player,observation_started_at
+1,saas_apoc_26,SNOW,Snowflake Inc.,クラウドデータ基盤,蔵元（データ集積）,TRUE,2026-01-01
+2,saas_apoc_26,NOW,"ServiceNow, Inc.",業務プロセスSaaS,問屋（業務流通）,TRUE,2026-01-01
+3,saas_apoc_26,MSFT,Microsoft Corp.,生産性/プラットフォーム,大名（全域支配）,TRUE,2026-04-17
+4,saas_apoc_26,CRM,"Salesforce, Inc.",顧客管理 (CRM),奉行所（顧客統治）,TRUE,2026-04-17
+5,saas_apoc_26,ADBE,Adobe Inc.,クリエイティブSaaS,絵師（表現インフラ）,TRUE,2026-04-17
+6,saas_apoc_26,DDOG,"Datadog, Inc.",オブザーバビリティ,目付（監視役）,FALSE,2026-04-17
+7,saas_apoc_26,CRWD,CrowdStrike Holdings,サイバーセキュリティ,用心棒（外敵防衛）,TRUE,2026-04-17
+8,saas_apoc_26,PLTR,Palantir Technologies,AIデータ解析,軍師（知略・分析）,TRUE,2026-04-17
+9,saas_apoc_26,SHOP,Shopify Inc.,Eコマース基盤,宿場町（商い基盤）,TRUE,2026-04-17
+10,saas_apoc_26,TEAM,Atlassian Corp.,開発コラボレーション,瓦版（情報共有）,FALSE,2026-04-17
+11,saas_apoc_26,TEAM,Atlassian (Trello),プロジェクト管理,回覧板（進捗共有）,TRUE,2026-04-17
+12,saas_apoc_26,SQ,"Block, Inc.",金融決済エコシステム,両替商（決済・流通）,TRUE,2026-04-17
+13,saas_apoc_26,ADBE,Adobe (Figma),デザインコラボレーション,設計図（意匠・構築）,TRUE,2026-04-17

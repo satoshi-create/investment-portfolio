@@ -265,6 +265,31 @@ export function computePriceDrawdownFromHighPercent(
   return roundAlphaMetric((currentPrice / high - 1) * 100);
 }
 
+export type OpportunityType = "DEEP_VALUE" | "STRUCTURAL_DIP";
+
+/**
+ * Detect "dip" opportunity type by combining statistical deviation (Z) and price drawdown.
+ *
+ * - Deep Value: Z < -1.5σ and drawdown > 20%
+ * - Structural Dip: -0.5 < Z < +0.5 and drawdown > 30%
+ *
+ * Note: `drawdownFromHighPct` is negative below the high (e.g. -25 means -25% from the high).
+ */
+export function detectOpportunityType(input: {
+  alphaDeviationZ: number | null | undefined;
+  drawdownFromHighPct: number | null | undefined;
+}): OpportunityType | null {
+  const z = input.alphaDeviationZ;
+  const dd = input.drawdownFromHighPct;
+  if (z == null || dd == null) return null;
+  if (!Number.isFinite(z) || !Number.isFinite(dd)) return null;
+
+  // Drawdown is negative under the high; "drop rate > 20%" means dd <= -20.
+  if (z < -1.5 && dd <= -20) return "DEEP_VALUE";
+  if (z > -0.5 && z < 0.5 && dd <= -30) return "STRUCTURAL_DIP";
+  return null;
+}
+
 /** 加重累積 Alpha 系列が直近で上向きか（終値 vs 数点手前）。 */
 export function isCumulativeSeriesTrendUpward(
   series: { cumulative: number }[],

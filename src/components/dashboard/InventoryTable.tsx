@@ -15,6 +15,7 @@ import { EarningsNoteMarkdownPreview } from "@/src/components/dashboard/Earnings
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
+import { detectOpportunityType } from "@/src/lib/alpha-logic";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -322,6 +323,9 @@ export function InventoryTable({
               >
                 Research{sortMark("research")}
               </th>
+              <th className="px-4 py-4 text-center whitespace-nowrap" title="押し目（Dip）判定">
+                Opportunity
+              </th>
               {showValueCols ? (
                 <>
                   <th
@@ -380,6 +384,10 @@ export function InventoryTable({
               const opp = isOpportunityRow(stock, themeStructuralTrendUp);
               const z = deviationOf(stock);
               const dd = drawdownOf(stock);
+              const opportunityType = detectOpportunityType({
+                alphaDeviationZ: z,
+                drawdownFromHighPct: dd,
+              });
               return (
                 <tr key={stock.id} className="group hover:bg-muted/60 transition-all">
                   <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
@@ -493,6 +501,19 @@ export function InventoryTable({
                         {stock.accountType ?? "特定"}
                       </span>
                     </div>
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    {opportunityType === "DEEP_VALUE" ? (
+                      <span className="text-base leading-none" title="Deep Value（Z<-1.5σ & 落率>20%）" aria-label="Deep Value">
+                        💎
+                      </span>
+                    ) : opportunityType === "STRUCTURAL_DIP" ? (
+                      <span className="text-base leading-none" title="Structural Dip（-0.5σ<Z<+0.5σ & 落率>30%）" aria-label="Structural Dip">
+                        🌊
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">—</span>
+                    )}
                   </td>
                   {showValueCols ? (
                     <>
@@ -638,6 +659,7 @@ export function InventoryTable({
                 {structureFilter.trim() || expectationFilter !== "" ? `（全 ${totalHoldings}）` : ""}
               </td>
               <td className="px-6 py-3" />
+              <td className="px-4 py-3" />
               {showValueCols ? (
                 <>
                   <td className="px-6 py-3" />

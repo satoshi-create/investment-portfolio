@@ -44,6 +44,7 @@ import {
 } from "@/src/lib/csv-export";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { SemiconductorSupplyChainObservationPanel } from "@/src/components/dashboard/SemiconductorSupplyChainObservationPanel";
+import { SaaSApocalypseLensPanel } from "@/src/components/dashboard/SaaSApocalypseLensPanel";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import {
@@ -1155,6 +1156,8 @@ export function ThemePageClient({
         {canRenderContent ? (
           <>
             <ThemeMetaBlock theme={theme} themeName={themeLabel} />
+
+            {themeLabel === "SaaSアポカリプス" ? <SaaSApocalypseLensPanel /> : null}
 
             {isSemiconductorSupplyChainTheme ? (
               <SemiconductorSupplyChainObservationPanel
