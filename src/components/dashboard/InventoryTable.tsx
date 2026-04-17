@@ -36,6 +36,16 @@ function drawdownOf(s: Stock): number | null {
   return d != null && Number.isFinite(d) ? d : null;
 }
 
+function peOf(s: Stock): number | null {
+  const v = s.trailingPe ?? s.forwardPe ?? null;
+  return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function epsOf(s: Stock): number | null {
+  const v = s.trailingEps ?? s.forwardEps ?? null;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
 function isOpportunityRow(s: Stock, themeStructuralTrendUp: boolean): boolean {
   if (!themeStructuralTrendUp) return false;
   const z = deviationOf(s);
@@ -205,6 +215,21 @@ export function InventoryTable({
   function fmtDd(d: number | null): string {
     if (d == null) return "—";
     return `${d > 0 ? "+" : ""}${d.toFixed(2)}%`;
+  }
+
+  function fmtPe(v: number | null): string {
+    if (v == null) return "—";
+    if (!Number.isFinite(v) || v <= 0) return "—";
+    return v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  }
+
+  function fmtEps(v: number | null): string {
+    if (v == null) return "—";
+    if (!Number.isFinite(v)) return "—";
+    const abs = Math.abs(v);
+    if (abs >= 100) return v.toFixed(0);
+    if (abs >= 10) return v.toFixed(2);
+    return v.toFixed(3);
   }
 
   return (
@@ -544,6 +569,32 @@ export function InventoryTable({
                           <span className="text-[7px] font-bold uppercase tracking-wide text-emerald-400/90">Live</span>
                         </span>
                       ) : null}
+                      {(() => {
+                        const pe = peOf(stock);
+                        const eps = epsOf(stock);
+                        const epsIsLoss = eps != null && eps <= 0;
+                        const hasAny = pe != null || eps != null || epsIsLoss;
+                        if (!hasAny) return null;
+                        return (
+                          <span
+                            className="text-[9px] font-mono text-muted-foreground whitespace-nowrap"
+                            title={[
+                              `PER: trailing=${stock.trailingPe ?? "—"} / forward=${stock.forwardPe ?? "—"}`,
+                              `EPS: trailing=${stock.trailingEps ?? "—"} / forward=${stock.forwardEps ?? "—"}`,
+                              epsIsLoss ? "EPS <= 0（赤字・特損など含む）。PERは参考になりにくいので注意。" : "",
+                            ]
+                              .filter((x) => x.length > 0)
+                              .join("\n")}
+                          >
+                            <span className={epsIsLoss ? "text-rose-300 font-bold" : ""}>
+                              {epsIsLoss ? "赤字 " : ""}
+                            </span>
+                            <span>PER {fmtPe(pe)}</span>
+                            <span className="mx-1">/</span>
+                            <span>EPS {fmtEps(eps)}</span>
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td className="px-4 py-4 text-right bg-card md:sticky md:right-0 md:z-10 md:bg-background group-hover:bg-muted/60 min-w-[5.75rem]">

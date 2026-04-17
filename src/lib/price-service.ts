@@ -55,6 +55,14 @@ export type EquityResearchSnapshot = {
   annualDividendRate: number | null;
   /** Dividend yield percent (e.g. 2.15). */
   dividendYieldPercent: number | null;
+  /** Trailing P/E (TTM). */
+  trailingPe: number | null;
+  /** Forward P/E (next FY / forward estimate). */
+  forwardPe: number | null;
+  /** Trailing EPS (TTM). */
+  trailingEps: number | null;
+  /** Forward EPS (next FY / forward estimate). */
+  forwardEps: number | null;
 };
 
 /** Row ready for `alpha_history` / dashboard (daily alpha vs VOO, last shared session). */
@@ -205,6 +213,12 @@ function parseDividendYieldPercent(raw: unknown): number | null {
   return n <= 1.5 ? Math.round(n * 10000) / 100 : Math.round(n * 100) / 100;
 }
 
+function parseFiniteNumberOrNull(raw: unknown): number | null {
+  if (raw == null) return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 function daysUntilYmd(ymd: string): number | null {
   const d = new Date(`${ymd}T00:00:00.000Z`);
   if (Number.isNaN(d.getTime())) return null;
@@ -232,7 +246,7 @@ export async function fetchEquityResearchSnapshots(
     if (!sym) return null;
     try {
       const qs = await yahooFinance.quoteSummary(sym, {
-        modules: ["calendarEvents", "summaryDetail"],
+        modules: ["calendarEvents", "summaryDetail", "defaultKeyStatistics"],
       });
 
       type YahooEarningsDateLike = { raw?: unknown; fmt?: unknown };
@@ -245,7 +259,13 @@ export async function fetchEquityResearchSnapshots(
         summaryDetail?: {
           dividendRate?: unknown;
           dividendYield?: unknown;
+          trailingPE?: unknown;
+          forwardPE?: unknown;
           exDividendDate?: unknown;
+        };
+        defaultKeyStatistics?: {
+          trailingEps?: unknown;
+          forwardEps?: unknown;
         };
       };
       const qss = qs as unknown as YahooQuoteSummaryShape;
@@ -270,12 +290,21 @@ export async function fetchEquityResearchSnapshots(
       const dividendYieldPercent = parseDividendYieldPercent(qss.summaryDetail?.dividendYield);
       const exDividendDate = ymdFromYahooDateLike(qss.summaryDetail?.exDividendDate as unknown) ?? null;
 
+      const trailingPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.trailingPE);
+      const forwardPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.forwardPE);
+      const trailingEps0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.trailingEps);
+      const forwardEps0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.forwardEps);
+
       return {
         ticker: ticker.toUpperCase(),
         nextEarningsDate,
         exDividendDate,
         annualDividendRate,
         dividendYieldPercent,
+        trailingPe: trailingPe0 != null && trailingPe0 > 0 ? trailingPe0 : null,
+        forwardPe: forwardPe0 != null && forwardPe0 > 0 ? forwardPe0 : null,
+        trailingEps: trailingEps0,
+        forwardEps: forwardEps0,
       } satisfies EquityResearchSnapshot;
     } catch (e) {
       logSkip(sym, "quoteSummary failed (research snapshot)", e);

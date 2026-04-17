@@ -420,6 +420,10 @@ function buildDraftsFromHoldingRows(
       exDividendDate: string | null;
       annualDividendRate: number | null;
       dividendYieldPercent: number | null;
+      trailingPe: number | null;
+      forwardPe: number | null;
+      trailingEps: number | null;
+      forwardEps: number | null;
     }
   >,
   fxUsdJpy: number,
@@ -468,6 +472,10 @@ function buildDraftsFromHoldingRows(
     const exDividendDate = research?.exDividendDate ?? null;
     const annualDividendRate = research?.annualDividendRate ?? null;
     const dividendYieldPercent = research?.dividendYieldPercent ?? null;
+    const trailingPe = research?.trailingPe ?? null;
+    const forwardPe = research?.forwardPe ?? null;
+    const trailingEps = research?.trailingEps ?? null;
+    const forwardEps = research?.forwardEps ?? null;
     const daysToEarnings = nextEarningsDate != null ? (() => {
       const d = new Date(`${nextEarningsDate}T00:00:00.000Z`);
       if (Number.isNaN(d.getTime())) return null;
@@ -514,6 +522,10 @@ function buildDraftsFromHoldingRows(
       daysToExDividend,
       annualDividendRate,
       dividendYieldPercent,
+      trailingPe,
+      forwardPe,
+      trailingEps,
+      forwardEps,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
       alphaDeviationZ,
@@ -608,6 +620,10 @@ async function enrichEcosystemMemberRow(
       exDividendDate: string | null;
       annualDividendRate: number | null;
       dividendYieldPercent: number | null;
+      trailingPe: number | null;
+      forwardPe: number | null;
+      trailingEps: number | null;
+      forwardEps: number | null;
     }
   >,
   options?: { fast?: boolean },
@@ -1458,6 +1474,10 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       daysToExDividend: null,
       annualDividendRate: null,
       dividendYieldPercent: null,
+      trailingPe: null,
+      forwardPe: null,
+      trailingEps: null,
+      forwardEps: null,
       tag,
       alphaHistory: [alpha],
       weight: 0,

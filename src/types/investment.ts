@@ -63,6 +63,11 @@ export interface Stock {
   annualDividendRate: number | null;
   /** 年間配当利回り %。取得できない場合は null */
   dividendYieldPercent: number | null;
+  /** Yahoo 等のバリュエーション指標（無い場合は null）。投信などは通常 null。 */
+  trailingPe: number | null;
+  forwardPe: number | null;
+  trailingEps: number | null;
+  forwardEps: number | null;
   /** 構造投資テーマ（`structure_tags` 先頭） */
   tag: string;
   alphaHistory: AlphaHistory;
