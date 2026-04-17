@@ -1,0 +1,40 @@
+Company Name,Company Name_en,Country,Field,Primary Role,Ticker
+ピュア・ストレージ,"Pure Storage, Inc.",US,データストレージ,企業向けオールフラッシュストレージ,PSTG
+ネットアップ,"NetApp, Inc.",US,データストレージ,データ管理・ストレージOS,NTAP
+デル・テクノロジーズ,Dell Technologies Inc.,US,データストレージ,サーバー・ストレージ統合提供,DELL
+MYRグループ,MYR Group Inc.,US,建設・電力,電力・通信の電気工事,MYRG
+エムコア・グループ,"EMCOR Group, Inc.",US,建設・電力,機械・電気設備工事,EME
+NRGエナジー,"NRG Energy, Inc.",US,建設・電力,発電・電力供給,NRG
+マステック,"MasTec, Inc.",US,建設・電力,通信・エネルギー建設,MTZ
+ジェネラック・ホールディングス,Generac Holdings Inc.,US,建設・電力,非常用・分散型発電機,GNRC
+ビストラ,Vistra Corp.,US,建設・電力,大規模発電事業,VST
+GEベルノバ,GE Vernova Inc.,US,建設・電力,発電・送電インフラ,GEV
+ビットディア・テクノロジーズ・グループ,Bitdeer Technologies Group,US,ビットコイン採掘,採掘→AI/HPC DC転用,BTDR
+コンステレーション・エナジー,Constellation Energy Corporation,US,建設・電力,原子力中心の発電会社,CEG
+ホワイトファイバー,"WhiteFiber, Inc.",US,ビットコイン採掘,HPC向けDC転換,BTBT
+イートン,Eaton Corporation plc,US,空調・冷却・水,電力管理機器,ETN
+ライオット・プラットフォームズ,"Riot Platforms, Inc.",US,ビットコイン採掘,大規模電力契約,RIOT
+バーティブ・ホールディングス,Vertiv Holdings Co,US,空調・冷却・水,DC専用電力・冷却,VRT
+アメリカン・ウォーター・ワークス,American Water Works Company,US,空調・冷却・水,上水道事業,AWK
+ザイレム,Xylem Inc.,US,空調・冷却・水,水・冷却管理技術,XYL
+コンフォート・システムズUSA,"Comfort Systems USA, Inc.",US,空調・冷却・水,HVAC設置・保守,FIX
+マイクロソフト,Microsoft Corporation,US,ソフトウエア,クラウド・AI基盤,MSFT
+エコラボ,Ecolab Inc.,US,空調・冷却・水,産業向け水管理,ECL
+スノーフレイク,Snowflake Inc.,US,ソフトウエア,クラウドデータ基盤,SNOW
+アルファベット,Alphabet Inc.,US,ソフトウエア,検索・クラウド,GOOGL
+データドッグ,"Datadog, Inc.",US,ソフトウエア,監視・運用ソフト,DDOG
+メタ・プラットフォームズ,"Meta Platforms, Inc.",US,ソフトウエア,AI大規模利用,META
+サービスナウ,"ServiceNow, Inc.",US,ソフトウエア,業務プロセスSaaS,NOW
+Duke Energy,,US,素材,電力,DUK
+Southern Company,,US,素材,電力,SO
+Alcoa,,US,素材,アルミ,AA
+Waste Management,,US,素材,廃棄物・分別,WM
+Republic Services,,US,素材,廃棄物・分別,RSG
+MP Materials,,US,素材,レアアース,MP
+Equinix,,US,建設・電力,相互接続型DC／ネットワーク中立ハブ,EQIX
+Digital Realty,,US,建設・電力,大規模DC不動産／ハイパースケール対応,DLR
+Oklo,Oklo,US,SMR・次世代炉,AI向け小型炉（将来枠）,OKLO
+Cameco,Cameco,US,ウラン供給,世界最大級ウラン供給,CCJ
+Centrus Energy,Centrus Energy,US,核燃料加工（HALEU）,次世代炉燃料のボトルネック,LEU
+NuScale Power,NuScale Power,US,SMR,SMR商用化（実証枠）,SMR
+First Trust Global Wind Energy ETF,First Trust Global Wind Energy ETF,US,ETF,風力特化ETF,FAN
