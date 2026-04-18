@@ -40,7 +40,7 @@ export function Sidebar({
   const pathname = usePathname() ?? "";
 
   return (
-    <aside className="flex w-[13.5rem] shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur-sm">
+    <aside className="flex h-full w-[13.5rem] shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur-sm">
       <div className="border-b border-border px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

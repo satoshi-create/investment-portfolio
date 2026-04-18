@@ -82,7 +82,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-row min-w-0 md:min-h-0">
         {/* Desktop sidebar */}
         <div
-          className={`hidden md:block shrink-0 overflow-hidden transition-[width] duration-200 ease-out ${
+          className={`hidden md:block shrink-0 self-stretch h-full overflow-hidden transition-[width] duration-200 ease-out ${
             sidebarOpen ? "w-[13.5rem]" : "w-14"
           }`}
         >
