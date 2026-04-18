@@ -6,6 +6,7 @@ export function StatBox({
   subLabel,
   valueColor = "text-white",
   title,
+  footnote,
 }: {
   label: string;
   value: string;
@@ -13,6 +14,8 @@ export function StatBox({
   valueColor?: string;
   /** ホバーで基準時刻などを表示 */
   title?: string;
+  /** Subtext under `subLabel` (e.g. alpha as-of NY session). */
+  footnote?: string;
 }) {
   return (
     <div title={title}>
@@ -25,6 +28,11 @@ export function StatBox({
           {subLabel}
         </p>
       )}
+      {footnote != null && footnote.length > 0 ? (
+        <p className="text-[8px] mt-1.5 leading-snug font-medium normal-case tracking-normal text-slate-500/95">
+          {footnote}
+        </p>
+      ) : null}
     </div>
   );
 }

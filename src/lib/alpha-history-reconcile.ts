@@ -120,8 +120,19 @@ function needsBackfill(total: number, recent: number, latestYmd: string | null):
   return false;
 }
 
+/** 単一日だけ再計算・upsert するときに `backfillAlphaHistoryForTicker` へ渡す。 */
+export type BackfillAlphaHistoryOptions = {
+  /** 終端観測日 YYYY-MM-DD がこの集合に含まれるときだけ書き込む（それ以外の日はスキップ）。 */
+  onlyRecordedAtYmds?: Set<string>;
+};
+
+function normalizeForceYmd(raw: string | undefined): string | null {
+  const t = raw?.trim().slice(0, 10) ?? "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+}
+
 /**
- * Yahoo + VOO 対比で `alpha_history` を upsert。保有に紐づかない観測ティッカーは `holdingId` を省略。
+ * Yahoo + 銘柄種別の既定ベンチで `alpha_history` を upsert。保有に紐づかない観測ティッカーは `holdingId` を省略。
  */
 export async function backfillAlphaHistoryForTicker(
   db: Client,
@@ -134,6 +145,7 @@ export async function backfillAlphaHistoryForTicker(
   benchBars: PriceBar[],
   benchmarkTicker: string,
   days: number,
+  options?: BackfillAlphaHistoryOptions,
 ): Promise<number> {
   const benchByDate = new Map(benchBars.map((b) => [b.date, b.close]));
   const stockBars = await fetchPriceHistory(args.ticker, days, args.providerSymbol ?? null);
@@ -150,10 +162,15 @@ export async function backfillAlphaHistoryForTicker(
     return 0;
   }
 
+  const onlyDates = options?.onlyRecordedAtYmds;
+  const restrictDates = onlyDates != null && onlyDates.size > 0;
+
   let written = 0;
   for (let i = 1; i < shared.length; i++) {
     const dPrev = shared[i - 1]!;
     const dCur = shared[i]!;
+    if (restrictDates && !onlyDates!.has(dCur)) continue;
+
     const s0 = stockBy.get(dPrev);
     const s1 = stockBy.get(dCur);
     const b0 = benchByDate.get(dPrev);
@@ -191,6 +208,7 @@ async function backfillOneHolding(
   benchBars: PriceBar[],
   benchmarkTicker: string,
   days: number,
+  options?: BackfillAlphaHistoryOptions,
 ): Promise<number> {
   return backfillAlphaHistoryForTicker(
     db,
@@ -199,6 +217,7 @@ async function backfillOneHolding(
     benchBars,
     benchmarkTicker,
     days,
+    options,
   );
 }
 
@@ -210,13 +229,13 @@ export type ReconcileWatchlistAlphaResult = {
 };
 
 /**
- * テーマエコシステム等の「保有外」ティッカーに対し、履歴が薄いときだけ VOO 対比 Alpha をバックフィルする。
+ * テーマエコシステム等の「保有外」ティッカーに対し、履歴が薄いときだけ既定ベンチ対比 Alpha をバックフィルする。
  */
 export async function reconcileAlphaHistoryForWatchlistTickers(
   db: Client,
   userId: string,
   targets: AlphaWatchTarget[],
-  options?: { days?: number; delayMs?: number; maxTickers?: number },
+  options?: { days?: number; delayMs?: number; maxTickers?: number; forceRebackfillYmd?: string },
 ): Promise<ReconcileWatchlistAlphaResult> {
   /** 直近 90 日窓 + 営業日ズレを吸収するため、既定はテーマ窓より長めに取る。 */
   const days =
@@ -224,6 +243,9 @@ export async function reconcileAlphaHistoryForWatchlistTickers(
     Math.min(150, Math.max(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS + 45, 60));
   const delayMs = Math.max(0, Math.floor(options?.delayMs ?? 200));
   const maxTickers = Math.max(1, Math.floor(options?.maxTickers ?? 20));
+  const forceYmd = normalizeForceYmd(options?.forceRebackfillYmd);
+  const singleDayOpts: BackfillAlphaHistoryOptions | undefined =
+    forceYmd != null ? { onlyRecordedAtYmds: new Set([forceYmd]) } : undefined;
 
   let rowsBackfilled = 0;
   const backfilledTickers: string[] = [];
@@ -238,7 +260,7 @@ export async function reconcileAlphaHistoryForWatchlistTickers(
       const total = await countAlphaHistoryTotal(db, userId, t.ticker, benchmarkTicker);
       const recent = await countAlphaHistoryRecent(db, userId, t.ticker, benchmarkTicker);
       const latestYmd = await getLatestAlphaHistoryYmd(db, userId, t.ticker, benchmarkTicker);
-      if (!needsBackfill(total, recent, latestYmd)) continue;
+      if (!needsBackfill(total, recent, latestYmd) && forceYmd == null) continue;
 
       let benchBars = benchBarsCache.get(benchmarkTicker) ?? null;
       if (!benchBars) {
@@ -247,7 +269,7 @@ export async function reconcileAlphaHistoryForWatchlistTickers(
       }
       if (benchBars.length < 2) break;
 
-      const n = await backfillAlphaHistoryForTicker(db, userId, t, benchBars, benchmarkTicker, days);
+      const n = await backfillAlphaHistoryForTicker(db, userId, t, benchBars, benchmarkTicker, days, singleDayOpts);
       rowsBackfilled += n;
       if (n > 0) backfilledTickers.push(t.ticker);
     } catch (e) {
@@ -275,7 +297,7 @@ export type ReconcileAlphaHistoryResult = {
 export async function reconcileAlphaHistoryForUser(
   userId: string,
   db: Client,
-  options?: { days?: number },
+  options?: { days?: number; forceRebackfillYmd?: string },
 ): Promise<ReconcileAlphaHistoryResult> {
   const holdings = await fetchHoldingsWithProviderForUser(db, userId);
   const linkedTickers: string[] = [];
@@ -283,12 +305,16 @@ export async function reconcileAlphaHistoryForUser(
   let rowsBackfilled = 0;
 
   const days = options?.days ?? Math.max(5, Math.min(120, Math.floor(Number(process.env.BACKFILL_DAYS ?? "30") || 30)));
+  const forceYmd = normalizeForceYmd(options?.forceRebackfillYmd);
+  const singleDayOpts: BackfillAlphaHistoryOptions | undefined =
+    forceYmd != null ? { onlyRecordedAtYmds: new Set([forceYmd]) } : undefined;
 
   signalsDebug("reconcileAlphaHistoryForUser start", {
     userId,
     holdingCount: holdings.length,
     backfillWindowDays: days,
     benchmarkDefaultFallback: SIGNAL_BENCHMARK_TICKER,
+    forceRebackfillYmd: forceYmd,
   });
 
   const benchBarsCache = new Map<string, PriceBar[]>();
@@ -313,7 +339,7 @@ export async function reconcileAlphaHistoryForUser(
       needsBackfill: need,
       benchmark: benchmarkTicker,
     });
-    if (!need) continue;
+    if (!need && forceYmd == null) continue;
 
     let benchBars = benchBarsCache.get(benchmarkTicker) ?? null;
     if (!benchBars) {
@@ -329,7 +355,7 @@ export async function reconcileAlphaHistoryForUser(
       break;
     }
 
-    const n = await backfillOneHolding(db, userId, h, benchBars, benchmarkTicker, days);
+    const n = await backfillOneHolding(db, userId, h, benchBars, benchmarkTicker, days, singleDayOpts);
     rowsBackfilled += n;
     if (n > 0) backfilledTickers.push(h.ticker);
     signalsDebug("backfillOneHolding result", { ticker: h.ticker, benchmark: benchmarkTicker, rowsWritten: n });

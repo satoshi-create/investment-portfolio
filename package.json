@@ -14,6 +14,9 @@
     "verify:prices": "tsx scripts/verify-price-alpha.ts",
     "set:provider-symbol": "tsx scripts/set-provider-symbol.ts",
     "backfill:alpha": "tsx scripts/backfill-alpha-history.ts",
+    "clean:alpha-extreme": "tsx scripts/clean-alpha-history-extreme-rows.ts",
+    "rebackfill:alpha-ymd": "tsx scripts/rebackfill-alpha-ymd.ts",
+    "debug:holdings-alpha": "tsx scripts/debug-holdings-alpha-tail.ts",
     "snapshot:daily": "tsx scripts/record-portfolio-snapshot.ts",
     "migrate:portfolio-benchmark-pct": "tsx scripts/migrate-portfolio-benchmark-change-pct.ts"
   },

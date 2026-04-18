@@ -20,8 +20,10 @@ import {
   computeAlphaDeviationZScore,
   computePriceDrawdownFromHighPercent,
   computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses,
+  computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas,
   computeThemeUsJpRatiosFromStocks,
   convertValueToJpy,
+  CUMULATIVE_ALPHA_DISPLAY_ANCHOR_YMD,
   defaultBenchmarkTickerForTicker,
   dailyReturnPercent,
   mergeWeightedCumulativeAlphaSeries,
@@ -41,6 +43,9 @@ import {
 } from "@/src/lib/alpha-history-reconcile";
 import { parseAdoptionStage } from "@/src/lib/adoption-stage";
 import { parseExpectationCategory } from "@/src/lib/expectation-category";
+import {
+  formatPortfolioAvgAlphaAsOfDisplay,
+} from "@/src/lib/us-market-session";
 import {
   aggregateByHoldingSector,
   aggregateByTheme,
@@ -66,7 +71,12 @@ import {
 
 const TARGET_CORE_PERCENT = 90;
 
-type AlphaPoint = { alpha: number; close: number | null };
+type AlphaPoint = { alpha: number; close: number | null; /** 日次 α の観測日（`alpha_history.recorded_at` 暦日） */ observationYmd: string };
+
+/**
+ * `alpha_history` 行 → ティッカー別の日次 Alpha 系列。
+ * **暦日でソート**し同一日は後勝ち。Inventory の「Alpha」は `slice(-1)` で参照するため、順序ズレがあると最新日ではない値が表示される。
+ */
 
 function asCategory(raw: string): HoldingCategory {
   return raw === "Core" ? "Core" : "Satellite";
@@ -105,7 +115,7 @@ async function fetchAlphaHistoryRowsForTickers(
   for (const [bench, ts] of byBench) {
     const placeholders = ts.map(() => "?").join(",");
     const rs = await db.execute({
-      sql: `SELECT ticker, alpha_value, recorded_at, close_price FROM alpha_history
+      sql: `SELECT ticker, alpha_value, recorded_at, close_price, benchmark_ticker FROM alpha_history
             WHERE user_id = ? AND benchmark_ticker = ? AND ticker IN (${placeholders})
             ORDER BY ticker ASC, recorded_at ASC`,
       args: [userId, bench, ...ts],
@@ -113,7 +123,24 @@ async function fetchAlphaHistoryRowsForTickers(
     allRows.push(...(rs.rows as Record<string, unknown>[]));
   }
 
-  return allRows;
+  return filterAlphaHistoryRowsToDefaultBenchmark(allRows);
+}
+
+/** 同一暦日に複数ベンチの行が残っている DB でも、銘柄種別の既定ベンチのみを採用（合算・後勝ち混線を防ぐ）。 */
+function filterAlphaHistoryRowsToDefaultBenchmark(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const row of rows) {
+    const tk = String(row["ticker"] ?? "").trim();
+    if (tk.length === 0) continue;
+    const rawBench = row["benchmark_ticker"];
+    if (rawBench == null || String(rawBench).trim().length === 0) {
+      out.push(row);
+      continue;
+    }
+    const bench = String(rawBench).trim();
+    if (bench === defaultBenchmarkTickerForTicker(tk)) out.push(row);
+  }
+  return out;
 }
 
 function parseJsonIntArray(raw: unknown): number[] {
@@ -276,13 +303,39 @@ function computeCoreSatellite(stocks: Stock[]): CoreSatelliteBreakdown {
   };
 }
 
-function computePortfolioAverageAlpha(stocks: Stock[]): number {
-  const latest = stocks
-    .map((s) => (s.alphaHistory.length > 0 ? s.alphaHistory[s.alphaHistory.length - 1]! : null))
-    .filter((x): x is number => x != null && Number.isFinite(x));
-  if (latest.length === 0) return 0;
-  const sum = latest.reduce((a, b) => a + b, 0);
-  return roundAlphaMetric(sum / latest.length);
+export type PortfolioAverageAlphaSummary = {
+  average: number;
+  stalestLatestObservationYmd: string | null;
+  freshestLatestObservationYmd: string | null;
+};
+
+/**
+ * 各保有の「最新日次 α」の単純平均に加え、観測日の鮮度（最古/最新）を返す。
+ */
+function computePortfolioAverageAlphaSummary(stocks: Stock[]): PortfolioAverageAlphaSummary {
+  const values: number[] = [];
+  let stalest: string | null = null;
+  let freshest: string | null = null;
+  for (const s of stocks) {
+    if (s.alphaHistory.length === 0) continue;
+    const a = s.alphaHistory[s.alphaHistory.length - 1]!;
+    if (!Number.isFinite(a)) continue;
+    values.push(a);
+    const y = s.latestAlphaObservationYmd;
+    if (y != null && y.length === 10) {
+      if (stalest == null || y < stalest) stalest = y;
+      if (freshest == null || y > freshest) freshest = y;
+    }
+  }
+  if (values.length === 0) {
+    return { average: 0, stalestLatestObservationYmd: null, freshestLatestObservationYmd: null };
+  }
+  const sum = values.reduce((x, y) => x + y, 0);
+  return {
+    average: roundAlphaMetric(sum / values.length),
+    stalestLatestObservationYmd: stalest,
+    freshestLatestObservationYmd: freshest,
+  };
 }
 
 type BenchmarkSnapshot = {
@@ -411,17 +464,31 @@ function parseEarningsSummaryNote(raw: unknown): string | null {
 type StockDraft = Omit<Stock, "weight"> & { structureTagsJson: string };
 
 function buildByTickerFromAlphaRows(rows: Iterable<Record<string, unknown>>): Map<string, AlphaPoint[]> {
-  const byTicker = new Map<string, AlphaPoint[]>();
+  const byTickerDay = new Map<string, Map<string, AlphaPoint>>();
   for (const row of rows) {
-    const tk = String(row["ticker"]);
-    if (!byTicker.has(tk)) byTicker.set(tk, []);
+    const tk = String(row["ticker"]).trim();
+    if (tk.length === 0) continue;
+    const ra = row["recorded_at"];
+    if (ra == null) continue;
+    const ymd = toYmd(String(ra));
+    if (ymd.length !== 10) continue;
     const cp = row["close_price"];
-    byTicker.get(tk)!.push({
+    const pt: AlphaPoint = {
       alpha: Number(row["alpha_value"]),
       close: cp != null && Number.isFinite(Number(cp)) ? Number(cp) : null,
-    });
+      observationYmd: ymd,
+    };
+    if (!byTickerDay.has(tk)) byTickerDay.set(tk, new Map());
+    byTickerDay.get(tk)!.set(ymd, pt);
   }
-  return byTicker;
+  const out = new Map<string, AlphaPoint[]>();
+  for (const [tk, dayMap] of byTickerDay) {
+    const arr = [...dayMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([, p]) => p);
+    out.set(tk, arr);
+  }
+  return out;
 }
 
 /** 同一日複数行は後勝ち。日付昇順の `DatedAlphaRow[]` をティッカー別に構築。 */
@@ -471,6 +538,8 @@ function buildDraftsFromHoldingRows(
     const ticker = String(row.ticker);
     const series = byTicker.get(ticker) ?? [];
     const alphaHistory = series.map((p) => p.alpha);
+    const latestAlphaObservationYmd =
+      series.length > 0 ? series[series.length - 1]!.observationYmd : null;
     const closesForDrawdown = series.map((p) => p.close);
     const seriesClose = latestCloseFromSeries(series);
     const providerSymbol =
@@ -565,6 +634,7 @@ function buildDraftsFromHoldingRows(
       forwardEps,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
+      latestAlphaObservationYmd,
       alphaDeviationZ,
       drawdownFromHigh90dPct,
       quantity: qty,
@@ -1201,10 +1271,7 @@ export async function getThemeDetailData(
   let themeStructuralTrendTotalPct: number | null = null;
   let themeStructuralTrendStartDate: string | null = null;
   let structuralAlphaTotalPct: number | null = null;
-  let cumulativeAlphaAnchorDate: string | null =
-    theme?.createdAt != null && String(theme.createdAt).trim().length >= 10
-      ? String(theme.createdAt).trim().slice(0, 10)
-      : null;
+  let cumulativeAlphaAnchorDate: string | null = null;
 
   let themeSyntheticUsRatio: number | null = null;
   let themeSyntheticJpRatio: number | null = null;
@@ -1235,7 +1302,7 @@ export async function getThemeDetailData(
     themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
     themeAverageUnrealizedPnlPercent = computeThemeAverageUnrealizedPnlPercent(stocks);
-    themeAverageAlpha = computePortfolioAverageAlpha(stocks);
+    themeAverageAlpha = computePortfolioAverageAlphaSummary(stocks).average;
 
     const { usRatio, jpRatio, basis: synthBasis } = computeThemeUsJpRatiosFromStocks(
       stocks.map((s) => ({ instrumentKind: s.instrumentKind, marketValue: s.marketValue })),
@@ -1264,19 +1331,8 @@ export async function getThemeDetailData(
       themeSyntheticBenchmarkTooltip += `（fast モード: 累積系列はベンチ取得を省略し、従来の銘柄別累積の加重マージを表示）`;
     }
 
-    const startAnchor =
-      theme?.createdAt != null && String(theme.createdAt).trim().length > 0
-        ? String(theme.createdAt)
-        : (() => {
-            let min = "";
-            for (const tk of tickers) {
-              const dr = byTickerDated.get(tk);
-              if (dr == null || dr.length === 0) continue;
-              const y = dr[0]!.recordedAt.slice(0, 10);
-              if (min.length === 0 || y < min) min = y;
-            }
-            return min.length > 0 ? min : "1970-01-01";
-          })();
+    // ベンチマーク移行（VOO / 1306.T）後も累積の物差しを一本化するため、表示アンカーは固定暦日（実際の起点は calculateCumulativeAlpha が最寄り観測日に丸める）。
+    const startAnchor = CUMULATIVE_ALPHA_DISPLAY_ANCHOR_YMD;
 
     const perTicker: { weight: number; series: { date: string; cumulative: number }[] }[] = [];
     for (const s of stocks) {
@@ -1359,26 +1415,29 @@ export async function getThemeDetailData(
     if (cumulativeAlphaSeries.length > 0) {
       structuralAlphaTotalPct = cumulativeAlphaSeries[cumulativeAlphaSeries.length - 1]!.cumulative;
     }
-    if (cumulativeAlphaAnchorDate == null && cumulativeAlphaSeries.length > 0) {
+    if (cumulativeAlphaSeries.length > 0) {
       cumulativeAlphaAnchorDate = cumulativeAlphaSeries[0]!.date;
     }
 
     const windowStartYmd = ymdDaysAgoUtc(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS);
     themeStructuralTrendStartDate = windowStartYmd;
-    const perTickerWindow: { weight: number; series: { date: string; cumulative: number }[] }[] = [];
+    const structuralTrendInputs: { weight: number; dailyAlphaByYmd: Map<string, number> }[] = [];
     for (const s of stocks) {
       const dated = byTickerDated.get(s.ticker) ?? [];
       const filtered = dated.filter((r) => toYmd(r.recordedAt) >= windowStartYmd);
       if (filtered.length === 0) continue;
-      const series = calculateCumulativeAlpha(filtered, windowStartYmd);
-      if (series.length > 0) {
-        perTickerWindow.push({
-          weight: sanitizeMarketValueForAggregation(s.marketValue),
-          series,
-        });
+      const w = sanitizeMarketValueForAggregation(s.marketValue);
+      if (w <= 0) continue;
+      const dailyAlphaByYmd = new Map<string, number>();
+      for (const r of filtered) {
+        dailyAlphaByYmd.set(toYmd(r.recordedAt), r.alphaValue);
       }
+      structuralTrendInputs.push({ weight: w, dailyAlphaByYmd });
     }
-    themeStructuralTrendSeries = mergeWeightedCumulativeAlphaSeries(perTickerWindow);
+    themeStructuralTrendSeries = computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas(
+      structuralTrendInputs,
+      windowStartYmd,
+    );
     if (themeStructuralTrendSeries.length > 0) {
       themeStructuralTrendTotalPct =
         themeStructuralTrendSeries[themeStructuralTrendSeries.length - 1]!.cumulative;
@@ -1430,17 +1489,22 @@ export async function getThemeDetailData(
         byUpper.set(k.toUpperCase(), v);
       }
 
-      const perTickerWindowEco: { weight: number; series: { date: string; cumulative: number }[] }[] = [];
+      const structuralTrendEcoInputs: { weight: number; dailyAlphaByYmd: Map<string, number> }[] = [];
       for (const [u, weight] of tickerWeights) {
         const dated = byUpper.get(u) ?? [];
         const filtered = dated.filter((r) => toYmd(r.recordedAt) >= windowStartYmd);
         if (filtered.length === 0) continue;
-        const series = calculateCumulativeAlpha(filtered, windowStartYmd);
-        if (series.length > 0) {
-          perTickerWindowEco.push({ weight, series });
+        if (weight <= 0) continue;
+        const dailyAlphaByYmd = new Map<string, number>();
+        for (const r of filtered) {
+          dailyAlphaByYmd.set(toYmd(r.recordedAt), r.alphaValue);
         }
+        structuralTrendEcoInputs.push({ weight, dailyAlphaByYmd });
       }
-      themeStructuralTrendSeries = mergeWeightedCumulativeAlphaSeries(perTickerWindowEco);
+      themeStructuralTrendSeries = computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas(
+        structuralTrendEcoInputs,
+        windowStartYmd,
+      );
       if (themeStructuralTrendSeries.length > 0) {
         themeStructuralTrendTotalPct =
           themeStructuralTrendSeries[themeStructuralTrendSeries.length - 1]!.cumulative;
@@ -1518,6 +1582,9 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       totalMarketValue: 0,
       summary: {
         portfolioAverageAlpha: 0,
+        portfolioAvgAlphaStalestLatestYmd: null,
+        portfolioAvgAlphaFreshestLatestYmd: null,
+        portfolioAvgAlphaAsOfDisplay: null,
         benchmarkLatestPrice: benchmarkSnap.close,
         benchmarkChangePct: benchmarkSnap.changePct,
         benchmarkPriceSource: benchmarkSnap.priceSource,
@@ -1590,8 +1657,16 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     goldIndicator != null && Number.isFinite(goldIndicator.value) && goldIndicator.value > 0 ? goldIndicator.value : null;
   const btcPrice =
     btcIndicator != null && Number.isFinite(btcIndicator.value) && btcIndicator.value > 0 ? btcIndicator.value : null;
+  const paSummary = computePortfolioAverageAlphaSummary(stocks);
+  const portfolioAvgAlphaAsOfDisplay = formatPortfolioAvgAlphaAsOfDisplay(
+    paSummary.stalestLatestObservationYmd,
+    paSummary.freshestLatestObservationYmd,
+  );
   const summary = {
-    portfolioAverageAlpha: computePortfolioAverageAlpha(stocks),
+    portfolioAverageAlpha: paSummary.average,
+    portfolioAvgAlphaStalestLatestYmd: paSummary.stalestLatestObservationYmd,
+    portfolioAvgAlphaFreshestLatestYmd: paSummary.freshestLatestObservationYmd,
+    portfolioAvgAlphaAsOfDisplay,
     benchmarkLatestPrice: benchmarkSnap.close,
     benchmarkChangePct: benchmarkSnap.changePct,
     benchmarkPriceSource: benchmarkSnap.priceSource,
@@ -1652,6 +1727,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       forwardEps: null,
       tag,
       alphaHistory: [alpha],
+      latestAlphaObservationYmd: null,
       weight: 0,
       quantity: 0,
       category: asCategory(String(row.category)),

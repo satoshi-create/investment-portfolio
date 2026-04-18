@@ -31,20 +31,20 @@ export async function recordPortfolioSnapshotAction(userId?: string): Promise<Re
     revalidatePath("/themes", "layout");
     const suffix = out.replacedExistingRow ? " (updated today’s row)" : "";
     const r = out.alphaHistoryReconcile;
-    // Reconcile runs before snapshot; new INSERTs only when history is empty/thin (see alpha-history-reconcile).
-    // If reconcile threw, r is undefined — still surface that so it is not confused with "0 new rows".
     const reconcileSuffix =
-      r != null
-        ? r.rowsBackfilled > 0
-          ? ` · α_hist +${r.rowsBackfilled} rows`
-          : ` · α_hist OK (0 new rows)`
-        : ` · α_hist reconcile error (check server log)`;
+      r.rowsBackfilled > 0
+        ? ` · α_hist +${r.rowsBackfilled} rows`
+        : ` · α_hist OK (0 new rows)`;
+    const staleSuffix =
+      out.staleAlphaDataWarning != null && out.staleAlphaDataWarning.length > 0
+        ? ` · ${out.staleAlphaDataWarning}`
+        : "";
     return {
       ok: true,
-      message: `Snapshot ${out.snapshotDate}: ¥${Math.round(out.totalMarketValueJpy).toLocaleString()}${suffix}${reconcileSuffix}`,
+      message: `Snapshot ${out.snapshotDate}: ¥${Math.round(out.totalMarketValueJpy).toLocaleString()}${suffix}${reconcileSuffix}${staleSuffix}`,
       snapshotDate: out.snapshotDate,
       totalMarketValueJpy: out.totalMarketValueJpy,
-      alphaHistoryRowsBackfilled: r?.rowsBackfilled,
+      alphaHistoryRowsBackfilled: r.rowsBackfilled,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Snapshot failed.";

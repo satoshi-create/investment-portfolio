@@ -29,8 +29,9 @@ export async function GET(request: Request) {
     if (perf && requestId) {
       console.log(`[perf] ${requestId} start theme="${theme.trim()}" user="${userId}"`);
     }
-    // Theme cumulative Alpha / synthetic benchmark weights are computed in `getThemeDetailData`
-    // (mixed US+JP themes blend VOO + 1306.T daily returns; see `alpha-logic`).
+    // Theme cumulative Alpha: `getThemeDetailData` loads only each ticker’s **default** benchmark rows
+    // from `alpha_history` (VOO vs 1306.T), anchors the series near `CUMULATIVE_ALPHA_DISPLAY_ANCHOR_YMD`,
+    // and for mixed-region themes stacks excess vs the synthetic blended benchmark (see `alpha-logic`).
     const data = await getThemeDetailData(getDb(), userId, theme.trim(), { perf, requestId, fast });
     if (perf && requestId) {
       console.log(`[perf] ${requestId} done totalMs=${Date.now() - t0}`);

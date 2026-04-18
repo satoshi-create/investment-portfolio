@@ -96,6 +96,10 @@ export interface Stock {
   unrealizedPnlPercent: number;
   /** 直近 2 件の終値から算出した前日比 %（算出不可は null） */
   dayChangePercent: number | null;
+  /**
+   * `alpha_history` で参照した最新日次 Alpha の観測日（YYYY-MM-DD）。系列が空なら null。
+   */
+  latestAlphaObservationYmd: string | null;
   instrumentKind: TickerInstrumentKind;
   /** セクター（`structure_tags` の 2 番目。無ければ Other）。`sector` 列が空のときのフォールバック表示にも使う */
   secondaryTag: string;
@@ -155,6 +159,18 @@ export type MarketIndicator = {
 export type DashboardSummary = {
   /** 各保有の最新 Alpha（日次）の単純平均 */
   portfolioAverageAlpha: number;
+  /**
+   * 上記平均に使った各銘柄の「最新日次 α」の観測日のうち、最も古い YYYY-MM-DD（鮮度の下限）。
+   * 全銘柄同じ日に揃っていれば `freshest` と一致。
+   */
+  portfolioAvgAlphaStalestLatestYmd: string | null;
+  /** 平均に使った観測日のうち最も新しい YYYY-MM-DD。 */
+  portfolioAvgAlphaFreshestLatestYmd: string | null;
+  /**
+   * ヘッダ表示用: NY 基準の観測日ラベル（例: "NY Mon 4/17 Close · vs VOO daily α"）。
+   * サーバーで生成し、クライアントはそのまま表示。
+   */
+  portfolioAvgAlphaAsOfDisplay: string | null;
   /** VOO の参照価格（USD）。ライブ quote 優先、失敗時は日足終値。 */
   benchmarkLatestPrice: number;
   /** VOO の変化率 %（ライブ時は quote、日次時は直近2本の日足から。算出不可は null）。 */
@@ -339,7 +355,7 @@ export type ThemeDetailData = {
   structuralAlphaTotalPct: number | null;
   /** 表示用の起点日（テーマ `created_at` の日付部。テーマ行が無い場合は系列先頭に合わせる） */
   cumulativeAlphaAnchorDate: string | null;
-  /** 直近 N 日（サーバー UTC）を起点としたテーマ加重累積 Alpha（年輪トレンドチャート用） */
+  /** 直近 N 日（サーバー UTC）を起点としたテーマ加重累積 Alpha（年輪トレンドチャート用・日次 Alpha を加重平均してから累積） */
   themeStructuralTrendSeries: CumulativeAlphaPoint[];
   /** `themeStructuralTrendSeries` の最終累積（%）。算出不可時は null */
   themeStructuralTrendTotalPct: number | null;

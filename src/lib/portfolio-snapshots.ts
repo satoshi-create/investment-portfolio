@@ -6,6 +6,7 @@ import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { isLikelyEtfOrFundHolding } from "@/src/lib/strata-holding-detect";
 import { getDashboardData } from "@/src/lib/dashboard-data";
+import { lastCompletedNyseSessionCalendarYmd } from "@/src/lib/us-market-session";
 import type {
   HoldingDailySnapshotRow,
   MarketIndicator,
@@ -18,11 +19,19 @@ export type RecordPortfolioSnapshotResult = {
   snapshotDate: string;
   totalMarketValueJpy: number;
   replacedExistingRow: boolean;
-  /** Best-effort alpha_history refresh before computing dashboard metrics (may be partial on errors). */
-  alphaHistoryReconcile?: ReconcileAlphaHistoryResult;
+  /** `reconcileAlphaHistoryForUser` result (snapshot aborts if all attempts fail). */
+  alphaHistoryReconcile: ReconcileAlphaHistoryResult;
+  /** US 株保有の最新 α 観測日が、直近完了 NY セッションより古いとき。 */
+  staleAlphaDataWarning?: string | null;
 };
 
 const SNAPSHOT_LIST_LIMIT = 90;
+const SNAPSHOT_RECONCILE_ATTEMPTS = 3;
+const SNAPSHOT_RECONCILE_RETRY_MS = 1500;
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function numOrNull(v: unknown): number | null {
   if (v == null) return null;
@@ -622,17 +631,40 @@ export async function recordPortfolioDailySnapshot(
   userId: string,
 ): Promise<RecordPortfolioSnapshotResult> {
   // `portfolio_avg_alpha` is derived from `alpha_history`’s latest daily alpha per holding.
-  // Cron/manual snapshots previously skipped the reconcile step that signal generation performs,
-  // which can freeze “平均α” if `alpha_history` isn’t being appended daily.
   let alphaHistoryReconcile: ReconcileAlphaHistoryResult | undefined;
-  try {
-    alphaHistoryReconcile = await reconcileAlphaHistoryForUser(userId, db);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn(`[snapshot] alpha_history reconcile failed (continuing): ${msg}`);
+  let lastReconcileError: unknown;
+  for (let attempt = 0; attempt < SNAPSHOT_RECONCILE_ATTEMPTS; attempt++) {
+    try {
+      alphaHistoryReconcile = await reconcileAlphaHistoryForUser(userId, db);
+      lastReconcileError = undefined;
+      break;
+    } catch (e) {
+      lastReconcileError = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(
+        `[snapshot] alpha_history reconcile failed (attempt ${attempt + 1}/${SNAPSHOT_RECONCILE_ATTEMPTS}): ${msg}`,
+      );
+      if (attempt < SNAPSHOT_RECONCILE_ATTEMPTS - 1) await sleepMs(SNAPSHOT_RECONCILE_RETRY_MS);
+    }
+  }
+  if (alphaHistoryReconcile === undefined) {
+    const msg = lastReconcileError instanceof Error ? lastReconcileError.message : String(lastReconcileError);
+    throw new Error(`alpha_history reconcile failed after ${SNAPSHOT_RECONCILE_ATTEMPTS} attempts: ${msg}`);
   }
 
   const dash = await getDashboardData(db, userId);
+  const expectedNySessionYmd = lastCompletedNyseSessionCalendarYmd(new Date());
+  let staleAlphaDataWarning: string | null = null;
+  const usAlphaStaleVsNy = dash.stocks.some((s) => {
+    if (s.instrumentKind !== "US_EQUITY") return false;
+    if (s.alphaHistory.length === 0) return false;
+    const y = s.latestAlphaObservationYmd;
+    return y != null && y.length === 10 && y < expectedNySessionYmd;
+  });
+  if (usAlphaStaleVsNy) {
+    staleAlphaDataWarning = `Stale Data Warning: US holding(s) latest α observation is before last completed NY session (${expectedNySessionYmd})`;
+    console.warn(`[snapshot] ${staleAlphaDataWarning}`);
+  }
   const snapshotDate = new Date().toISOString().slice(0, 10);
   const recordedAt = new Date().toISOString();
   const benchmarkClose =
@@ -825,5 +857,6 @@ export async function recordPortfolioDailySnapshot(
     totalMarketValueJpy: totalMv,
     replacedExistingRow,
     alphaHistoryReconcile,
+    staleAlphaDataWarning,
   };
 }

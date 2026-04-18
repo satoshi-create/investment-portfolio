@@ -1,6 +1,12 @@
 import type { Client } from "@libsql/client";
 
-import { DEFAULT_BENCHMARK_TICKER, roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+import {
+  ALPHA_HISTORY_PERSIST_ABS_MAX,
+  DEFAULT_BENCHMARK_TICKER,
+  roundAlphaMetric,
+  shouldRejectDailyAlphaForPersistence,
+  SIGNAL_BENCHMARK_TICKER,
+} from "@/src/lib/alpha-logic";
 
 export type UpsertAlphaHistoryRow = {
   userId: string;
@@ -27,6 +33,13 @@ function assertYmd(dateYmd: string): void {
 export async function upsertAlphaHistoryRow(db: Client, row: UpsertAlphaHistoryRow): Promise<void> {
   const benchmark = row.benchmarkTicker ?? DEFAULT_BENCHMARK_TICKER;
   assertYmd(row.recordedAtYmd);
+
+  if (shouldRejectDailyAlphaForPersistence(row.alphaValue)) {
+    console.warn(
+      `[alpha_history] skip persist: extreme daily alpha (abs>${ALPHA_HISTORY_PERSIST_ABS_MAX}%) userId=${row.userId} ticker=${row.ticker} benchmark=${benchmark} ymd=${row.recordedAtYmd} alpha=${row.alphaValue}`,
+    );
+    return;
+  }
 
   const id = crypto.randomUUID();
   const alpha = roundAlphaMetric(row.alphaValue);

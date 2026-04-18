@@ -12,9 +12,14 @@ import {
   computePriceDrawdownFromHighPercent,
   computeSyntheticBenchmarkDailyReturnPercent,
   computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses,
+  CUMULATIVE_ALPHA_DISPLAY_ANCHOR_YMD,
+  STRUCTURAL_TREND_DAILY_ALPHA_CLIP_ABS,
+  computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas,
   computeThemeUsJpRatiosFromStocks,
   convertValueToJpy,
   dailyReturnPercent,
+  ALPHA_HISTORY_PERSIST_ABS_MAX,
+  shouldRejectDailyAlphaForPersistence,
   isCumulativeSeriesTrendUpward,
   mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
@@ -33,6 +38,13 @@ function eq(actual: unknown, expected: unknown, msg?: string) {
 
 console.log("SIGNAL_BENCHMARK_TICKER:", SIGNAL_BENCHMARK_TICKER);
 eq(SIGNAL_BENCHMARK_TICKER, "VOO");
+eq(CUMULATIVE_ALPHA_DISPLAY_ANCHOR_YMD, "2026-02-27");
+eq(ALPHA_HISTORY_PERSIST_ABS_MAX, 20);
+eq(shouldRejectDailyAlphaForPersistence(89.02), true);
+eq(shouldRejectDailyAlphaForPersistence(-21), true);
+eq(shouldRejectDailyAlphaForPersistence(10), false);
+eq(shouldRejectDailyAlphaForPersistence(20), false);
+eq(shouldRejectDailyAlphaForPersistence(20.01), true);
 
 eq(classifyTickerInstrument("06311181"), "JP_INVESTMENT_TRUST");
 eq(classifyTickerInstrument(" 06311181 "), "JP_INVESTMENT_TRUST");
@@ -131,6 +143,47 @@ eq(computeSyntheticBenchmarkDailyReturnPercent(null, 2, 0, 1), 2);
   });
   eq(series.length >= 2, true);
   eq(series[series.length - 1]!.cumulative, 0.3);
+}
+
+// Structural trend: daily weighted alpha then cumulative (avoids per-ticker anchor merge jumps)
+{
+  const trend = computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas(
+    [
+      {
+        weight: 1,
+        dailyAlphaByYmd: new Map([
+          ["2026-01-20", 1],
+          ["2026-01-21", 2],
+        ]),
+      },
+      {
+        weight: 1,
+        dailyAlphaByYmd: new Map([
+          ["2026-01-20", 3],
+          ["2026-01-21", 4],
+        ]),
+      },
+    ],
+    "2026-01-01",
+  );
+  eq(trend.length, 2);
+  eq(trend[0]!.cumulative, 0);
+  eq(trend[0]!.date, "2026-01-20");
+  eq(trend[1]!.date, "2026-01-21");
+  eq(trend[1]!.cumulative, 3);
+}
+
+// Outlier daily alpha is clipped before weighted average (100 -> 25)
+{
+  const trend = computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas(
+    [
+      { weight: 1, dailyAlphaByYmd: new Map([["2026-01-20", 0], ["2026-01-21", 100]]) },
+      { weight: 1, dailyAlphaByYmd: new Map([["2026-01-20", 0], ["2026-01-21", 0]]) },
+    ],
+    "2026-01-01",
+  );
+  eq(trend[1]!.cumulative, 12.5);
+  eq(STRUCTURAL_TREND_DAILY_ALPHA_CLIP_ABS, 25);
 }
 
 // NVDA: qty × USD price × factor × USD/JPY

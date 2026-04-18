@@ -22,6 +22,9 @@ const DEFAULT_USER_ID = defaultProfileUserId();
 
 const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
+  portfolioAvgAlphaStalestLatestYmd: null,
+  portfolioAvgAlphaFreshestLatestYmd: null,
+  portfolioAvgAlphaAsOfDisplay: null,
   benchmarkLatestPrice: 0,
   benchmarkChangePct: null,
   benchmarkPriceSource: "close",
@@ -204,6 +207,7 @@ export function DashboardPage() {
           benchmarkChangePct={summary.benchmarkChangePct}
           benchmarkPriceSource={summary.benchmarkPriceSource ?? "close"}
           benchmarkAsOf={summary.benchmarkAsOf ?? null}
+          portfolioAvgAlphaAsOfDisplay={summary.portfolioAvgAlphaAsOfDisplay ?? null}
           portfolioAvgDayChangePct={summary.portfolioAvgDayChangePct ?? null}
           marketIndicators={summary.marketIndicators ?? []}
         />

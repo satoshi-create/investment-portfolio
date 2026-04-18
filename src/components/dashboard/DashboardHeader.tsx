@@ -16,6 +16,8 @@ type Props = {
   benchmarkChangePct?: number | null;
   benchmarkPriceSource?: "live" | "close";
   benchmarkAsOf?: string | null;
+  /** Server-built line: NY session context for blended portfolio avg α (may be a date range). */
+  portfolioAvgAlphaAsOfDisplay?: string | null;
   /** 保有の前日比 %（算出できた銘柄の算術平均）。ダッシュボード summary と同じ。 */
   portfolioAvgDayChangePct?: number | null;
   marketIndicators: MarketIndicator[];
@@ -36,6 +38,7 @@ export function DashboardHeader({
   benchmarkChangePct,
   benchmarkPriceSource = "close",
   benchmarkAsOf = null,
+  portfolioAvgAlphaAsOfDisplay = null,
   portfolioAvgDayChangePct = null,
   marketIndicators,
 }: Props) {
@@ -139,6 +142,7 @@ export function DashboardHeader({
                 value={alphaFmt.text}
                 valueColor={alphaFmt.color}
                 subLabel="Latest daily α vs VOO, equal-weighted"
+                footnote={portfolioAvgAlphaAsOfDisplay ?? undefined}
               />
               <p
                 className="mt-1.5 text-[8px] leading-snug text-muted-foreground/90"

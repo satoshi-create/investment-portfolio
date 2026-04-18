@@ -25,12 +25,13 @@ async function main() {
   const db = getDb();
   const out = await recordPortfolioDailySnapshot(db, userId);
   const r = out.alphaHistoryReconcile;
-  const reconcileSuffix =
-    r != null
-      ? ` alphaHistoryRows=${r.rowsBackfilled} backfilledTickers=${r.backfilledTickers.length}`
+  const reconcileSuffix = ` alphaHistoryRows=${r.rowsBackfilled} backfilledTickers=${r.backfilledTickers.length}`;
+  const stale =
+    out.staleAlphaDataWarning != null && out.staleAlphaDataWarning.length > 0
+      ? ` ${out.staleAlphaDataWarning}`
       : "";
   console.log(
-    `portfolio_daily_snapshots: user=${userId} date=${out.snapshotDate} totalJpy=${out.totalMarketValueJpy} replaced=${out.replacedExistingRow}${reconcileSuffix}`,
+    `portfolio_daily_snapshots: user=${userId} date=${out.snapshotDate} totalJpy=${out.totalMarketValueJpy} replaced=${out.replacedExistingRow}${reconcileSuffix}${stale}`,
   );
 }
 

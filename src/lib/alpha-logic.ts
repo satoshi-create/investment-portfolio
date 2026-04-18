@@ -151,6 +151,9 @@ export type ThemeSyntheticStockInput = {
 /**
  * テーマ加重の銘柄リターン対 **合成ベンチ** の日次超過を積み上げた累積 Alpha 系列。
  * 純 US / 純 JP では合成リターンが VOO / TOPIX に一致するため、物差しは Lv.1 と整合。
+ *
+ * **通貨・為替**: 各銘柄の `dailyAlphaByEndDateYmd` は「現地通貨建て終値」から算出した % 差分（Lv.1 の既定ベンチ対比）。
+ * 日本株・投信は株も 1306.T も JPY — ここでは % のみ扱い、为替換算レイヤーは挟まない（二重調整にならない）。
  */
 export function computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses(input: {
   startAnchorYmd: string;
@@ -181,9 +184,10 @@ export function computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses(input: {
     for (const s of stocks) {
       const a = s.dailyAlphaByEndDateYmd.get(d);
       if (a == null || !Number.isFinite(a)) continue;
-      const rNative = s.instrumentKind === "US_EQUITY" ? rv : rj;
-      if (rNative == null || !Number.isFinite(rNative)) continue;
-      const rStock = a + rNative;
+      // Unpack absolute stock return from stored alpha = rStock − rBenchNative (same native bench as Lv.1 DB rows).
+      const rBenchNative = s.instrumentKind === "US_EQUITY" ? rv : rj;
+      if (rBenchNative == null || !Number.isFinite(rBenchNative)) continue;
+      const rStock = a + rBenchNative;
       if (!Number.isFinite(rStock)) continue;
       const w = Math.max(0, s.weight);
       if (w <= 0) continue;
@@ -222,6 +226,18 @@ export function dailyReturnPercent(prevClose: number, todayClose: number): numbe
 /** Round to 2 decimal places (Alpha and aligned metrics). */
 export function roundAlphaMetric(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * 日次 Alpha を `alpha_history` に永続化するときの絶対値上限（%ポイント）。
+ * Yahoo 等の欠損・ズレで一度に数十 % 跳ぶような値はバグとして扱い、保存しない。
+ */
+export const ALPHA_HISTORY_PERSIST_ABS_MAX = 20;
+
+/** `true` のとき `alpha_history` へ書かない（異常に大きい日次 Alpha）。 */
+export function shouldRejectDailyAlphaForPersistence(alpha: number): boolean {
+  if (!Number.isFinite(alpha)) return true;
+  return Math.abs(alpha) > ALPHA_HISTORY_PERSIST_ABS_MAX;
 }
 
 /**
@@ -280,6 +296,12 @@ export function ymdDaysAgoUtc(days: number): string {
 export const THEME_STRUCTURAL_TREND_LOOKBACK_DAYS = 90;
 
 /**
+ * テーマ詳細の「累積 Alpha」チャートの暦日アンカー（累積 0 の基準日に最も近い観測日を {@link calculateCumulativeAlpha} が選ぶ）。
+ * VOO→TOPIX（1306.T）ベンチマーク移行後の物差しを揃え、切替日前後の系列を同一ルールで積み上げる。
+ */
+export const CUMULATIVE_ALPHA_DISPLAY_ANCHOR_YMD = "2026-02-27";
+
+/**
  * テーマ設定日（または任意の起点）に最も近い観測日をアンカーとし、そこを累積 0 として
  * 以降の日次 Alpha（対ベンチマーク超過）を単純合算した累積系列を返す。
  * （厳密な相対リターンは (P/P0)/(B/B0)-1 だが、日次 Alpha の和で実装する。）
@@ -328,8 +350,66 @@ export function calculateCumulativeAlpha(alphaRows: DatedAlphaRow[], startDate: 
 }
 
 /**
- * テーマ内複数銘柄の累積 Alpha 系列を、評価額ウェイトで加重平均（各日はデータがある銘柄のみでウェイト再正規化）。
+ * テーマ「年輪トレンド」用: 各銘柄の **日次 Alpha** を観測日で評価額加重平均し、その系列を累積する。
+ *
+ * 旧 `mergeWeightedCumulativeAlphaSeries(各銘柄の累積系列)` は、銘柄ごとに `calculateCumulativeAlpha` の
+ * アンカー営業日がズレるため、日によって「累積が取れる銘柄の集合」が変わり **段差・垂直跳び** が出やすい。
+ * 日次 → 加重 → 累積の一経路に揃える。
+ *
+ * ウォッチリスト横断では **単日・少数銘柄の異常な `alpha_value`** で加重平均が暴れることがあるため、
+ * 日次 Alpha は **±`STRUCTURAL_TREND_DAILY_ALPHA_CLIP_ABS`%** にクリップしてから加重する。
  */
+/** 年輪トレンドの日次 Alpha クリップ（%ポイント）。DB / 取得由来の外れ値でチャートが垂直に跳ばないようにする。 */
+export const STRUCTURAL_TREND_DAILY_ALPHA_CLIP_ABS = 25;
+
+export function computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas(
+  inputs: { weight: number; dailyAlphaByYmd: Map<string, number> }[],
+  windowStartYmd: string,
+): CumulativeAlphaPoint[] {
+  if (inputs.length === 0) return [];
+  const start = windowStartYmd.trim().slice(0, 10);
+  if (start.length !== 10) return [];
+
+  const weighted = inputs
+    .map((x) => ({
+      w: x.weight > 0 && Number.isFinite(x.weight) ? x.weight : 0,
+      m: x.dailyAlphaByYmd,
+    }))
+    .filter((x) => x.w > 0);
+  if (weighted.length === 0) return [];
+
+  const dateSet = new Set<string>();
+  for (const { m } of weighted) {
+    for (const d of m.keys()) {
+      if (d.length === 10 && d >= start) dateSet.add(d);
+    }
+  }
+  const dates = [...dateSet].sort();
+  if (dates.length === 0) return [];
+
+  const out: CumulativeAlphaPoint[] = [];
+  out.push({ date: dates[0]!, cumulative: 0 });
+
+  let cum = 0;
+  for (let i = 1; i < dates.length; i++) {
+    const d = dates[i]!;
+    let sumW = 0;
+    let sumWA = 0;
+    for (const { w, m } of weighted) {
+      const raw = m.get(d);
+      if (raw == null || !Number.isFinite(raw)) continue;
+      const a = Math.max(-STRUCTURAL_TREND_DAILY_ALPHA_CLIP_ABS, Math.min(STRUCTURAL_TREND_DAILY_ALPHA_CLIP_ABS, raw));
+      sumW += w;
+      sumWA += w * a;
+    }
+    if (sumW <= 0) continue;
+    const daily = sumWA / sumW;
+    cum += Number.isFinite(daily) ? daily : 0;
+    out.push({ date: d, cumulative: roundAlphaMetric(cum) });
+  }
+  return out;
+}
+
 export function mergeWeightedCumulativeAlphaSeries(
   inputs: { weight: number; series: { date: string; cumulative: number }[] }[],
 ): { date: string; cumulative: number }[] {
