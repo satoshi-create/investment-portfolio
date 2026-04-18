@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useTransition } from "react";
-import { AlertTriangle, Zap } from "lucide-react";
+import { AlertTriangle, Flame, Zap } from "lucide-react";
 
 import { resolveSignalAction } from "@/app/actions/signals";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
@@ -16,6 +16,35 @@ function formatDetectedAt(iso: string): string {
   const hh = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${mm}/${dd} ${hh}:${min}`;
+}
+
+function signalChannelBadge(signal: Signal): { label: string; className: string } | null {
+  switch (signal.signalType) {
+    case "WARN":
+      return { label: "Trend", className: "bg-slate-800 text-slate-400" };
+    case "BREAK":
+      return { label: "Structural σ", className: "bg-red-950/80 text-red-300 ring-1 ring-red-500/35" };
+    case "CRITICAL":
+      return {
+        label: "Phase collapse",
+        className: "bg-red-950 text-red-200 ring-1 ring-red-600/70 font-extrabold",
+      };
+    default:
+      return null;
+  }
+}
+
+function warningBodyCopy(signal: Signal): string {
+  switch (signal.signalType) {
+    case "WARN":
+      return "3回連続で Alpha マイナス（緩やかなトレンド悪化）。構造的停滞の疑い。";
+    case "BREAK":
+      return "日次 Alpha の Z が統計的に Deep Outlier（Structural Strain）。構造崩壊の萌芽として即確認。";
+    case "CRITICAL":
+      return "日次 Alpha の Z が極端に低下（Phase Transition）。急激な構造崩壊への移行リスクとして最優先で確認。";
+    default:
+      return "";
+  }
 }
 
 type Props = {
@@ -37,27 +66,52 @@ export function SignalCard({ signal, userId, onResolved, onTrade }: Props) {
     });
   };
 
+  const channel = signalChannelBadge(signal);
+  const isStructuralPulse = signal.signalType === "BREAK";
+  const isCriticalPulse = signal.signalType === "CRITICAL";
+
   return (
     <div
-      className={`group flex flex-col gap-3 sm:flex-row sm:items-stretch p-5 rounded-2xl border transition-all ${
-        signal.isWarning
-          ? "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40"
-          : "bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40"
+      className={`group flex flex-col gap-3 sm:flex-row sm:items-stretch p-5 rounded-2xl border transition-all relative overflow-hidden ${
+        signal.signalType === "BUY"
+          ? "bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40"
+          : isCriticalPulse
+            ? "bg-red-950/25 border-red-600/45 hover:border-red-500/70 animate-structural-critical-pulse"
+            : isStructuralPulse
+              ? "bg-red-950/15 border-red-500/35 hover:border-red-500/55 animate-structural-break-pulse"
+              : "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40"
       }`}
     >
       <div className="flex items-start gap-4 flex-1 min-w-0">
         <div
           className={`shrink-0 p-4 rounded-full ${
-            signal.isWarning
-              ? "bg-rose-500/10 text-rose-500"
-              : "bg-emerald-500/10 text-emerald-500"
+            signal.signalType === "BUY"
+              ? "bg-emerald-500/10 text-emerald-500"
+              : isCriticalPulse
+                ? "bg-red-600/20 text-red-400"
+                : isStructuralPulse
+                  ? "bg-red-500/15 text-red-400"
+                  : "bg-rose-500/10 text-rose-500"
           }`}
         >
-          {signal.isWarning ? <AlertTriangle size={28} /> : <Zap size={28} />}
+          {signal.signalType === "BUY" ? (
+            <Zap size={28} />
+          ) : isCriticalPulse ? (
+            <Flame size={28} />
+          ) : (
+            <AlertTriangle size={28} className={isStructuralPulse ? "animate-pulse" : undefined} />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <h3 className="font-bold text-xl text-white">{signal.ticker}</h3>
+            {channel ? (
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wide ${channel.className}`}
+              >
+                {channel.label}
+              </span>
+            ) : null}
             <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded font-bold uppercase">
               {signal.tag}
             </span>
@@ -66,9 +120,9 @@ export function SignalCard({ signal, userId, onResolved, onTrade }: Props) {
             {formatDetectedAt(signal.detectedAt)}
           </p>
           <p className="text-sm text-slate-400 leading-relaxed">
-            {signal.isWarning
-              ? "3回連続でAlphaマイナス。構造的停滞の疑い。"
-              : "Alphaがプラス転換。モメンタムの反転を検知。"}
+            {signal.signalType === "BUY"
+              ? "Alpha がプラス転換。モメンタムの反転を検知。"
+              : warningBodyCopy(signal)}
           </p>
         </div>
       </div>

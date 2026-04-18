@@ -132,9 +132,14 @@ export interface Stock {
   earningsSummaryNote: string | null;
 }
 
+/** DB `signals.signal_type` and client-side synthetic live signals. */
+export type LiveSignalType = "BUY" | "WARN" | "BREAK" | "CRITICAL";
+
 export interface Signal extends Stock {
   isWarning: boolean;
   isBuy: boolean;
+  /** Origin channel: slow trend (WARN) vs σ-shock structural break (BREAK / CRITICAL). */
+  signalType: LiveSignalType;
   currentAlpha: number;
   /** ISO timestamp from `signals.detected_at`（クライアント合成シグナルでは空文字可） */
   detectedAt: string;
@@ -143,7 +148,7 @@ export interface Signal extends Stock {
 export interface SignalPerformanceLog {
   date: string;
   ticker: string;
-  type: "BUY" | "WARN";
+  type: LiveSignalType;
   result: string;
   status: "Active" | "Avoided" | "Success" | "Failed";
 }

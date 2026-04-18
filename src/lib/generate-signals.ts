@@ -4,7 +4,16 @@ import {
   reconcileAlphaHistoryForUser,
   type ReconcileAlphaHistoryResult,
 } from "@/src/lib/alpha-history-reconcile";
-import { defaultBenchmarkTickerForTicker, roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic";
+import {
+  computeAlphaDeviationZScore,
+  defaultBenchmarkTickerForTicker,
+  roundAlphaMetric,
+  SIGNAL_BENCHMARK_TICKER,
+} from "@/src/lib/alpha-logic";
+import {
+  SIGNAL_SIGMA_PHASE_TRANSITION,
+  SIGNAL_SIGMA_STRUCTURAL_STRAIN,
+} from "@/src/lib/signal-constants";
 import { getDb } from "@/src/lib/db";
 import { fetchHoldingsWithProviderForUser } from "@/src/lib/holdings-queries";
 import type { HoldingPriceInput } from "@/src/lib/price-service";
@@ -23,7 +32,10 @@ export function holdingsToPriceInputs(holdings: Holding[]): HoldingPriceInput[] 
   }));
 }
 
-export type GenerateSignalsDetail = { holdingId: string; type: "BUY" | "WARN" };
+export type GenerateSignalsDetail = { holdingId: string; type: "BUY" | "WARN" | "BREAK" | "CRITICAL" };
+
+/** Enough trailing days for ~30-σ daily alpha Z vs prior window (see `computeAlphaDeviationZScore`). */
+const ALPHA_HISTORY_TAIL_LIMIT = 35;
 
 export type GenerateSignalsResult = {
   inserted: number;
@@ -42,7 +54,7 @@ function todayUtcYmd(): string {
 async function signalExistsForAlphaDay(
   db: Client,
   holdingId: string,
-  signalType: "BUY" | "WARN",
+  signalType: "BUY" | "WARN" | "BREAK" | "CRITICAL",
   alphaDayYmd: string,
 ): Promise<boolean> {
   const rs = await db.execute({
@@ -58,7 +70,7 @@ async function signalExistsForAlphaDay(
 async function insertSignal(
   db: Client,
   holdingId: string,
-  signalType: "BUY" | "WARN",
+  signalType: "BUY" | "WARN" | "BREAK" | "CRITICAL",
   alphaAtSignal: number,
   alphaDayYmd: string,
 ): Promise<void> {
@@ -73,8 +85,8 @@ async function insertSignal(
 }
 
 /**
- * Scans holdings for `userId`, reads last 3 VOO alpha points per holding,
- * inserts BUY/WARN rows into `signals` with same-day dedupe.
+ * Scans holdings for `userId`, reads trailing alpha_history (benchmark-relative) per holding,
+ * inserts BUY / WARN / BREAK / CRITICAL rows into `signals` with same-day dedupe per type.
  */
 export async function generateSignalsForUser(
   userId: string,
@@ -112,8 +124,8 @@ export async function generateSignalsForUser(
       sql: `SELECT recorded_at, alpha_value FROM alpha_history
             WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?
             ORDER BY recorded_at DESC
-            LIMIT 3`,
-      args: [userId, h.ticker, benchmarkTicker],
+            LIMIT ?`,
+      args: [userId, h.ticker, benchmarkTicker, ALPHA_HISTORY_TAIL_LIMIT],
     });
 
     if (alphaRs.rows.length === 0) {
@@ -136,6 +148,48 @@ export async function generateSignalsForUser(
       alpha_value: Number(r.alpha_value),
     }));
     signalsDebug("alpha tail (chronological)", { ticker: h.ticker, holdingId, alphaDateYmd, points });
+
+    const dailyAlphaSigma = computeAlphaDeviationZScore(alphas);
+    signalsDebug("structural σ (daily alpha Z)", {
+      ticker: h.ticker,
+      dailyAlphaSigma,
+      strainBelow: SIGNAL_SIGMA_STRUCTURAL_STRAIN,
+      transitionBelow: SIGNAL_SIGMA_PHASE_TRANSITION,
+    });
+
+    if (dailyAlphaSigma !== null && dailyAlphaSigma < SIGNAL_SIGMA_PHASE_TRANSITION) {
+      const exists = await signalExistsForAlphaDay(db, holdingId, "CRITICAL", alphaDateYmd);
+      if (exists) {
+        signalsDebug("CRITICAL skipped: already exists for alpha day", { ticker: h.ticker, alphaDateYmd });
+      } else {
+        await insertSignal(
+          db,
+          holdingId,
+          "CRITICAL",
+          roundAlphaMetric(alphas[alphas.length - 1]!),
+          alphaDateYmd,
+        );
+        inserted += 1;
+        details.push({ holdingId, type: "CRITICAL" });
+        signalsDebug("inserted CRITICAL (phase transition σ)", { ticker: h.ticker, runDateYmd, alphaDateYmd });
+      }
+    } else if (dailyAlphaSigma !== null && dailyAlphaSigma < SIGNAL_SIGMA_STRUCTURAL_STRAIN) {
+      const exists = await signalExistsForAlphaDay(db, holdingId, "BREAK", alphaDateYmd);
+      if (exists) {
+        signalsDebug("BREAK skipped: already exists for alpha day", { ticker: h.ticker, alphaDateYmd });
+      } else {
+        await insertSignal(
+          db,
+          holdingId,
+          "BREAK",
+          roundAlphaMetric(alphas[alphas.length - 1]!),
+          alphaDateYmd,
+        );
+        inserted += 1;
+        details.push({ holdingId, type: "BREAK" });
+        signalsDebug("inserted BREAK (structural strain σ)", { ticker: h.ticker, runDateYmd, alphaDateYmd });
+      }
+    }
 
     if (alphas.length >= 3) {
       const last3 = alphas.slice(-3);

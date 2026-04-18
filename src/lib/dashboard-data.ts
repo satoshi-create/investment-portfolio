@@ -6,6 +6,7 @@ import type {
   DashboardData,
   HoldingCategory,
   InvestmentThemeRecord,
+  LiveSignalType,
   Signal,
   Stock,
   StructureTagSlice,
@@ -1711,8 +1712,11 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
   });
 
   return rs.rows.map((row) => {
-    const isWarn = String(row.signal_type) === "WARN";
-    const isBuy = String(row.signal_type) === "BUY";
+    const rawSt = String(row.signal_type);
+    const signalType: LiveSignalType =
+      rawSt === "BUY" || rawSt === "WARN" || rawSt === "BREAK" || rawSt === "CRITICAL" ? rawSt : "WARN";
+    const isBuy = signalType === "BUY";
+    const isWarn = !isBuy;
     const alpha = Number(row.alpha_at_signal);
     const stags = row.structure_tags == null ? "[]" : String(row.structure_tags);
     const tag = row.structure_tags == null ? "" : themeFromStructureTags(stags);
@@ -1757,6 +1761,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       valuationFactor: 1,
       isWarning: isWarn,
       isBuy: isBuy,
+      signalType,
       currentAlpha: alpha,
       detectedAt: row.detected_at != null ? String(row.detected_at) : "",
       providerSymbol:
