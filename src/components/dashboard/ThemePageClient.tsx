@@ -34,6 +34,9 @@ import {
 } from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { cn } from "@/src/lib/cn";
+import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
+import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
+import { formatJpyValueForView, formatLocalPriceForView } from "@/src/lib/format-display-currency";
 import {
   THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS,
   themeEcosystemWatchlistToCsvRows,
@@ -69,31 +72,12 @@ import {
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
-const jpyFmt = new Intl.NumberFormat("ja-JP", {
-  style: "currency",
-  currency: "JPY",
-  maximumFractionDigits: 0,
-});
-
 function ecosystemInstrumentKind(item: ThemeEcosystemWatchItem): TickerInstrumentKind {
   const k = item.instrumentKind;
   if (k === "US_EQUITY" || k === "JP_INVESTMENT_TRUST" || k === "JP_LISTED_EQUITY") return k;
   const proxy = item.proxyTicker != null ? String(item.proxyTicker).trim() : "";
   const eff = item.isUnlisted && proxy.length > 0 ? proxy : String(item.ticker).trim();
   return classifyTickerInstrument(eff.length > 0 ? eff : String(item.ticker).trim());
-}
-
-/** 現在値: 米株は USD、日本（上場・投信）は円。 */
-function formatEcosystemCurrentPrice(e: ThemeEcosystemWatchItem): string {
-  if (e.currentPrice == null || !Number.isFinite(e.currentPrice) || e.currentPrice <= 0) return "—";
-  const kind = ecosystemInstrumentKind(e);
-  if (kind === "US_EQUITY") {
-    const p = e.currentPrice;
-    return p < 500
-      ? `$${p.toFixed(2)}`
-      : `$${p.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  }
-  return jpyFmt.format(Math.round(e.currentPrice));
 }
 
 function fmtPct(v: number): string {
@@ -367,7 +351,17 @@ function normalizeThemeDetailResponse(
       typeof rest.themeSyntheticBenchmarkTooltip === "string" && rest.themeSyntheticBenchmarkTooltip.trim().length > 0
         ? rest.themeSyntheticBenchmarkTooltip.trim()
         : null,
-  } as ThemeDetailData;
+    themeAverageFxNeutralAlpha:
+      typeof rest.themeAverageFxNeutralAlpha === "number" && Number.isFinite(rest.themeAverageFxNeutralAlpha)
+        ? rest.themeAverageFxNeutralAlpha
+        : typeof rest.themeAverageAlpha === "number" && Number.isFinite(rest.themeAverageAlpha)
+          ? rest.themeAverageAlpha
+          : 0,
+    fxUsdJpy:
+      typeof rest.fxUsdJpy === "number" && Number.isFinite(rest.fxUsdJpy) && rest.fxUsdJpy > 0
+        ? rest.fxUsdJpy
+        : USD_JPY_RATE_FALLBACK,
+  };
 }
 
 function fieldLabelOf(e: ThemeEcosystemWatchItem): string {
@@ -627,6 +621,31 @@ export function ThemePageClient({
   }, []);
 
   const stocks = data?.stocks ?? [];
+  const {
+    convert,
+    viewCurrency,
+    alphaDisplayMode,
+    setViewCurrency,
+    setAlphaDisplayMode,
+    setFxRateFromQuote,
+  } = useCurrencyConverter();
+
+  useEffect(() => {
+    if (data?.fxUsdJpy != null && Number.isFinite(data.fxUsdJpy) && data.fxUsdJpy > 0) {
+      setFxRateFromQuote(data.fxUsdJpy);
+    }
+  }, [data?.fxUsdJpy, setFxRateFromQuote]);
+
+  const formatEcoPriceForView = useCallback(
+    (e: ThemeEcosystemWatchItem) => {
+      if (e.currentPrice == null || !Number.isFinite(e.currentPrice) || e.currentPrice <= 0) return "—";
+      const kind = ecosystemInstrumentKind(e);
+      const native: "USD" | "JPY" = kind === "US_EQUITY" ? "USD" : "JPY";
+      return formatLocalPriceForView(e.currentPrice, native, viewCurrency, convert);
+    },
+    [convert, viewCurrency],
+  );
+
   const theme = data?.theme ?? null;
   const ecosystem = data?.ecosystem ?? [];
   const themeStructuralTrendSeries = data?.themeStructuralTrendSeries ?? [];
@@ -634,6 +653,13 @@ export function ThemePageClient({
     () => isThemeStructuralTrendPositiveUp(themeStructuralTrendSeries),
     [themeStructuralTrendSeries],
   );
+
+  const themeAvgAlphaDisplayed = useMemo(() => {
+    if (data == null) return 0;
+    return alphaDisplayMode === "fxNeutral"
+      ? data.themeAverageFxNeutralAlpha
+      : data.themeAverageAlpha;
+  }, [data, alphaDisplayMode]);
 
   const defensiveHolders = useMemo(() => {
     if (!isDefensiveTheme) return [];
@@ -1307,15 +1333,69 @@ export function ThemePageClient({
               <h2 id="theme-performance-heading" className="sr-only">
                 Performance summary
               </h2>
+              <div className="flex flex-wrap items-center justify-end gap-2 mb-2">
+                <div
+                  className="inline-flex rounded-lg border border-slate-700 bg-slate-950/80 p-0.5"
+                  role="group"
+                  aria-label="表示通貨"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setViewCurrency("JPY")}
+                    className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
+                      viewCurrency === "JPY"
+                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/35"
+                        : "text-slate-500 hover:text-slate-200"
+                    }`}
+                  >
+                    ¥
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewCurrency("USD")}
+                    className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
+                      viewCurrency === "USD"
+                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/35"
+                        : "text-slate-500 hover:text-slate-200"
+                    }`}
+                  >
+                    $
+                  </button>
+                </div>
+                <div className="inline-flex rounded-md border border-slate-700 p-0.5 bg-slate-950/60">
+                  <button
+                    type="button"
+                    onClick={() => setAlphaDisplayMode("standard")}
+                    className={`rounded px-2 py-0.5 text-[9px] font-bold uppercase ${
+                      alphaDisplayMode === "standard"
+                        ? "bg-slate-800 text-slate-100"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    標準α
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlphaDisplayMode("fxNeutral")}
+                    className={`rounded px-2 py-0.5 text-[9px] font-bold uppercase ${
+                      alphaDisplayMode === "fxNeutral"
+                        ? "bg-slate-800 text-emerald-300/95"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    FX中立α
+                  </button>
+                </div>
+              </div>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
                   <p className="text-[9px] font-bold uppercase text-slate-500 flex items-center gap-1">
                     <TrendingUp size={12} className="opacity-70" />
-                    テーマ評価額
+                    テーマ評価額（{viewCurrency}）
                   </p>
                   <p className="text-xl font-mono font-bold text-slate-100 mt-1">
                     {data.themeTotalMarketValue > 0
-                      ? jpyFmt.format(data.themeTotalMarketValue)
+                      ? formatJpyValueForView(data.themeTotalMarketValue, viewCurrency, convert)
                       : "—"}
                   </p>
                 </div>
@@ -1339,12 +1419,17 @@ export function ThemePageClient({
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
                   <p className="text-[9px] font-bold uppercase text-slate-500">
-                    平均 Alpha（日次）
+                    {alphaDisplayMode === "fxNeutral" ? "平均 α（FX-neutral）" : "平均 Alpha（日次）"}
                   </p>
                   <p
-                    className={`text-xl font-mono font-bold mt-1 ${pctClass(data.themeAverageAlpha)}`}
+                    className={`text-xl font-mono font-bold mt-1 ${pctClass(themeAvgAlphaDisplayed)}`}
                   >
-                    {fmtPct(data.themeAverageAlpha)}
+                    {fmtPct(themeAvgAlphaDisplayed)}
+                  </p>
+                  <p className="text-[8px] text-slate-500 mt-1 leading-snug">
+                    {alphaDisplayMode === "fxNeutral"
+                      ? "現地通貨の超過収益（名目為替レンズに依存しない）"
+                      : "テーマ内銘柄の単純平均"}
                   </p>
                 </div>
               </div>
@@ -1455,6 +1540,7 @@ export function ThemePageClient({
                 stocks={stocks}
                 totalHoldings={stocks.length}
                 averageAlpha={data.themeAverageAlpha}
+                averageFxNeutralAlpha={data.themeAverageFxNeutralAlpha}
                 userId={DEFAULT_USER_ID}
                 onEarningsNoteSaved={() => {
                   const ac = new AbortController();
@@ -2594,7 +2680,7 @@ export function ThemePageClient({
                                 <td className="px-6 py-4 text-right">
                                   <div className="flex flex-col items-end gap-1">
                                     <span className="font-mono text-slate-300 text-xs">
-                                      {formatEcosystemCurrentPrice(e)}
+                                      {formatEcoPriceForView(e)}
                                     </span>
                                     {!e.inPortfolio ? (
                                       <button

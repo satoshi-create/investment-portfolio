@@ -8,10 +8,14 @@ import { MarketBar } from "@/src/components/dashboard/MarketBar";
 import { RiskRegimeGauge } from "@/src/components/dashboard/RiskRegimeGauge";
 import { StatBox } from "@/src/components/dashboard/StatBox";
 import { ThemeToggle } from "@/src/components/dashboard/ThemeToggle";
+import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
+import { formatLocalPriceForView } from "@/src/lib/format-display-currency";
 import type { MarketIndicator } from "@/src/types/investment";
 
 type Props = {
   totalAlpha: number;
+  /** Lv.1 現地通貨ベースの平均（通常 `totalAlpha` と同値） */
+  portfolioFxNeutralAlpha: number;
   benchmarkPrice: number;
   benchmarkChangePct?: number | null;
   benchmarkPriceSource?: "live" | "close";
@@ -34,6 +38,7 @@ function formatAlphaPercent(value: number): { text: string; color: string } {
 
 export function DashboardHeader({
   totalAlpha,
+  portfolioFxNeutralAlpha,
   benchmarkPrice,
   benchmarkChangePct,
   benchmarkPriceSource = "close",
@@ -44,7 +49,11 @@ export function DashboardHeader({
 }: Props) {
   const [marketOpen, setMarketOpen] = useState(false);
   const [koyomiOpen, setKoyomiOpen] = useState(false);
-  const alphaFmt = formatAlphaPercent(totalAlpha);
+  const { convert, viewCurrency, setViewCurrency, alphaDisplayMode, setAlphaDisplayMode } =
+    useCurrencyConverter();
+  const displayedPortfolioAlpha =
+    alphaDisplayMode === "fxNeutral" ? portfolioFxNeutralAlpha : totalAlpha;
+  const alphaFmt = formatAlphaPercent(displayedPortfolioAlpha);
   const daySpreadPct =
     portfolioAvgDayChangePct != null &&
     benchmarkChangePct != null &&
@@ -57,7 +66,7 @@ export function DashboardHeader({
   );
   const benchText =
     benchmarkPrice > 0 && Number.isFinite(benchmarkPrice)
-      ? benchmarkPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })
+      ? formatLocalPriceForView(benchmarkPrice, "USD", viewCurrency, convert)
       : "—";
   const benchChangeText =
     benchmarkChangePct != null && Number.isFinite(benchmarkChangePct)
@@ -115,6 +124,34 @@ export function DashboardHeader({
           {/* スマホ: Market glance を Alpha の上（小さめ）。md+: ボタン左・Alpha 右 */}
           <div className="flex w-full min-w-0 flex-col gap-1.5 md:w-auto md:flex-row md:items-end md:gap-3">
             <div className="order-1 flex flex-wrap items-center gap-1.5 self-start md:self-end md:mb-0.5 md:gap-2">
+              <div
+                className="inline-flex rounded-lg border border-border bg-background/80 p-0.5 shadow-sm"
+                role="group"
+                aria-label="表示通貨"
+              >
+                <button
+                  type="button"
+                  onClick={() => setViewCurrency("JPY")}
+                  className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
+                    viewCurrency === "JPY"
+                      ? "bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/35"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  ¥
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewCurrency("USD")}
+                  className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
+                    viewCurrency === "USD"
+                      ? "bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/35"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  $
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setMarketOpen(true)}
@@ -137,12 +174,52 @@ export function DashboardHeader({
               </button>
             </div>
             <div className="order-2 min-w-0 basis-full md:basis-auto">
+              <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                <span className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground">α レンズ</span>
+                <div className="inline-flex rounded-md border border-border p-0.5 bg-muted/30">
+                  <button
+                    type="button"
+                    onClick={() => setAlphaDisplayMode("standard")}
+                    className={`rounded px-2 py-0.5 text-[8px] font-bold uppercase ${
+                      alphaDisplayMode === "standard"
+                        ? "bg-card text-foreground"
+                        : "text-muted-foreground hover:text-foreground/90"
+                    }`}
+                  >
+                    標準
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlphaDisplayMode("fxNeutral")}
+                    className={`rounded px-2 py-0.5 text-[8px] font-bold uppercase ${
+                      alphaDisplayMode === "fxNeutral"
+                        ? "bg-card text-emerald-300/95"
+                        : "text-muted-foreground hover:text-foreground/90"
+                    }`}
+                  >
+                    FX中立
+                  </button>
+                </div>
+              </div>
               <StatBox
-                label="Portfolio avg Alpha"
+                label={alphaDisplayMode === "fxNeutral" ? "Portfolio avg α (FX-neutral)" : "Portfolio avg Alpha"}
                 value={alphaFmt.text}
                 valueColor={alphaFmt.color}
-                subLabel="Latest daily α vs VOO, equal-weighted"
-                footnote={portfolioAvgAlphaAsOfDisplay ?? undefined}
+                subLabel={
+                  alphaDisplayMode === "fxNeutral"
+                    ? "現地リターン − 現地ベンチ（名目為替レンズに無依存）"
+                    : "Latest daily α vs VOO, equal-weighted"
+                }
+                footnote={
+                  [
+                    portfolioAvgAlphaAsOfDisplay,
+                    alphaDisplayMode === "fxNeutral"
+                      ? "Lv.1 日次 α は米株→VOO・日本株→TOPIX ETF で算出"
+                      : null,
+                  ]
+                    .filter((x): x is string => x != null && x.length > 0)
+                    .join(" · ") || undefined
+                }
               />
               <p
                 className="mt-1.5 text-[8px] leading-snug text-muted-foreground/90"

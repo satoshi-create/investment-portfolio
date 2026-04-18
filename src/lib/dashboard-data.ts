@@ -21,7 +21,8 @@ import {
   computePriceDrawdownFromHighPercent,
   computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses,
   computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas,
-  computeThemeUsJpRatiosFromStocks,
+  computeThemeUsJpRatiosForSyntheticBenchmark,
+  portfolioAverageFxNeutralDailyAlphaPct,
   convertValueToJpy,
   CUMULATIVE_ALPHA_DISPLAY_ANCHOR_YMD,
   defaultBenchmarkTickerForTicker,
@@ -1266,6 +1267,7 @@ export async function getThemeDetailData(
   let themeTotalMarketValue = 0;
   let themeAverageUnrealizedPnlPercent = 0;
   let themeAverageAlpha = 0;
+  let themeAverageFxNeutralAlpha = 0;
   let cumulativeAlphaSeries: CumulativeAlphaPoint[] = [];
   let themeStructuralTrendSeries: CumulativeAlphaPoint[] = [];
   let themeStructuralTrendTotalPct: number | null = null;
@@ -1303,9 +1305,12 @@ export async function getThemeDetailData(
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
     themeAverageUnrealizedPnlPercent = computeThemeAverageUnrealizedPnlPercent(stocks);
     themeAverageAlpha = computePortfolioAverageAlphaSummary(stocks).average;
+    themeAverageFxNeutralAlpha = portfolioAverageFxNeutralDailyAlphaPct(stocks);
 
-    const { usRatio, jpRatio, basis: synthBasis } = computeThemeUsJpRatiosFromStocks(
+    const { usRatio, jpRatio, basis: synthBasis } = computeThemeUsJpRatiosForSyntheticBenchmark(
       stocks.map((s) => ({ instrumentKind: s.instrumentKind, marketValue: s.marketValue })),
+      "JPY",
+      fxUsdJpy,
     );
     themeSyntheticUsRatio = usRatio;
     themeSyntheticJpRatio = jpRatio;
@@ -1527,6 +1532,8 @@ export async function getThemeDetailData(
     themeTotalMarketValue,
     themeAverageUnrealizedPnlPercent,
     themeAverageAlpha,
+    themeAverageFxNeutralAlpha,
+    fxUsdJpy,
     benchmarkLatestPrice: benchmarkSnap.close,
     themeSyntheticUsRatio,
     themeSyntheticJpRatio,
@@ -1582,6 +1589,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       totalMarketValue: 0,
       summary: {
         portfolioAverageAlpha: 0,
+        portfolioAverageFxNeutralAlpha: 0,
         portfolioAvgAlphaStalestLatestYmd: null,
         portfolioAvgAlphaFreshestLatestYmd: null,
         portfolioAvgAlphaAsOfDisplay: null,
@@ -1664,6 +1672,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   );
   const summary = {
     portfolioAverageAlpha: paSummary.average,
+    portfolioAverageFxNeutralAlpha: portfolioAverageFxNeutralDailyAlphaPct(stocks),
     portfolioAvgAlphaStalestLatestYmd: paSummary.stalestLatestObservationYmd,
     portfolioAvgAlphaFreshestLatestYmd: paSummary.freshestLatestObservationYmd,
     portfolioAvgAlphaAsOfDisplay,

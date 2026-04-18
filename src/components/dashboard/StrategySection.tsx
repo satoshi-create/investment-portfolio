@@ -1,9 +1,13 @@
+"use client";
+
 import React, { useMemo } from "react";
 import { GitBranch, Radar } from "lucide-react";
 
 import type { StructureTagSlice } from "@/src/types/investment";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { StatBox } from "@/src/components/dashboard/StatBox";
+import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
+import { formatJpyValueForView } from "@/src/lib/format-display-currency";
 
 const SATELLITE_TARGET_MIN = 6;
 const SATELLITE_TARGET_MAX = 10;
@@ -126,17 +130,15 @@ function sectorHeatColor(index: number, total: number): string {
   return `hsl(${h} ${s}% ${l}%)`;
 }
 
-const jpyFmt = new Intl.NumberFormat("ja-JP", {
-  style: "currency",
-  currency: "JPY",
-  maximumFractionDigits: 0,
-});
-
-function signedJpy(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  const core = jpyFmt.format(Math.abs(value));
-  if (value > 0) return `+${core}`;
-  if (value < 0) return `−${core}`;
+function signedValueJpyInView(
+  valueJpy: number,
+  view: "USD" | "JPY",
+  convert: (amount: number, from: "USD" | "JPY", to: "USD" | "JPY") => number,
+): string {
+  if (!Number.isFinite(valueJpy)) return "—";
+  const core = formatJpyValueForView(Math.abs(valueJpy), view, convert);
+  if (valueJpy > 0) return `+${core}`;
+  if (valueJpy < 0) return `−${core}`;
   return core;
 }
 
@@ -178,6 +180,7 @@ export function StrategySection({
   totalCostBasisJpy,
   fxUsdJpy,
 }: Props) {
+  const { convert, viewCurrency } = useCurrencyConverter();
   const hasSectors = structureBySector.length > 0;
   const sortedSectors = useMemo(() => sortSectorsForBalanceBar(structureBySector), [structureBySector]);
   const gcBalance = useMemo(() => growthCyclicalFromSortedSectors(sortedSectors), [sortedSectors]);
@@ -351,7 +354,7 @@ export function StrategySection({
         <div className="flex flex-row flex-wrap justify-start items-end gap-x-8 gap-y-5">
           <StatBox
             label="Total profit"
-            value={signedJpy(totalProfitJpy)}
+            value={signedValueJpyInView(totalProfitJpy, viewCurrency, convert)}
             valueColor={profitColor(totalProfitJpy)}
             subLabel={
               Number.isFinite(totalReturnPct)
@@ -363,20 +366,20 @@ export function StrategySection({
             label="Cost basis"
             value={
               Number.isFinite(totalCostBasisJpy) && totalCostBasisJpy >= 0
-                ? jpyFmt.format(totalCostBasisJpy)
+                ? formatJpyValueForView(totalCostBasisJpy, viewCurrency, convert)
                 : "—"
             }
             valueColor="text-foreground"
             subLabel="Total invested (holdings)"
           />
           <StatBox
-            label="Σ Market value (JPY)"
+            label={`Σ Market value (${viewCurrency})`}
             value={
               totalMarketValue > 0
-                ? `¥${totalMarketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                ? formatJpyValueForView(totalMarketValue, viewCurrency, convert)
                 : "—"
             }
-            subLabel={`米株は USD×${fxDisplay.toFixed(2)}（${fxNote}）。指数は valuation_factor で調整`}
+            subLabel={`米株は USD×${fxDisplay.toFixed(2)}（${fxNote}）。指数は valuation_factor で調整 · 表示 ${viewCurrency}`}
           />
         </div>
       </div>

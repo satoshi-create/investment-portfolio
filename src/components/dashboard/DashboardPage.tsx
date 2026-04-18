@@ -14,6 +14,7 @@ import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
 import { ThemesNavigationSection } from "@/src/components/dashboard/ThemesNavigationSection";
 import { TradeEntryForm, type TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
+import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import Link from "next/link";
 import { Camera, RefreshCw, ScrollText } from "lucide-react";
 import { toast } from "sonner";
@@ -22,6 +23,7 @@ const DEFAULT_USER_ID = defaultProfileUserId();
 
 const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
+  portfolioAverageFxNeutralAlpha: 0,
   portfolioAvgAlphaStalestLatestYmd: null,
   portfolioAvgAlphaFreshestLatestYmd: null,
   portfolioAvgAlphaAsOfDisplay: null,
@@ -64,6 +66,7 @@ export function DashboardPage() {
   const [snapshotPending, startSnapshotTransition] = useTransition();
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
   const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(null);
+  const { setFxRateFromQuote } = useCurrencyConverter();
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -121,6 +124,11 @@ export function DashboardPage() {
   useEffect(() => {
     setClientReady(true);
   }, []);
+
+  const summaryForFx = data?.summary ?? EMPTY_SUMMARY;
+  useEffect(() => {
+    setFxRateFromQuote(summaryForFx.fxUsdJpy);
+  }, [summaryForFx.fxUsdJpy, setFxRateFromQuote]);
 
   const onGenerateSignals = () => {
     setActionMessage(null);
@@ -203,6 +211,9 @@ export function DashboardPage() {
 
         <DashboardHeader
           totalAlpha={summary.portfolioAverageAlpha}
+          portfolioFxNeutralAlpha={
+            summary.portfolioAverageFxNeutralAlpha ?? summary.portfolioAverageAlpha
+          }
           benchmarkPrice={summary.benchmarkLatestPrice}
           benchmarkChangePct={summary.benchmarkChangePct}
           benchmarkPriceSource={summary.benchmarkPriceSource ?? "close"}
@@ -340,6 +351,9 @@ export function DashboardPage() {
           stocks={stocks}
           totalHoldings={summary.totalHoldings}
           averageAlpha={summary.portfolioAverageAlpha}
+          averageFxNeutralAlpha={
+            summary.portfolioAverageFxNeutralAlpha ?? summary.portfolioAverageAlpha
+          }
           userId={DEFAULT_USER_ID}
           onEarningsNoteSaved={() => void loadDashboard()}
           onTrade={(init) => openTradeForm(init)}

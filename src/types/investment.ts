@@ -160,6 +160,11 @@ export type DashboardSummary = {
   /** 各保有の最新 Alpha（日次）の単純平均 */
   portfolioAverageAlpha: number;
   /**
+   * 名目為替に依らない日次 α（現地リターン − 現地ベンチ）。Lv.1 の `alpha_history` 由来で、
+   * 数値は `portfolioAverageAlpha` と一致する。
+   */
+  portfolioAverageFxNeutralAlpha: number;
+  /**
    * 上記平均に使った各銘柄の「最新日次 α」の観測日のうち、最も古い YYYY-MM-DD（鮮度の下限）。
    * 全銘柄同じ日に揃っていれば `freshest` と一致。
    */
@@ -334,6 +339,10 @@ export type ThemeDetailData = {
   themeAverageUnrealizedPnlPercent: number;
   /** テーマ内銘柄の最新日次 Alpha の単純平均 */
   themeAverageAlpha: number;
+  /** 名目為替レンズに依らない日次 α（Lv.1 / 数値は通常 `themeAverageAlpha` と一致） */
+  themeAverageFxNeutralAlpha: number;
+  /** テーマ算出時の USD/JPY（換算レート・表示合成比の根拠） */
+  fxUsdJpy: number;
   benchmarkLatestPrice: number;
   /**
    * テーマ保有の地域構成（合成ベンチマーク用）。評価額が付いている銘柄は時価加重、全ゼロ時は銘柄数。

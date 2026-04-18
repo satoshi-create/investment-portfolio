@@ -95,6 +95,20 @@ export function computeThemeUsJpRatiosFromStocks(
 }
 
 /**
+ * 合成ベンチ用 US/JP 比率。ダッシュの `marketValue` は円換算できた共通名目前提のため、
+ * 表示レンズ（USD/JPY）を替えても比率は {@link computeThemeUsJpRatiosFromStocks} と同一になる。
+ */
+export function computeThemeUsJpRatiosForSyntheticBenchmark(
+  stocks: { instrumentKind: TickerInstrumentKind; marketValue: number }[],
+  _displayLens: QuoteCurrency,
+  _usdJpyRate: number,
+): { usRatio: number; jpRatio: number; basis: "market_value" | "equal_count" } {
+  void _displayLens;
+  void _usdJpyRate;
+  return computeThemeUsJpRatiosFromStocks(stocks);
+}
+
+/**
  * 日次の合成ベンチマーク騰落率（%）。
  * `Synthetic_Return = VOO_Return * US_Ratio + TOPIX_Return * JP_Ratio`（正規化済み比率）。
  * 片側のみのテーマは単一ベンチのリターンに一致。
@@ -226,6 +240,19 @@ export function dailyReturnPercent(prevClose: number, todayClose: number): numbe
 /** Round to 2 decimal places (Alpha and aligned metrics). */
 export function roundAlphaMetric(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * **FX-neutral** ポートフォリオ平均 Alpha（日次 % の単純平均）。
+ * `alpha_history` は現地終値ベースで Lv.1 算出済みのため、この値は名目為替レンズに依らない。
+ */
+export function portfolioAverageFxNeutralDailyAlphaPct(stocks: { alphaHistory: readonly number[] }[]): number {
+  const vals = stocks
+    .map((s) => (s.alphaHistory.length > 0 ? s.alphaHistory[s.alphaHistory.length - 1]! : null))
+    .filter((x): x is number => x != null && Number.isFinite(x));
+  if (vals.length === 0) return 0;
+  const sum = vals.reduce((a, b) => a + b, 0);
+  return roundAlphaMetric(sum / vals.length);
 }
 
 /**

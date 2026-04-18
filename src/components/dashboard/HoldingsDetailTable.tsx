@@ -1,14 +1,12 @@
+"use client";
+
 import React, { useMemo, useState } from "react";
 
 import type { Stock, TickerInstrumentKind } from "@/src/types/investment";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
-
-const jpyFmt = new Intl.NumberFormat("ja-JP", {
-  style: "currency",
-  currency: "JPY",
-  maximumFractionDigits: 0,
-});
+import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
+import { formatJpyValueForView, formatLocalPriceForView } from "@/src/lib/format-display-currency";
 
 function marketLabel(kind: TickerInstrumentKind): string {
   if (kind === "US_EQUITY") return "米国株";
@@ -16,10 +14,8 @@ function marketLabel(kind: TickerInstrumentKind): string {
   return "日本投信";
 }
 
-function formatPriceLocal(kind: TickerInstrumentKind, price: number | null): string {
-  if (price == null || !Number.isFinite(price) || price <= 0) return "—";
-  if (kind === "US_EQUITY") return `$${price.toFixed(2)}`;
-  return new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 }).format(price);
+function nativeForKind(kind: TickerInstrumentKind): "USD" | "JPY" {
+  return kind === "US_EQUITY" ? "USD" : "JPY";
 }
 
 function signedPctClass(v: number | null): string {
@@ -97,6 +93,7 @@ function computeFooterAggregates(stocks: Stock[]) {
 }
 
 export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
+  const { convert, viewCurrency } = useCurrencyConverter();
   const footer = useMemo(() => computeFooterAggregates(stocks), [stocks]);
   const [sortKey, setSortKey] = useState<
     "ticker" | "market" | "sector" | "qty" | "avg" | "price" | "day" | "mv" | "pnl" | "pnlpct" | "cat" | "research"
@@ -210,10 +207,10 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                 前日比{sortMark("day")}
               </th>
               <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("mv")} title="Sort">
-                評価額（円）{sortMark("mv")}
+                評価額（{viewCurrency}）{sortMark("mv")}
               </th>
               <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("pnl")} title="Sort">
-                損益（円）{sortMark("pnl")}
+                損益（{viewCurrency}）{sortMark("pnl")}
               </th>
               <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("pnlpct")} title="Sort">
                 損益率{sortMark("pnlpct")}
@@ -282,10 +279,19 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-foreground/85 whitespace-nowrap">{s.quantity}</td>
                 <td className="px-4 py-3 text-right font-mono text-foreground/85 whitespace-nowrap">
-                  {formatPriceLocal(s.instrumentKind, s.avgAcquisitionPrice)}
+                  {s.avgAcquisitionPrice != null && s.avgAcquisitionPrice > 0
+                    ? formatLocalPriceForView(
+                        s.avgAcquisitionPrice,
+                        nativeForKind(s.instrumentKind),
+                        viewCurrency,
+                        convert,
+                      )
+                    : "—"}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-foreground/85 whitespace-nowrap">
-                  {formatPriceLocal(s.instrumentKind, s.currentPrice)}
+                  {s.currentPrice != null && s.currentPrice > 0
+                    ? formatLocalPriceForView(s.currentPrice, nativeForKind(s.instrumentKind), viewCurrency, convert)
+                    : "—"}
                 </td>
                 <td
                   className={`px-4 py-3 text-right font-mono font-medium whitespace-nowrap ${signedPctClass(s.dayChangePercent)}`}
@@ -293,13 +299,13 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                   {formatSignedPercent(s.dayChangePercent)}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-foreground/85 whitespace-nowrap">
-                  {s.marketValue > 0 ? jpyFmt.format(s.marketValue) : "—"}
+                  {s.marketValue > 0 ? formatJpyValueForView(s.marketValue, viewCurrency, convert) : "—"}
                 </td>
                 <td
                   className={`px-4 py-3 text-right font-mono font-medium whitespace-nowrap ${signedValueClass(s.unrealizedPnlJpy)}`}
                 >
                   {s.avgAcquisitionPrice != null && s.currentPrice != null && s.currentPrice > 0
-                    ? `${s.unrealizedPnlJpy > 0 ? "+" : ""}${jpyFmt.format(s.unrealizedPnlJpy)}`
+                    ? `${s.unrealizedPnlJpy > 0 ? "+" : s.unrealizedPnlJpy < 0 ? "−" : ""}${formatJpyValueForView(Math.abs(s.unrealizedPnlJpy), viewCurrency, convert)}`
                     : "—"}
                 </td>
                 <td
@@ -352,15 +358,17 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                 )}
               </td>
               <td className="px-4 py-3 text-right font-mono text-sm font-bold text-foreground whitespace-nowrap">
-                {footer.sumMarketValueJpy > 0 ? jpyFmt.format(footer.sumMarketValueJpy) : "—"}
+                {footer.sumMarketValueJpy > 0
+                  ? formatJpyValueForView(footer.sumMarketValueJpy, viewCurrency, convert)
+                  : "—"}
               </td>
               <td
                 className={`px-4 py-3 text-right font-mono text-sm font-bold whitespace-nowrap ${signedValueClass(footer.sumUnrealizedPnlJpy)}`}
               >
                 {footer.pnlRowCount > 0 ? (
                   <>
-                    {footer.sumUnrealizedPnlJpy > 0 ? "+" : ""}
-                    {jpyFmt.format(footer.sumUnrealizedPnlJpy)}
+                    {footer.sumUnrealizedPnlJpy > 0 ? "+" : footer.sumUnrealizedPnlJpy < 0 ? "−" : ""}
+                    {formatJpyValueForView(Math.abs(footer.sumUnrealizedPnlJpy), viewCurrency, convert)}
                   </>
                 ) : (
                   "—"

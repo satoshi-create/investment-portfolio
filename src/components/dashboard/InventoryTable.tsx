@@ -16,12 +16,12 @@ import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryFor
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 import { detectOpportunityType } from "@/src/lib/alpha-logic";
-
-const jpyFmt = new Intl.NumberFormat("ja-JP", {
-  style: "currency",
-  currency: "JPY",
-  maximumFractionDigits: 0,
-});
+import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
+import {
+  formatJpyValueForView,
+  formatLocalPriceForView,
+  nativeCurrencyForStock,
+} from "@/src/lib/format-display-currency";
 
 type SortKey = "asset" | "alpha" | "trend" | "position" | "research" | "deviation" | "drawdown";
 
@@ -57,6 +57,7 @@ export function InventoryTable({
   stocks,
   totalHoldings,
   averageAlpha,
+  averageFxNeutralAlpha: averageFxNeutralAlphaProp,
   userId,
   onEarningsNoteSaved,
   onTrade,
@@ -74,7 +75,14 @@ export function InventoryTable({
   onTradeNew?: () => void;
   /** テーマページなどで加重累積 Alpha が上向きのとき true（✨ の条件に使用） */
   themeStructuralTrendUp?: boolean;
+  /** 名目為替に依らない平均日次 α（省略時は `averageAlpha`） */
+  averageFxNeutralAlpha?: number;
 }) {
+  const { convert, viewCurrency, alphaDisplayMode } = useCurrencyConverter();
+  const averageFxNeutralAlpha = averageFxNeutralAlphaProp ?? averageAlpha;
+  const displayAvgAlpha =
+    alphaDisplayMode === "fxNeutral" ? averageFxNeutralAlpha : averageAlpha;
+
   const [noteModalStock, setNoteModalStock] = useState<Stock | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteModalTab, setNoteModalTab] = useState<EarningsNoteModalTab>("edit");
@@ -205,8 +213,8 @@ export function InventoryTable({
   }
 
   const avgAlphaClass =
-    averageAlpha > 0 ? "text-emerald-400" : averageAlpha < 0 ? "text-rose-400" : "text-slate-400";
-  const avgAlphaSign = averageAlpha > 0 ? "+" : "";
+    displayAvgAlpha > 0 ? "text-emerald-400" : displayAvgAlpha < 0 ? "text-rose-400" : "text-slate-400";
+  const avgAlphaSign = displayAvgAlpha > 0 ? "+" : "";
 
   function fmtZ(z: number | null): string {
     if (z == null) return "—";
@@ -349,7 +357,12 @@ export function InventoryTable({
                 onClick={() => toggleSort("alpha")}
                 title="Sort"
               >
-                Alpha{sortMark("alpha")}
+                <span className="block">Alpha{sortMark("alpha")}</span>
+                {alphaDisplayMode === "fxNeutral" ? (
+                  <span className="block text-[8px] font-normal normal-case tracking-normal text-muted-foreground/85">
+                    FX-neutral
+                  </span>
+                ) : null}
               </th>
               <th
                 className="px-6 py-4 text-center cursor-pointer select-none"
@@ -562,7 +575,9 @@ export function InventoryTable({
                     <div className="flex flex-col items-end gap-0.5">
                       <span className="font-mono text-foreground/90 font-bold">{stock.quantity}</span>
                       <span className="text-[9px] text-muted-foreground font-bold tracking-tighter">
-                        {stock.marketValue > 0 ? `${jpyFmt.format(stock.marketValue)}（推定）` : "—"}
+                        {stock.marketValue > 0
+                          ? `${formatJpyValueForView(stock.marketValue, viewCurrency, convert)}（推定）`
+                          : "—"}
                       </span>
                       {stock.valuationFactor !== 1 ? (
                         <span className="text-[8px] text-amber-500/90 font-mono">factor {stock.valuationFactor}</span>
@@ -576,9 +591,12 @@ export function InventoryTable({
                     <div className="flex flex-col items-end gap-0.5 min-w-[5.75rem]">
                       <span className="font-mono text-foreground/90 font-bold tabular-nums">
                         {stock.currentPrice != null && stock.currentPrice > 0
-                          ? stock.countryName === "日本"
-                            ? `¥${stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}`
-                            : `$${stock.currentPrice < 1000 ? stock.currentPrice.toFixed(2) : stock.currentPrice.toFixed(0)}`
+                          ? formatLocalPriceForView(
+                              stock.currentPrice,
+                              nativeCurrencyForStock(stock),
+                              viewCurrency,
+                              convert,
+                            )
                           : "—"}
                       </span>
                       {stock.priceSource === "live" && stock.lastUpdatedAt ? (
@@ -667,7 +685,7 @@ export function InventoryTable({
                 </>
               ) : null}
               <td className={`px-6 py-3 text-right text-xs font-mono font-bold ${avgAlphaClass}`}>
-                Avg: {Number.isFinite(averageAlpha) ? `${avgAlphaSign}${averageAlpha.toFixed(2)}%` : "—"}
+                Avg: {Number.isFinite(displayAvgAlpha) ? `${avgAlphaSign}${displayAvgAlpha.toFixed(2)}%` : "—"}
               </td>
               <td className="px-6 py-3 text-center text-[10px] text-muted-foreground uppercase font-bold">
                 Portfolio
