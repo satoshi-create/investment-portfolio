@@ -407,7 +407,11 @@ function computeFinancialTotals(
   totalRealizedPnlJpy: number,
 ): Pick<
   DashboardData["summary"],
-  "totalCostBasisJpy" | "totalRealizedPnlJpy" | "totalProfitJpy" | "totalReturnPct"
+  | "totalCostBasisJpy"
+  | "totalRealizedPnlJpy"
+  | "totalUnrealizedPnlJpy"
+  | "totalProfitJpy"
+  | "totalReturnPct"
 > {
   let totalUnrealizedPnlJpy = 0;
   let totalCostBasisJpy = 0;
@@ -426,6 +430,7 @@ function computeFinancialTotals(
   return {
     totalCostBasisJpy,
     totalRealizedPnlJpy: realized,
+    totalUnrealizedPnlJpy,
     totalProfitJpy,
     totalReturnPct,
   };

@@ -38,6 +38,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
   btcPrice: null,
   totalCostBasisJpy: 0,
   totalRealizedPnlJpy: 0,
+  totalUnrealizedPnlJpy: 0,
   totalProfitJpy: 0,
   totalReturnPct: 0,
   portfolioAvgDayChangePct: null,
@@ -337,6 +338,7 @@ export function DashboardPage() {
           satelliteStockCount={satelliteStockCount}
           totalMarketValue={totalMarketValue}
           totalProfitJpy={summary.totalProfitJpy}
+          totalUnrealizedPnlJpy={summary.totalUnrealizedPnlJpy ?? 0}
           totalReturnPct={summary.totalReturnPct}
           totalCostBasisJpy={summary.totalCostBasisJpy}
           fxUsdJpy={summary.fxUsdJpy}

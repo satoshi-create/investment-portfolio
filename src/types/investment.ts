@@ -203,6 +203,8 @@ export type DashboardSummary = {
   totalCostBasisJpy: number;
   /** `trade_history.realized_pnl_jpy` の累計（円） */
   totalRealizedPnlJpy: number;
+  /** 現在保有の含み損益合計（円）。各銘柄 `unrealizedPnlJpy` の合計 */
+  totalUnrealizedPnlJpy: number;
   /** 含み損益 + 確定損益（円） */
   totalProfitJpy: number;
   /** totalProfitJpy / totalCostBasisJpy × 100（コスト 0 のときは 0） */

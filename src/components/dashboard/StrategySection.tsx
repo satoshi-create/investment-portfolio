@@ -4,6 +4,7 @@ import React, { useMemo } from "react";
 import { GitBranch, Radar } from "lucide-react";
 
 import type { StructureTagSlice } from "@/src/types/investment";
+import { roundAlphaMetric } from "@/src/lib/alpha-logic";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { StatBox } from "@/src/components/dashboard/StatBox";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
@@ -165,6 +166,8 @@ type Props = {
   satelliteStockCount: number;
   totalMarketValue: number;
   totalProfitJpy: number;
+  /** 保有の含み損益合計（円）。`totalProfitJpy` − 確定損益 に一致 */
+  totalUnrealizedPnlJpy: number;
   totalReturnPct: number;
   totalCostBasisJpy: number;
   /** `JPY=X` 取得値。失敗時はダッシュボード計算と同様にフォールバック表示。 */
@@ -176,6 +179,7 @@ export function StrategySection({
   satelliteStockCount,
   totalMarketValue,
   totalProfitJpy,
+  totalUnrealizedPnlJpy,
   totalReturnPct,
   totalCostBasisJpy,
   fxUsdJpy,
@@ -192,6 +196,11 @@ export function StrategySection({
     fxUsdJpy != null && Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? fxUsdJpy : USD_JPY_RATE_FALLBACK;
   const fxNote =
     fxUsdJpy != null && Number.isFinite(fxUsdJpy) && fxUsdJpy > 0 ? "JPY=X" : `フォールバック ${USD_JPY_RATE_FALLBACK}`;
+
+  const unrealizedReturnPct =
+    totalCostBasisJpy > 0 && Number.isFinite(totalUnrealizedPnlJpy)
+      ? roundAlphaMetric((totalUnrealizedPnlJpy / totalCostBasisJpy) * 100)
+      : null;
 
   return (
     <div className="space-y-4">
@@ -360,6 +369,16 @@ export function StrategySection({
               Number.isFinite(totalReturnPct)
                 ? `${totalReturnPct > 0 ? "+" : ""}${totalReturnPct.toFixed(2)}% total return`
                 : "—"
+            }
+          />
+          <StatBox
+            label="含み損益"
+            value={signedValueJpyInView(totalUnrealizedPnlJpy, viewCurrency, convert)}
+            valueColor={profitColor(totalUnrealizedPnlJpy)}
+            subLabel={
+              unrealizedReturnPct != null && Number.isFinite(unrealizedReturnPct)
+                ? `${unrealizedReturnPct > 0 ? "+" : ""}${unrealizedReturnPct.toFixed(2)}% vs cost basis`
+                : "現在保有の評価 − 取得コスト（円換算）"
             }
           />
           <StatBox
