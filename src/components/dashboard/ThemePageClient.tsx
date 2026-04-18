@@ -1266,7 +1266,7 @@ export function ThemePageClient({
   const canRenderContent = data != null;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
+    <div className="min-h-min bg-slate-950 text-slate-200 pb-8 font-sans">
       <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-8">
         <header className="border-b border-slate-800 pb-8">
           <Link

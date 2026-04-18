@@ -61,6 +61,12 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 @keyframes structural-break-ring {
   0%,
   100% {
@@ -92,5 +98,25 @@ body {
 
   .animate-structural-critical-pulse {
     animation: structural-critical-ring 1.35s ease-out infinite;
+  }
+
+  /* Cockpit: fast, low-noise route transitions (no heavy exit animations). */
+  .cockpit-route-fade {
+    animation: cockpit-route-fade-in 160ms ease-out both;
+  }
+
+  @keyframes cockpit-route-fade-in {
+    from {
+      opacity: 0.88;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cockpit-route-fade {
+      animation: none;
+    }
   }
 }

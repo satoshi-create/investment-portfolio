@@ -25,6 +25,8 @@ type Props = {
   /** 保有の前日比 %（算出できた銘柄の算術平均）。ダッシュボード summary と同じ。 */
   portfolioAvgDayChangePct?: number | null;
   marketIndicators: MarketIndicator[];
+  /** Cockpit: shrink-on-scroll density */
+  compact?: boolean;
 };
 
 function formatAlphaPercent(value: number): { text: string; color: string } {
@@ -46,13 +48,12 @@ export function DashboardHeader({
   portfolioAvgAlphaAsOfDisplay = null,
   portfolioAvgDayChangePct = null,
   marketIndicators,
+  compact = false,
 }: Props) {
   const [marketOpen, setMarketOpen] = useState(false);
   const [koyomiOpen, setKoyomiOpen] = useState(false);
-  const { convert, viewCurrency, setViewCurrency, alphaDisplayMode, setAlphaDisplayMode } =
-    useCurrencyConverter();
-  const displayedPortfolioAlpha =
-    alphaDisplayMode === "fxNeutral" ? portfolioFxNeutralAlpha : totalAlpha;
+  const { convert, viewCurrency, setViewCurrency } = useCurrencyConverter();
+  const displayedPortfolioAlpha = totalAlpha;
   const alphaFmt = formatAlphaPercent(displayedPortfolioAlpha);
   const daySpreadPct =
     portfolioAvgDayChangePct != null &&
@@ -105,17 +106,27 @@ export function DashboardHeader({
   }, [marketOpen]);
 
   return (
-    <header className="border-b border-border pb-6">
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between md:gap-8">
+    <header className={`border-b border-border ${compact ? "pb-3" : "pb-6"}`}>
+      <div
+        className={`flex flex-col md:flex-row md:items-end md:justify-between ${
+          compact ? "gap-3 md:gap-4" : "gap-6 md:gap-8"
+        }`}
+      >
         <div className="min-w-0 shrink">
-          <div className="flex items-center gap-2 mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            <span className="px-2 py-0.5 bg-accent-cyan/10 text-accent-cyan rounded border border-accent-cyan/25">
-              Alpha Engine v1.2
-            </span>
-            <span>Satoshi&apos;s Investment OS</span>
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Target className="text-accent-cyan shrink-0" size={28} />
+          {!compact ? (
+            <div className="flex items-center gap-2 mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <span className="px-2 py-0.5 bg-accent-cyan/10 text-accent-cyan rounded border border-accent-cyan/25">
+                Alpha Engine v1.2
+              </span>
+              <span>Satoshi&apos;s Investment OS</span>
+            </div>
+          ) : null}
+          <h1
+            className={`font-bold tracking-tight text-foreground flex items-center gap-2 ${
+              compact ? "text-xl" : "text-3xl"
+            }`}
+          >
+            <Target className="text-accent-cyan shrink-0" size={compact ? 20 : 28} />
             Structural Cockpit
           </h1>
         </div>
@@ -174,67 +185,37 @@ export function DashboardHeader({
               </button>
             </div>
             <div className="order-2 min-w-0 basis-full md:basis-auto">
-              <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                <span className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground">α レンズ</span>
-                <div className="inline-flex rounded-md border border-border p-0.5 bg-muted/30">
-                  <button
-                    type="button"
-                    onClick={() => setAlphaDisplayMode("standard")}
-                    className={`rounded px-2 py-0.5 text-[8px] font-bold uppercase ${
-                      alphaDisplayMode === "standard"
-                        ? "bg-card text-foreground"
-                        : "text-muted-foreground hover:text-foreground/90"
-                    }`}
-                  >
-                    標準
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAlphaDisplayMode("fxNeutral")}
-                    className={`rounded px-2 py-0.5 text-[8px] font-bold uppercase ${
-                      alphaDisplayMode === "fxNeutral"
-                        ? "bg-card text-emerald-300/95"
-                        : "text-muted-foreground hover:text-foreground/90"
-                    }`}
-                  >
-                    FX中立
-                  </button>
-                </div>
-              </div>
               <StatBox
-                label={alphaDisplayMode === "fxNeutral" ? "Portfolio avg α (FX-neutral)" : "Portfolio avg Alpha"}
+                label="Portfolio avg Alpha"
                 value={alphaFmt.text}
                 valueColor={alphaFmt.color}
                 subLabel={
-                  alphaDisplayMode === "fxNeutral"
-                    ? "現地リターン − 現地ベンチ（名目為替レンズに無依存）"
-                    : "Latest daily α vs VOO, equal-weighted"
+                  "Latest daily α vs VOO, equal-weighted"
                 }
                 footnote={
                   [
                     portfolioAvgAlphaAsOfDisplay,
-                    alphaDisplayMode === "fxNeutral"
-                      ? "Lv.1 日次 α は米株→VOO・日本株→TOPIX ETF で算出"
-                      : null,
                   ]
                     .filter((x): x is string => x != null && x.length > 0)
                     .join(" · ") || undefined
                 }
               />
-              <p
-                className="mt-1.5 text-[8px] leading-snug text-muted-foreground/90"
-                title="均等加重の保有前日比から、VOO の当日騰落（右欄と同じ値）を差し引いた当日の超過リターン（目安）。"
-              >
-                <span className="font-bold uppercase tracking-wider text-muted-foreground/80">α 乖離</span>
-                <span
-                  className={`mx-1.5 font-mono font-semibold tabular-nums tracking-tight ${spreadFmt.color}`}
+              {!compact ? (
+                <p
+                  className="mt-1.5 text-[8px] leading-snug text-muted-foreground/90"
+                  title="均等加重の保有前日比から、VOO の当日騰落（右欄と同じ値）を差し引いた当日の超過リターン（目安）。"
                 >
-                  {spreadFmt.text}
-                </span>
-                <span className="text-muted-foreground/65 normal-case font-normal tracking-normal">
-                  （均等PF − VOO·1D）
-                </span>
-              </p>
+                  <span className="font-bold uppercase tracking-wider text-muted-foreground/80">α 乖離</span>
+                  <span
+                    className={`mx-1.5 font-mono font-semibold tabular-nums tracking-tight ${spreadFmt.color}`}
+                  >
+                    {spreadFmt.text}
+                  </span>
+                  <span className="text-muted-foreground/65 normal-case font-normal tracking-normal">
+                    （均等PF − VOO·1D）
+                  </span>
+                </p>
+              ) : null}
             </div>
           </div>
           <StatBox
@@ -244,7 +225,7 @@ export function DashboardHeader({
             subLabel={benchSubLabel}
             title={benchAsOfTitle}
           />
-          <RiskRegimeGauge indicators={marketIndicators} />
+          {!compact ? <RiskRegimeGauge indicators={marketIndicators} /> : null}
           <div className="flex items-center gap-2">
             <ThemeToggle />
           </div>

@@ -174,7 +174,73 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
           含み損益・損益率は平均取得単価と Yahoo 日足ベースの最新終値から算出。米株の円換算はダッシュボード取得の USD/JPY（JPY=X、失敗時フォールバック）を使用。
         </p>
       </div>
-      <div className="relative overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
+
+      {/* Mobile: cards (no horizontal scroll) */}
+      <div className="md:hidden divide-y divide-border/60">
+        {sorted.length === 0 ? (
+          <div className="p-5 text-sm text-muted-foreground">No holdings.</div>
+        ) : (
+          sorted.map((s) => {
+            const mv = s.marketValue > 0 ? formatJpyValueForView(s.marketValue, viewCurrency, convert) : "—";
+            const pnlText =
+              s.unrealizedPnlJpy != null && Number.isFinite(s.unrealizedPnlJpy)
+                ? `${s.unrealizedPnlJpy > 0 ? "+" : s.unrealizedPnlJpy < 0 ? "−" : ""}${formatJpyValueForView(
+                    Math.abs(s.unrealizedPnlJpy),
+                    viewCurrency,
+                    convert,
+                  )}`
+                : "—";
+            return (
+              <div key={s.id} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-foreground/95 truncate">
+                      {s.ticker}{" "}
+                      <span className="font-normal text-muted-foreground/90">{s.name || ""}</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground truncate">
+                      {holdingSectorDisplay(s.sector, s.secondaryTag)}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-[10px] font-bold text-muted-foreground">
+                    {marketLabel(s.instrumentKind)}
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-border bg-background/40 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      評価額
+                    </div>
+                    <div className="mt-1 font-mono text-xs font-semibold text-foreground/90">
+                      {mv}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background/40 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      損益
+                    </div>
+                    <div className={`mt-1 font-mono text-xs font-semibold ${signedValueClass(s.unrealizedPnlJpy ?? 0)}`}>
+                      {pnlText}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background/40 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      前日比
+                    </div>
+                    <div className={`mt-1 font-mono text-xs font-semibold ${signedPctClass(s.dayChangePercent)}`}>
+                      {formatSignedPercent(s.dayChangePercent)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop: table (horizontal scroll allowed) */}
+      <div className="hidden md:block relative overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full text-left text-sm min-w-[1100px]">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.08em]">
             <tr>
