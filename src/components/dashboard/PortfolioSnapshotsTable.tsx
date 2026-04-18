@@ -41,6 +41,11 @@ function fmtRecorded(iso: string): string {
   }).format(d);
 }
 
+function fmtIntOrDash(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return String(Math.trunc(v));
+}
+
 function marketSummary(indicators: PortfolioDailySnapshotRow["marketIndicators"]): string {
   if (indicators == null) return "—";
   if (indicators.length === 0) return "（空）";
@@ -264,7 +269,7 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[1240px]">
+          <table className="w-full text-left text-sm min-w-[1480px]">
             <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th className={`px-4 py-3 whitespace-nowrap min-w-[6.5rem] ${stickyThFirst}`}>日付 (UTC)</th>
@@ -287,6 +292,30 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
                   title="DB: cost_basis。ダッシュ Cost basis と同じ（各銘柄 評価額−含み の合計）"
                 >
                   コスト (円)
+                </th>
+                <th
+                  className="px-4 py-3 text-right whitespace-nowrap"
+                  title="DB: holdings_count。記録時点の保有行数（dash.stocks）"
+                >
+                  銘柄数
+                </th>
+                <th
+                  className="px-4 py-3 text-right whitespace-nowrap"
+                  title="直前の portfolio snapshot 日の holding_daily_snapshots と比較した新規 holding_id 数（032 以降）"
+                >
+                  ＋
+                </th>
+                <th
+                  className="px-4 py-3 text-right whitespace-nowrap"
+                  title="同上・消えた holding_id 数"
+                >
+                  −
+                </th>
+                <th
+                  className="px-4 py-3 text-right whitespace-nowrap"
+                  title="同上・両日に存在した holding_id 数"
+                >
+                  継続
                 </th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">平均 α</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">PF 前日比</th>
@@ -347,6 +376,18 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
                         title={r.costBasisJpy != null ? `cost_basis: ${r.costBasisJpy}` : "cost_basis 未記録（015 未適用または旧行）"}
                       >
                         {r.costBasisJpy != null ? jpyFmt.format(r.costBasisJpy) : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-slate-300 text-xs" title="holdings_count">
+                        {fmtIntOrDash(r.holdingsCount)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-slate-300 text-xs" title="holdings_added_count">
+                        {fmtIntOrDash(r.holdingsAddedCount)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-slate-300 text-xs" title="holdings_removed_count">
+                        {fmtIntOrDash(r.holdingsRemovedCount)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-slate-300 text-xs" title="holdings_continuing_count">
+                        {fmtIntOrDash(r.holdingsContinuingCount)}
                       </td>
                       <td className={`px-4 py-2.5 text-right font-mono text-xs ${pctClass(r.portfolioAvgAlpha)}`}>
                         {fmtPct(r.portfolioAvgAlpha)}

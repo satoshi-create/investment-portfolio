@@ -352,6 +352,14 @@ export type PortfolioDailySnapshotRow = {
   totalProfitJpy: number | null;
   /** `cost_basis`＝記録時 `DashboardSummary.totalCostBasisJpy`（各銘柄 評価額−含み の合計）。未移行 DB では null */
   costBasisJpy: number | null;
+  /** 記録時点の保有行数（`dash.stocks.length`）。032 未適用の旧行は null */
+  holdingsCount: number | null;
+  /** 直前の `snapshot_date` の holding_daily_snapshots と比較した新規 `holding_id` 数。比較不可時は null */
+  holdingsAddedCount: number | null;
+  /** 同上・消えた `holding_id` 数。比較不可時は null */
+  holdingsRemovedCount: number | null;
+  /** 同上・両日に存在した `holding_id` 数。比較不可時は null */
+  holdingsContinuingCount: number | null;
   portfolioAvgAlpha: number | null;
   portfolioReturnVsPrevPct: number | null;
   benchmarkReturnVsPrevPct: number | null;

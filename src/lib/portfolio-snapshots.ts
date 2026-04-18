@@ -29,6 +29,13 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function intOrNull(v: unknown): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
 function isSqliteMissingColumn(e: unknown, column: string): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   const lower = msg.toLowerCase();
@@ -73,6 +80,10 @@ function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): 
     totalUnrealizedPnlJpy: numOrNull(row.total_unrealized_pnl_jpy),
     totalProfitJpy: numOrNull(row.total_profit),
     costBasisJpy: numOrNull(row.cost_basis),
+    holdingsCount: intOrNull(row.holdings_count),
+    holdingsAddedCount: intOrNull(row.holdings_added_count),
+    holdingsRemovedCount: intOrNull(row.holdings_removed_count),
+    holdingsContinuingCount: intOrNull(row.holdings_continuing_count),
     portfolioAvgAlpha: numOrNull(row.portfolio_avg_alpha),
     portfolioReturnVsPrevPct: numOrNull(row.portfolio_return_vs_prev_pct),
     benchmarkReturnVsPrevPct: numOrNull(row.benchmark_return_vs_prev_pct),
@@ -94,7 +105,9 @@ export async function fetchPortfolioDailySnapshotsForUser(
     const rs = await db.execute({
       sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
                    p.benchmark_change_pct,
-                   p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.total_profit, p.cost_basis, p.portfolio_avg_alpha,
+                   p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.total_profit, p.cost_basis,
+                   p.holdings_count, p.holdings_added_count, p.holdings_removed_count, p.holdings_continuing_count,
+                   p.portfolio_avg_alpha,
                    p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
                    m.payload_json AS market_glance_payload_json
             FROM portfolio_daily_snapshots p
@@ -107,6 +120,60 @@ export async function fetchPortfolioDailySnapshotsForUser(
     });
     return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
   } catch (e) {
+    if (isSqliteMissingColumn(e, "holdings_count")) {
+      try {
+        const rs = await db.execute({
+          sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
+                       p.benchmark_change_pct,
+                       p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.total_profit, p.cost_basis, p.portfolio_avg_alpha,
+                       p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
+                       m.payload_json AS market_glance_payload_json
+                FROM portfolio_daily_snapshots p
+                LEFT JOIN market_glance_snapshots m
+                  ON m.user_id = p.user_id AND m.snapshot_date = p.snapshot_date
+                WHERE p.user_id = ?
+                ORDER BY p.snapshot_date DESC
+                LIMIT ?`,
+          args: [userId, cap],
+        });
+        return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
+      } catch (e2) {
+        if (isSqliteMissingColumn(e2, "total_profit") || isSqliteMissingColumn(e2, "cost_basis")) {
+          const rs = await db.execute({
+            sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
+                         p.benchmark_change_pct,
+                         p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.portfolio_avg_alpha,
+                         p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
+                         m.payload_json AS market_glance_payload_json
+                  FROM portfolio_daily_snapshots p
+                  LEFT JOIN market_glance_snapshots m
+                    ON m.user_id = p.user_id AND m.snapshot_date = p.snapshot_date
+                  WHERE p.user_id = ?
+                  ORDER BY p.snapshot_date DESC
+                  LIMIT ?`,
+            args: [userId, cap],
+          });
+          return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
+        }
+        const m2 = e2 instanceof Error ? e2.message : String(e2);
+        const m2Lower = m2.toLowerCase();
+        if (m2Lower.includes("no such table") && m2Lower.includes("market_glance_snapshots")) {
+          const rs = await db.execute({
+            sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                         benchmark_change_pct,
+                         total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis, portfolio_avg_alpha,
+                         portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+                  FROM portfolio_daily_snapshots
+                  WHERE user_id = ?
+                  ORDER BY snapshot_date DESC
+                  LIMIT ?`,
+            args: [userId, cap],
+          });
+          return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
+        }
+        throw e2;
+      }
+    }
     if (isSqliteMissingColumn(e, "total_profit") || isSqliteMissingColumn(e, "cost_basis")) {
       try {
         const rs = await db.execute({
@@ -151,7 +218,9 @@ export async function fetchPortfolioDailySnapshotsForUser(
         const rs = await db.execute({
           sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
                        benchmark_change_pct,
-                       total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis, portfolio_avg_alpha,
+                       total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis,
+                       holdings_count, holdings_added_count, holdings_removed_count, holdings_continuing_count,
+                       portfolio_avg_alpha,
                        portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
                 FROM portfolio_daily_snapshots
                 WHERE user_id = ?
@@ -161,6 +230,38 @@ export async function fetchPortfolioDailySnapshotsForUser(
         });
         return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
       } catch (e2) {
+        if (isSqliteMissingColumn(e2, "holdings_count")) {
+          try {
+            const rs = await db.execute({
+              sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                           benchmark_change_pct,
+                           total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis, portfolio_avg_alpha,
+                           portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+                    FROM portfolio_daily_snapshots
+                    WHERE user_id = ?
+                    ORDER BY snapshot_date DESC
+                    LIMIT ?`,
+              args: [userId, cap],
+            });
+            return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
+          } catch (e3) {
+            if (isSqliteMissingColumn(e3, "total_profit") || isSqliteMissingColumn(e3, "cost_basis")) {
+              const rs = await db.execute({
+                sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                             benchmark_change_pct,
+                             total_market_value_jpy, total_unrealized_pnl_jpy, portfolio_avg_alpha,
+                             portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+                      FROM portfolio_daily_snapshots
+                      WHERE user_id = ?
+                      ORDER BY snapshot_date DESC
+                      LIMIT ?`,
+                args: [userId, cap],
+              });
+              return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
+            }
+            throw e3;
+          }
+        }
         if (isSqliteMissingColumn(e2, "total_profit") || isSqliteMissingColumn(e2, "cost_basis")) {
           const rs = await db.execute({
             sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
@@ -187,6 +288,79 @@ export async function fetchPortfolioDailySnapshotsForUser(
     }
     throw e;
   }
+}
+
+async function fetchHoldingIdsForUserSnapshotDate(
+  db: Client,
+  userId: string,
+  snapshotDate: string,
+): Promise<Set<string> | null> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT holding_id FROM holding_daily_snapshots WHERE user_id = ? AND snapshot_date = ?`,
+      args: [userId, snapshotDate],
+    });
+    const set = new Set<string>();
+    for (const row of rs.rows) {
+      const r = row as Record<string, unknown>;
+      const hid = r.holding_id;
+      if (hid != null && String(hid).length > 0) set.add(String(hid));
+    }
+    return set;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const lower = msg.toLowerCase();
+    if (lower.includes("no such table") && lower.includes("holding_daily_snapshots")) return null;
+    throw e;
+  }
+}
+
+type HoldingsCountSnapshotFields = {
+  holdingsCount: number;
+  holdingsAddedCount: number | null;
+  holdingsRemovedCount: number | null;
+  holdingsContinuingCount: number | null;
+};
+
+/** Compares current `holding_id`s to the prior calendar `holding_daily_snapshots` day (if any). */
+function computeHoldingsCountSnapshotFields(
+  currentHoldingIds: readonly string[],
+  prevHoldingIds: Set<string> | null,
+): HoldingsCountSnapshotFields {
+  const holdingsCount = currentHoldingIds.length;
+  if (prevHoldingIds === null) {
+    return {
+      holdingsCount,
+      holdingsAddedCount: null,
+      holdingsRemovedCount: null,
+      holdingsContinuingCount: null,
+    };
+  }
+  if (prevHoldingIds.size === 0) {
+    if (currentHoldingIds.length === 0) {
+      return { holdingsCount, holdingsAddedCount: 0, holdingsRemovedCount: 0, holdingsContinuingCount: 0 };
+    }
+    return {
+      holdingsCount,
+      holdingsAddedCount: null,
+      holdingsRemovedCount: null,
+      holdingsContinuingCount: null,
+    };
+  }
+  const curr = new Set(currentHoldingIds);
+  let continuing = 0;
+  for (const id of curr) {
+    if (prevHoldingIds.has(id)) continuing += 1;
+  }
+  let added = 0;
+  for (const id of curr) {
+    if (!prevHoldingIds.has(id)) added += 1;
+  }
+  let removed = 0;
+  for (const id of prevHoldingIds) {
+    if (!curr.has(id)) removed += 1;
+  }
+  return { holdingsCount, holdingsAddedCount: added, holdingsRemovedCount: removed, holdingsContinuingCount: continuing };
 }
 
 function parseInstrumentKind(raw: string): TickerInstrumentKind {
@@ -392,7 +566,7 @@ export async function recordPortfolioDailySnapshot(
   const avgAlpha = dash.summary.portfolioAverageAlpha;
 
   const prevRs = await db.execute({
-    sql: `SELECT total_market_value_jpy, benchmark_close
+    sql: `SELECT snapshot_date AS prev_snapshot_date, total_market_value_jpy, benchmark_close
           FROM portfolio_daily_snapshots
           WHERE user_id = ? AND snapshot_date < ?
           ORDER BY snapshot_date DESC
@@ -400,12 +574,16 @@ export async function recordPortfolioDailySnapshot(
     args: [userId, snapshotDate],
   });
 
+  let prevSnapshotDate: string | null = null;
   let portfolioReturnVsPrev: number | null = null;
   let benchmarkReturnVsPrev: number | null = null;
   let alphaVsPrev: number | null = null;
 
   if (prevRs.rows.length > 0) {
-    const prow = prevRs.rows[0]!;
+    const prow = prevRs.rows[0] as Record<string, unknown>;
+    if (prow.prev_snapshot_date != null && String(prow.prev_snapshot_date).length > 0) {
+      prevSnapshotDate = String(prow.prev_snapshot_date);
+    }
     const prevMv = Number(prow.total_market_value_jpy);
     const prevBench =
       prow.benchmark_close != null && Number.isFinite(Number(prow.benchmark_close))
@@ -428,6 +606,15 @@ export async function recordPortfolioDailySnapshot(
     }
   }
 
+  let prevHoldingIds: Set<string> | null = null;
+  if (prevSnapshotDate != null) {
+    prevHoldingIds = await fetchHoldingIdsForUserSnapshotDate(db, userId, prevSnapshotDate);
+  }
+  const holdingCountFields = computeHoldingsCountSnapshotFields(
+    dash.stocks.map((s) => s.id),
+    prevHoldingIds,
+  );
+
   const existing = await db.execute({
     sql: `SELECT 1 FROM portfolio_daily_snapshots WHERE user_id = ? AND snapshot_date = ? LIMIT 1`,
     args: [userId, snapshotDate],
@@ -443,9 +630,11 @@ export async function recordPortfolioDailySnapshot(
       sql: `INSERT INTO portfolio_daily_snapshots (
               id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
               benchmark_change_pct,
-              total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis, portfolio_avg_alpha,
+              total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis,
+              holdings_count, holdings_added_count, holdings_removed_count, holdings_continuing_count,
+              portfolio_avg_alpha,
               portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
               id = excluded.id,
               recorded_at = excluded.recorded_at,
@@ -456,6 +645,10 @@ export async function recordPortfolioDailySnapshot(
               total_unrealized_pnl_jpy = excluded.total_unrealized_pnl_jpy,
               total_profit = excluded.total_profit,
               cost_basis = excluded.cost_basis,
+              holdings_count = excluded.holdings_count,
+              holdings_added_count = excluded.holdings_added_count,
+              holdings_removed_count = excluded.holdings_removed_count,
+              holdings_continuing_count = excluded.holdings_continuing_count,
               portfolio_avg_alpha = excluded.portfolio_avg_alpha,
               portfolio_return_vs_prev_pct = excluded.portfolio_return_vs_prev_pct,
               benchmark_return_vs_prev_pct = excluded.benchmark_return_vs_prev_pct,
@@ -473,6 +666,10 @@ export async function recordPortfolioDailySnapshot(
         totalPnlJpy,
         snapshotTotalProfitJpy,
         snapshotCostBasisJpy,
+        holdingCountFields.holdingsCount,
+        holdingCountFields.holdingsAddedCount,
+        holdingCountFields.holdingsRemovedCount,
+        holdingCountFields.holdingsContinuingCount,
         avgAlpha,
         portfolioReturnVsPrev,
         benchmarkReturnVsPrev,
