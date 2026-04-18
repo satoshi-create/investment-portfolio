@@ -4,6 +4,7 @@ export type DashboardResponseJson = {
   userId: string;
   stocks: unknown[];
   allThemes: unknown[];
+  themeStructuralSparklines: unknown[];
   signals: unknown[];
   structureByTheme: unknown[];
   structureBySector: unknown[];

@@ -8,17 +8,25 @@ import React from "react";
 export function EcosystemCumulativeSparkline({
   history,
   tone = "normal",
+  variant = "default",
 }: {
   history: number[];
   /** `shadow`: 未上場の proxy 観測など、薄く「影」として出す */
   tone?: "normal" | "shadow";
+  /** `compact`: ダッシュボードのテーマカード向けミニサイズ */
+  variant?: "default" | "compact";
 }) {
   if (history.length === 0) {
-    return <span className="text-slate-600 text-xs">No data</span>;
+    return (
+      <span className={variant === "compact" ? "text-muted-foreground text-[10px]" : "text-slate-600 text-xs"}>
+        —
+      </span>
+    );
   }
 
-  const W = 208;
-  const H = 48;
+  const compact = variant === "compact";
+  const W = compact ? 132 : 208;
+  const H = compact ? 34 : 48;
   const padX = 6;
   const padY = 5;
   const midY = H / 2;
@@ -38,10 +46,12 @@ export function EcosystemCumulativeSparkline({
   const dash = isShadow ? "3 3" : undefined;
 
   return (
-    <div className="flex justify-center w-full min-w-[7rem] max-w-[13rem] mx-auto">
+    <div
+      className={`flex justify-center mx-auto ${compact ? "w-[6.5rem] max-w-[8rem]" : "w-full min-w-[7rem] max-w-[13rem]"}`}
+    >
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-12"
+        className={compact ? "w-full h-[34px]" : "w-full h-12"}
         role="img"
         aria-label="累積 Alpha の長期推移"
       >

@@ -7,6 +7,7 @@ import { cn } from "@/src/lib/cn";
 import { parseCreditStream } from "@/src/lib/unicorn-credit-stream";
 import { daysUntil, parseExpectedIpoDate } from "@/src/lib/unicorn-ipo";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
+import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 
 function extractStructureText(notes: string | null): string | null {
   if (!notes) return null;
@@ -20,7 +21,13 @@ function extractStructureText(notes: string | null): string | null {
   return line.replace(/^構造:\s*/i, "").replace(/^structure:\s*/i, "").trim();
 }
 
-export function UnicornCard({ item }: { item: ThemeEcosystemWatchItem }) {
+export function UnicornCard({
+  item,
+  onToggleKeep,
+}: {
+  item: ThemeEcosystemWatchItem;
+  onToggleKeep?: () => void | Promise<void>;
+}) {
   const isUnlisted = item.isUnlisted;
   const structure = extractStructureText(item.observationNotes);
   const credit = useMemo(() => parseCreditStream(item.privateCreditBacking), [item.privateCreditBacking]);
@@ -58,7 +65,11 @@ export function UnicornCard({ item }: { item: ThemeEcosystemWatchItem }) {
           ) : null}
         </div>
 
-        <div className="shrink-0 text-right">
+        <div className="shrink-0 text-right flex flex-col items-end gap-2">
+          {onToggleKeep ? (
+            <EcosystemKeepButton isKept={item.isKept} onClick={() => void onToggleKeep()} />
+          ) : null}
+          <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-1">
             Mining schedule
           </p>
@@ -71,6 +82,7 @@ export function UnicornCard({ item }: { item: ThemeEcosystemWatchItem }) {
               </span>
             </p>
           ) : null}
+          </div>
         </div>
       </div>
 

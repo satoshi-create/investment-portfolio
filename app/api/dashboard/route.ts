@@ -67,6 +67,7 @@ export async function GET(request: Request) {
         userId,
         stocks: dash.stocks as unknown[],
         allThemes: dash.allThemes as unknown[],
+        themeStructuralSparklines: dash.themeStructuralSparklines as unknown[],
         signals: signals as unknown[],
         structureByTheme: dash.structureByTheme as unknown[],
         structureBySector: dash.structureBySector as unknown[],

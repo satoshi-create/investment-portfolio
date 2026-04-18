@@ -12,6 +12,7 @@ import type {
   StructureTagSlice,
   ThemeDetailData,
   ThemeEcosystemWatchItem,
+  ThemeStructuralSparklineEntry,
   TickerInstrumentKind,
 } from "@/src/types/investment";
 import {
@@ -677,6 +678,161 @@ function finalizeStocksFromDrafts(drafts: StockDraft[], totalMarketValue: number
   });
 }
 
+function datedAlphaRowsByTickerUpper(byTickerDated: Map<string, DatedAlphaRow[]>): Map<string, DatedAlphaRow[]> {
+  const byUpper = new Map<string, DatedAlphaRow[]>();
+  for (const [k, v] of byTickerDated) {
+    byUpper.set(k.toUpperCase(), v);
+  }
+  return byUpper;
+}
+
+function effectiveTickerFromEcoSparklineRow(row: Record<string, unknown>): string {
+  const isUnlisted = Number(row["is_unlisted"]) === 1;
+  const t = String(row["ticker"] ?? "").trim();
+  const proxy = row["proxy_ticker"] != null ? String(row["proxy_ticker"]).trim() : "";
+  if (isUnlisted && proxy.length > 0) return proxy;
+  return t;
+}
+
+async function fetchEcosystemSparklineRowsByThemeIds(
+  db: Client,
+  themeIds: string[],
+): Promise<Map<string, Record<string, unknown>[]>> {
+  const out = new Map<string, Record<string, unknown>[]>();
+  if (themeIds.length === 0) return out;
+  try {
+    const ph = themeIds.map(() => "?").join(",");
+    const rs = await db.execute({
+      sql: `SELECT theme_id, ticker, is_unlisted, proxy_ticker, is_major_player
+            FROM theme_ecosystem_members
+            WHERE theme_id IN (${ph})
+            ORDER BY theme_id ASC, field ASC, ticker ASC`,
+      args: themeIds,
+    });
+    for (const row of rs.rows as Record<string, unknown>[]) {
+      const tid = String(row["theme_id"] ?? "");
+      if (tid.length === 0) continue;
+      const arr = out.get(tid) ?? [];
+      arr.push(row);
+      out.set(tid, arr);
+    }
+    return out;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("theme_ecosystem_members")) {
+      return out;
+    }
+    throw e;
+  }
+}
+
+/**
+ * ダッシュボードのテーマカード用に、保有またはエコシステム加重の「構造トレンド」累積系列（~90 日）を一括算出する。
+ */
+async function computeThemeStructuralSparklinesForDashboard(
+  db: Client,
+  userId: string,
+  allThemes: InvestmentThemeRecord[],
+  drafts: StockDraft[],
+): Promise<ThemeStructuralSparklineEntry[]> {
+  if (allThemes.length === 0) return [];
+
+  const windowStartYmd = ymdDaysAgoUtc(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS);
+  const themeIds = [...new Set(allThemes.map((t) => String(t.id).trim()).filter((id) => id.length > 0))];
+  const ecoByTheme = await fetchEcosystemSparklineRowsByThemeIds(db, themeIds);
+
+  const tickers = new Set<string>();
+  for (const d of drafts) {
+    const tk = String(d.ticker ?? "").trim();
+    if (tk.length > 0) tickers.add(tk);
+  }
+  for (const rows of ecoByTheme.values()) {
+    for (const row of rows) {
+      const eff = effectiveTickerFromEcoSparklineRow(row);
+      if (eff.length > 0) tickers.add(eff);
+    }
+  }
+
+  const alphaRows =
+    tickers.size > 0 ? await fetchAlphaHistoryRowsForTickers(db, userId, [...tickers]) : [];
+  const byTickerDated = buildByTickerDatedAlphaRows(alphaRows);
+  const byTickerUpper = datedAlphaRowsByTickerUpper(byTickerDated);
+
+  const out: ThemeStructuralSparklineEntry[] = [];
+
+  for (const theme of allThemes) {
+    const matchingDrafts = drafts.filter((d) =>
+      portfolioThemeTagMatchesThemePage(themeFromStructureTags(d.structureTagsJson), theme.name),
+    );
+
+    let structuralTrendInputs: { weight: number; dailyAlphaByYmd: Map<string, number> }[] = [];
+
+    if (matchingDrafts.length > 0) {
+      const mergedByTickerUpper = new Map<
+        string,
+        { weight: number; tickerKey: string }
+      >();
+      for (const d of matchingDrafts) {
+        const tk = String(d.ticker ?? "").trim();
+        if (tk.length === 0) continue;
+        const u = tk.toUpperCase();
+        const w = sanitizeMarketValueForAggregation(d.marketValue);
+        const prev = mergedByTickerUpper.get(u);
+        mergedByTickerUpper.set(u, {
+          weight: (prev?.weight ?? 0) + w,
+          tickerKey: tk,
+        });
+      }
+      for (const { weight, tickerKey } of mergedByTickerUpper.values()) {
+        if (weight <= 0) continue;
+        const dated = byTickerDated.get(tickerKey) ?? byTickerUpper.get(tickerKey.toUpperCase()) ?? [];
+        const filtered = dated.filter((r) => toYmd(r.recordedAt) >= windowStartYmd);
+        if (filtered.length === 0) continue;
+        const dailyAlphaByYmd = new Map<string, number>();
+        for (const r of filtered) {
+          dailyAlphaByYmd.set(toYmd(r.recordedAt), r.alphaValue);
+        }
+        structuralTrendInputs.push({ weight, dailyAlphaByYmd });
+      }
+    } else {
+      const ecoRows = ecoByTheme.get(theme.id) ?? [];
+      const tickerWeights = new Map<string, number>();
+      const tickerSqlByUpper = new Map<string, string>();
+      for (const raw of ecoRows) {
+        const eff = effectiveTickerFromEcoSparklineRow(raw);
+        if (eff.length === 0) continue;
+        const u = eff.toUpperCase();
+        if (!tickerSqlByUpper.has(u)) tickerSqlByUpper.set(u, eff);
+        const w = Number(raw["is_major_player"]) === 1 ? 2 : 1;
+        tickerWeights.set(u, (tickerWeights.get(u) ?? 0) + w);
+      }
+      for (const [u, weight] of tickerWeights) {
+        const sqlTk = tickerSqlByUpper.get(u) ?? u;
+        const dated = byTickerDated.get(sqlTk) ?? byTickerUpper.get(u) ?? [];
+        const filtered = dated.filter((r) => toYmd(r.recordedAt) >= windowStartYmd);
+        if (filtered.length === 0) continue;
+        if (weight <= 0) continue;
+        const dailyAlphaByYmd = new Map<string, number>();
+        for (const r of filtered) {
+          dailyAlphaByYmd.set(toYmd(r.recordedAt), r.alphaValue);
+        }
+        structuralTrendInputs.push({ weight, dailyAlphaByYmd });
+      }
+    }
+
+    const series = computeThemeStructuralTrendCumulativeFromWeightedDailyAlphas(
+      structuralTrendInputs,
+      windowStartYmd,
+    );
+    out.push({
+      themeId: theme.id,
+      cumulativeValues: series.map((p) => p.cumulative),
+    });
+  }
+
+  return out;
+}
+
 function computeThemeAverageUnrealizedPnlPercent(stocks: Stock[]): number {
   const withBasis = stocks.filter(
     (s) => s.avgAcquisitionPrice != null && s.avgAcquisitionPrice > 0 && s.quantity > 0,
@@ -928,6 +1084,10 @@ async function enrichEcosystemMemberRow(
   }
   const drawdownFromHigh90dPct = computePriceDrawdownFromHighPercent(closesForDrawdown, displayPrice);
 
+  const rawKept = row["is_kept"];
+  const isKept =
+    rawKept != null && String(rawKept).trim() !== "" ? Number(rawKept) === 1 : false;
+
   return {
     id,
     themeId,
@@ -969,6 +1129,7 @@ async function enrichEcosystemMemberRow(
     holderTags,
     dividendMonths,
     defensiveStrength,
+    isKept,
   };
 }
 
@@ -996,6 +1157,12 @@ function ecosystemMissingUnicornColumns(e: unknown): boolean {
   );
 }
 
+function ecosystemMissingIsKeptColumn(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("is_kept");
+}
+
 async function fetchEnrichedThemeEcosystem(
   db: Client,
   userId: string,
@@ -1008,18 +1175,37 @@ async function fetchEnrichedThemeEcosystem(
   try {
     let rows: Record<string, unknown>[];
     try {
-      const rs = await db.execute({
-        sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
-                     last_round_valuation, private_credit_backing, observation_notes,
-                     company_name, field, role, is_major_player, observation_started_at,
-                     adoption_stage, adoption_stage_rationale, expectation_category,
-                     holder_tags, dividend_months, defensive_strength
-              FROM theme_ecosystem_members
-              WHERE theme_id = ?
-              ORDER BY field ASC, ticker ASC`,
-        args: [themeId],
-      });
-      rows = rs.rows as unknown as Record<string, unknown>[];
+      try {
+        const rs = await db.execute({
+          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                       last_round_valuation, private_credit_backing, observation_notes,
+                       company_name, field, role, is_major_player, observation_started_at,
+                       adoption_stage, adoption_stage_rationale, expectation_category,
+                       holder_tags, dividend_months, defensive_strength, is_kept
+                FROM theme_ecosystem_members
+                WHERE theme_id = ?
+                ORDER BY field ASC, ticker ASC`,
+          args: [themeId],
+        });
+        rows = rs.rows as unknown as Record<string, unknown>[];
+      } catch (err) {
+        if (!ecosystemMissingIsKeptColumn(err)) throw err;
+        const rs = await db.execute({
+          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                       last_round_valuation, private_credit_backing, observation_notes,
+                       company_name, field, role, is_major_player, observation_started_at,
+                       adoption_stage, adoption_stage_rationale, expectation_category,
+                       holder_tags, dividend_months, defensive_strength
+                FROM theme_ecosystem_members
+                WHERE theme_id = ?
+                ORDER BY field ASC, ticker ASC`,
+          args: [themeId],
+        });
+        rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+          ...r,
+          is_kept: 0,
+        }));
+      }
     } catch (e) {
       if (ecosystemMissingUnicornColumns(e)) {
         // Older DB without unicorn fields: fallback and inject nulls.
@@ -1586,9 +1772,16 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     };
     const goldPrice = indicatorValueOrNull("Gold");
     const btcPrice = indicatorValueOrNull("BTC");
+    const themeStructuralSparklines = await computeThemeStructuralSparklinesForDashboard(
+      db,
+      userId,
+      allThemes,
+      [],
+    );
     return {
       stocks: [],
       allThemes,
+      themeStructuralSparklines,
       structureByTheme: [],
       structureBySector: [],
       coreSatellite: computeCoreSatellite([]),
@@ -1695,7 +1888,23 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     ...financial,
   };
 
-  return { stocks, allThemes, structureByTheme, structureBySector, coreSatellite, totalMarketValue, summary };
+  const themeStructuralSparklines = await computeThemeStructuralSparklinesForDashboard(
+    db,
+    userId,
+    allThemes,
+    drafts,
+  );
+
+  return {
+    stocks,
+    allThemes,
+    themeStructuralSparklines,
+    structureByTheme,
+    structureBySector,
+    coreSatellite,
+    totalMarketValue,
+    summary,
+  };
 }
 
 export async function fetchStocksForUser(db: Client, userId: string): Promise<Stock[]> {

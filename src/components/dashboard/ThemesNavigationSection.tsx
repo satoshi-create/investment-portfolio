@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { Layout, Radar } from "lucide-react";
 
+import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import type { InvestmentThemeRecord } from "@/src/types/investment";
 
 const AI_UNICORNS_THEME_NAME = "AIユニコーン";
@@ -16,8 +17,10 @@ function excerpt(text: string | null, max = 96): string {
 export function ThemesNavigationSection(props: {
   themes: InvestmentThemeRecord[];
   inPortfolioThemeNames: Set<string>;
+  /** `theme_id` → 直近 ~90 日の加重累積 Alpha（構造トレンドと同系列の要約） */
+  structuralSparklineByThemeId?: Record<string, number[]>;
 }) {
-  const { themes, inPortfolioThemeNames } = props;
+  const { themes, inPortfolioThemeNames, structuralSparklineByThemeId } = props;
 
   if (themes.length === 0) return null;
 
@@ -32,7 +35,9 @@ export function ThemesNavigationSection(props: {
             <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               構造投資テーマ
             </div>
-            <div className="text-sm text-foreground/90">保有の有無に関わらず、すべてのテーマへ移動できます</div>
+            <div className="text-sm text-foreground/90">
+              各カードの「年輪」で累積 Alpha の方向を俯瞰し、詳細へジャンプできます
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -74,7 +79,7 @@ export function ThemesNavigationSection(props: {
               className="group rounded-2xl border border-border bg-background/10 hover:bg-muted/30 transition-colors p-4"
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-sm font-bold text-foreground/95 truncate group-hover:text-foreground">
                     {name}
                   </div>
@@ -82,9 +87,20 @@ export function ThemesNavigationSection(props: {
                     {desc.length > 0 ? desc : "（説明は未登録です）"}
                   </div>
                 </div>
-                <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full border ${badgeClass}`}>
-                  {badgeLabel}
-                </span>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${badgeClass}`}>
+                    {badgeLabel}
+                  </span>
+                  <div
+                    className="opacity-90 group-hover:opacity-100 transition-opacity pointer-events-none"
+                    title="直近の構造トレンド（加重累積 Alpha）"
+                  >
+                    <EcosystemCumulativeSparkline
+                      history={structuralSparklineByThemeId?.[t.id] ?? []}
+                      variant="compact"
+                    />
+                  </div>
+                </div>
               </div>
             </Link>
           );

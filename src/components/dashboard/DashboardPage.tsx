@@ -1,12 +1,19 @@
 'use client';
 
-import React, { useCallback, useEffect, useState, useTransition } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import { recordPortfolioSnapshotAction } from "@/app/actions/snapshot";
 import { generateSignalsAction } from "@/app/actions/signals";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
-import type { DashboardSummary, InvestmentThemeRecord, Signal, Stock, StructureTagSlice } from "@/src/types/investment";
+import type {
+  DashboardSummary,
+  InvestmentThemeRecord,
+  Signal,
+  Stock,
+  StructureTagSlice,
+  ThemeStructuralSparklineEntry,
+} from "@/src/types/investment";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
@@ -48,6 +55,7 @@ type DashboardPayload = {
   userId: string;
   stocks: Stock[];
   allThemes: InvestmentThemeRecord[];
+  themeStructuralSparklines: ThemeStructuralSparklineEntry[];
   signals: Signal[];
   structureBySector: StructureTagSlice[];
   totalMarketValue: number;
@@ -88,6 +96,7 @@ export function DashboardPage() {
         userId: json.userId!,
         stocks: json.stocks ?? [],
         allThemes: json.allThemes ?? [],
+        themeStructuralSparklines: json.themeStructuralSparklines ?? [],
         signals: json.signals ?? [],
         structureBySector: json.structureBySector ?? [],
         totalMarketValue: json.totalMarketValue ?? 0,
@@ -175,6 +184,16 @@ export function DashboardPage() {
   const portfolioThemeSet = new Set(
     stocks.map((s) => (s.tag ?? "").trim()).filter((x) => x.length > 0),
   );
+
+  const structuralSparklineByThemeId = useMemo(() => {
+    const rec: Record<string, number[]> = {};
+    for (const e of data?.themeStructuralSparklines ?? []) {
+      if (e.themeId != null && e.themeId.length > 0 && Array.isArray(e.cumulativeValues)) {
+        rec[e.themeId] = e.cumulativeValues;
+      }
+    }
+    return rec;
+  }, [data?.themeStructuralSparklines]);
 
   const satelliteStockCount = stocks.filter(
     (s) => s.category === "Satellite" && s.quantity > 0 && s.marketValue > 0,
@@ -364,6 +383,7 @@ export function DashboardPage() {
         <ThemesNavigationSection
           themes={allThemes}
           inPortfolioThemeNames={portfolioThemeSet}
+          structuralSparklineByThemeId={structuralSparklineByThemeId}
         />
         <HoldingsDetailTable stocks={stocks} />
         <TradeEntryForm

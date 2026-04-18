@@ -13,6 +13,7 @@ import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-m
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
 import { EarningsNoteMarkdownPreview } from "@/src/components/dashboard/EarningsNoteMarkdownPreview";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
+import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 import { detectOpportunityType } from "@/src/lib/alpha-logic";
@@ -63,6 +64,8 @@ export function InventoryTable({
   onTrade,
   onTradeNew,
   themeStructuralTrendUp = false,
+  resolveEcosystemKeep,
+  onToggleEcosystemKeep,
 }: {
   stocks: Stock[];
   totalHoldings: number;
@@ -77,6 +80,9 @@ export function InventoryTable({
   themeStructuralTrendUp?: boolean;
   /** 名目為替に依らない平均日次 α（省略時は `averageAlpha`） */
   averageFxNeutralAlpha?: number;
+  /** テーマページ: エコシステムに同一銘柄があるときキープトグルを表示 */
+  resolveEcosystemKeep?: (ticker: string) => { memberId: string; isKept: boolean } | null;
+  onToggleEcosystemKeep?: (memberId: string) => void | Promise<void>;
 }) {
   const { convert, viewCurrency, alphaDisplayMode } = useCurrencyConverter();
   const averageFxNeutralAlpha = averageFxNeutralAlphaProp ?? averageAlpha;
@@ -401,6 +407,8 @@ export function InventoryTable({
                 alphaDeviationZ: z,
                 drawdownFromHighPct: dd,
               });
+              const ecoKeep =
+                resolveEcosystemKeep != null ? resolveEcosystemKeep(stock.ticker) : null;
               return (
                 <tr key={stock.id} className="group hover:bg-muted/60 transition-all">
                   <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
@@ -427,6 +435,13 @@ export function InventoryTable({
                           ) : null}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
+                          {ecoKeep != null && onToggleEcosystemKeep != null ? (
+                            <EcosystemKeepButton
+                              size="xs"
+                              isKept={ecoKeep.isKept}
+                              onClick={() => void onToggleEcosystemKeep(ecoKeep.memberId)}
+                            />
+                          ) : null}
                           <span
                             className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
                               (stock.accountType ?? "特定") === "NISA"

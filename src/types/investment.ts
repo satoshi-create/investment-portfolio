@@ -216,10 +216,18 @@ export type DashboardSummary = {
   portfolioAvgDayChangePct: number | null;
 };
 
+/** ダッシュボード「構造的年輪」用。各テーマの直近 ~90 日・加重累積 Alpha（構造トレンドと同系列の要約）。 */
+export type ThemeStructuralSparklineEntry = {
+  themeId: string;
+  cumulativeValues: number[];
+};
+
 export type DashboardData = {
   stocks: Stock[];
   /** 保有の有無に関わらず、ユーザーが登録している全テーマ（`investment_themes`）。 */
   allThemes: InvestmentThemeRecord[];
+  /** テーマカード用ミニチャート（テーマ ID 単位、`cumulativeValues` は時系列の累積 %） */
+  themeStructuralSparklines: ThemeStructuralSparklineEntry[];
   /** 構造投資テーマ（`structure_tags` 先頭）別の評価額・銘柄数 */
   structureByTheme: StructureTagSlice[];
   /** `holdings.sector` 優先、空なら `structure_tags` の 2 番目で集計した評価額・銘柄数 */
@@ -316,6 +324,8 @@ export type ThemeEcosystemWatchItem = {
   holderTags: string[];
   dividendMonths: number[];
   defensiveStrength: string | null;
+  /** `theme_ecosystem_members.is_kept` — 投資タイミング待ちの候補としてキープ */
+  isKept: boolean;
 };
 
 /**

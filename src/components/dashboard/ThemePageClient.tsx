@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { toggleThemeEcosystemMemberKept } from "@/app/actions/theme-ecosystem";
 import type {
   InvestmentThemeRecord,
   ThemeDetailData,
@@ -46,6 +47,8 @@ import {
   themeEcosystemWatchlistCsvFileName,
 } from "@/src/lib/csv-export";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
+import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
+import { KeptStockShelf } from "@/src/components/dashboard/KeptStockShelf";
 import { AiUnicornTrendPulse } from "@/src/components/dashboard/AiUnicornTrendPulse";
 import { AiUnicornMiningSchedule } from "@/src/components/dashboard/AiUnicornMiningSchedule";
 import { AiUnicornCreditSeam } from "@/src/components/dashboard/AiUnicornCreditSeam";
@@ -298,6 +301,10 @@ function normalizeThemeDetailResponse(
                   : "";
             return s.length > 0 ? s : null;
           })(),
+          isKept:
+            typeof (item as Record<string, unknown>).isKept === "boolean"
+              ? ((item as Record<string, unknown>).isKept as boolean)
+              : Number((item as Record<string, unknown>).is_kept) === 1,
           };
         })
       : [],
@@ -652,6 +659,66 @@ export function ThemePageClient({
   const themeStructuralTrendUp = useMemo(
     () => isThemeStructuralTrendPositiveUp(themeStructuralTrendSeries),
     [themeStructuralTrendSeries],
+  );
+
+  const handleToggleEcosystemKeep = useCallback(
+    async (memberId: string) => {
+      const prevEntry = ecosystem.find((x) => x.id === memberId);
+      if (!prevEntry) return;
+      const optimistic = !prevEntry.isKept;
+      setData((cur) => {
+        if (!cur) return cur;
+        return {
+          ...cur,
+          ecosystem: cur.ecosystem.map((x) =>
+            x.id === memberId ? { ...x, isKept: optimistic } : x,
+          ),
+        };
+      });
+      const res = await toggleThemeEcosystemMemberKept(memberId, {
+        themeSlugForRevalidate: themeQueryName,
+      });
+      if (!res.ok) {
+        toast.error(res.message ?? "キープ状態の更新に失敗しました");
+        setData((cur) => {
+          if (!cur) return cur;
+          return {
+            ...cur,
+            ecosystem: cur.ecosystem.map((x) =>
+              x.id === memberId ? { ...x, isKept: prevEntry.isKept } : x,
+            ),
+          };
+        });
+        return;
+      }
+      if (res.isKept !== undefined) {
+        setData((cur) => {
+          if (!cur) return cur;
+          return {
+            ...cur,
+            ecosystem: cur.ecosystem.map((x) =>
+              x.id === memberId ? { ...x, isKept: res.isKept! } : x,
+            ),
+          };
+        });
+      }
+    },
+    [ecosystem, themeQueryName],
+  );
+
+  const resolveEcosystemKeepForTicker = useCallback(
+    (ticker: string) => {
+      const u = ticker.trim().toUpperCase();
+      for (const e of ecosystem) {
+        const proxy = e.proxyTicker != null ? e.proxyTicker.trim().toUpperCase() : "";
+        const tk = e.ticker.trim().toUpperCase();
+        if (tk === u || (proxy.length > 0 && proxy === u)) {
+          return { memberId: e.id, isKept: e.isKept };
+        }
+      }
+      return null;
+    },
+    [ecosystem],
   );
 
   const themeAvgAlphaDisplayed = useMemo(() => {
@@ -1321,6 +1388,8 @@ export function ThemePageClient({
           <>
             <ThemeMetaBlock theme={theme} themeName={themeLabel} />
 
+            <KeptStockShelf themeName={themeDisplayName} items={ecosystem} />
+
             {themeLabel === "SaaSアポカリプス" ? <SaaSApocalypseLensPanel /> : null}
 
             {isSemiconductorSupplyChainTheme ? (
@@ -1551,6 +1620,8 @@ export function ThemePageClient({
                 }
                 onTradeNew={() => openTradeForm(null)}
                 themeStructuralTrendUp={themeStructuralTrendUp}
+                resolveEcosystemKeep={resolveEcosystemKeepForTicker}
+                onToggleEcosystemKeep={(id) => void handleToggleEcosystemKeep(id)}
               />
             ) : null}
 
@@ -1725,7 +1796,11 @@ export function ThemePageClient({
                       {ecosystem
                         .filter((e) => e.isUnlisted)
                         .map((e) => (
-                          <UnicornCard key={e.id} item={e} />
+                          <UnicornCard
+                            key={e.id}
+                            item={e}
+                            onToggleKeep={() => void handleToggleEcosystemKeep(e.id)}
+                          />
                         ))}
                     </div>
                   </div>
@@ -2292,7 +2367,10 @@ export function ThemePageClient({
                                   />
                                 </tr>
                               ) : null}
-                              <tr className="group hover:bg-slate-800/40 transition-all">
+                              <tr
+                                id={`eco-row-${e.id}`}
+                                className="group hover:bg-slate-800/40 transition-all scroll-mt-24"
+                              >
                                 <td
                                   className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyTdFirst}`}
                                 >
@@ -2328,7 +2406,12 @@ export function ThemePageClient({
                                           </div>
                                         ) : null}
                                       </div>
-                                      <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                                      <div className="flex flex-wrap gap-1 justify-end items-start shrink-0">
+                                        <EcosystemKeepButton
+                                          size="xs"
+                                          isKept={e.isKept}
+                                          onClick={() => void handleToggleEcosystemKeep(e.id)}
+                                        />
                                         {e.isMajorPlayer ? (
                                           <span className="text-[8px] font-bold uppercase tracking-wide text-amber-400/95 border border-amber-500/35 px-1.5 py-0.5 rounded">
                                             Major
