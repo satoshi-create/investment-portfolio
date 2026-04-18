@@ -4,6 +4,7 @@ import { roundAlphaMetric, SIGNAL_BENCHMARK_TICKER } from "@/src/lib/alpha-logic
 import { reconcileAlphaHistoryForUser, type ReconcileAlphaHistoryResult } from "@/src/lib/alpha-history-reconcile";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
+import { isLikelyEtfOrFundHolding } from "@/src/lib/strata-holding-detect";
 import { getDashboardData } from "@/src/lib/dashboard-data";
 import type {
   HoldingDailySnapshotRow,
@@ -40,6 +41,17 @@ function isSqliteMissingColumn(e: unknown, column: string): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   const lower = msg.toLowerCase();
   return lower.includes("no such column") && lower.includes(column.toLowerCase());
+}
+
+/** US / JP 上場株のみ。ETF・投信型は `isLikelyEtfOrFundHolding` で除外（JP 投信コード保有は種別外）。 */
+function sumNonEtfListedEquityQuantity(stocks: Stock[]): number {
+  let sum = 0;
+  for (const st of stocks) {
+    if (st.instrumentKind !== "US_EQUITY" && st.instrumentKind !== "JP_LISTED_EQUITY") continue;
+    if (isLikelyEtfOrFundHolding(st.ticker, st.name)) continue;
+    if (Number.isFinite(st.quantity) && st.quantity > 0) sum += st.quantity;
+  }
+  return sum;
 }
 
 /** Parse `market_glance_snapshots.payload_json` → validated indicators (empty array OK). */
@@ -84,6 +96,7 @@ function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): 
     holdingsAddedCount: intOrNull(row.holdings_added_count),
     holdingsRemovedCount: intOrNull(row.holdings_removed_count),
     holdingsContinuingCount: intOrNull(row.holdings_continuing_count),
+    nonEtfListedEquityQuantityTotal: numOrNull(row.non_etf_listed_equity_quantity_total),
     portfolioAvgAlpha: numOrNull(row.portfolio_avg_alpha),
     portfolioReturnVsPrevPct: numOrNull(row.portfolio_return_vs_prev_pct),
     benchmarkReturnVsPrevPct: numOrNull(row.benchmark_return_vs_prev_pct),
@@ -107,6 +120,7 @@ export async function fetchPortfolioDailySnapshotsForUser(
                    p.benchmark_change_pct,
                    p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.total_profit, p.cost_basis,
                    p.holdings_count, p.holdings_added_count, p.holdings_removed_count, p.holdings_continuing_count,
+                   p.non_etf_listed_equity_quantity_total,
                    p.portfolio_avg_alpha,
                    p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
                    m.payload_json AS market_glance_payload_json
@@ -120,6 +134,62 @@ export async function fetchPortfolioDailySnapshotsForUser(
     });
     return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
   } catch (e) {
+    if (isSqliteMissingColumn(e, "non_etf_listed_equity_quantity_total")) {
+      try {
+        const rs = await db.execute({
+          sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
+                       p.benchmark_change_pct,
+                       p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.total_profit, p.cost_basis,
+                       p.holdings_count, p.holdings_added_count, p.holdings_removed_count, p.holdings_continuing_count,
+                       p.portfolio_avg_alpha,
+                       p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
+                       m.payload_json AS market_glance_payload_json
+                FROM portfolio_daily_snapshots p
+                LEFT JOIN market_glance_snapshots m
+                  ON m.user_id = p.user_id AND m.snapshot_date = p.snapshot_date
+                WHERE p.user_id = ?
+                ORDER BY p.snapshot_date DESC
+                LIMIT ?`,
+          args: [userId, cap],
+        });
+        return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
+      } catch (e2) {
+        if (isSqliteMissingColumn(e2, "total_profit") || isSqliteMissingColumn(e2, "cost_basis")) {
+          const rs = await db.execute({
+            sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
+                         p.benchmark_change_pct,
+                         p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.portfolio_avg_alpha,
+                         p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
+                         m.payload_json AS market_glance_payload_json
+                  FROM portfolio_daily_snapshots p
+                  LEFT JOIN market_glance_snapshots m
+                    ON m.user_id = p.user_id AND m.snapshot_date = p.snapshot_date
+                  WHERE p.user_id = ?
+                  ORDER BY p.snapshot_date DESC
+                  LIMIT ?`,
+            args: [userId, cap],
+          });
+          return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
+        }
+        const m2n = e2 instanceof Error ? e2.message : String(e2);
+        const m2nLower = m2n.toLowerCase();
+        if (m2nLower.includes("no such table") && m2nLower.includes("market_glance_snapshots")) {
+          const rs = await db.execute({
+            sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                         benchmark_change_pct,
+                         total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis, portfolio_avg_alpha,
+                         portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+                  FROM portfolio_daily_snapshots
+                  WHERE user_id = ?
+                  ORDER BY snapshot_date DESC
+                  LIMIT ?`,
+            args: [userId, cap],
+          });
+          return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
+        }
+        throw e2;
+      }
+    }
     if (isSqliteMissingColumn(e, "holdings_count")) {
       try {
         const rs = await db.execute({
@@ -220,6 +290,7 @@ export async function fetchPortfolioDailySnapshotsForUser(
                        benchmark_change_pct,
                        total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis,
                        holdings_count, holdings_added_count, holdings_removed_count, holdings_continuing_count,
+                       non_etf_listed_equity_quantity_total,
                        portfolio_avg_alpha,
                        portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
                 FROM portfolio_daily_snapshots
@@ -230,6 +301,22 @@ export async function fetchPortfolioDailySnapshotsForUser(
         });
         return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
       } catch (e2) {
+        if (isSqliteMissingColumn(e2, "non_etf_listed_equity_quantity_total")) {
+          const rs = await db.execute({
+            sql: `SELECT id, user_id, snapshot_date, recorded_at, fx_usd_jpy, benchmark_ticker, benchmark_close,
+                         benchmark_change_pct,
+                         total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis,
+                         holdings_count, holdings_added_count, holdings_removed_count, holdings_continuing_count,
+                         portfolio_avg_alpha,
+                         portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+                  FROM portfolio_daily_snapshots
+                  WHERE user_id = ?
+                  ORDER BY snapshot_date DESC
+                  LIMIT ?`,
+            args: [userId, cap],
+          });
+          return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, undefined));
+        }
         if (isSqliteMissingColumn(e2, "holdings_count")) {
           try {
             const rs = await db.execute({
@@ -614,6 +701,7 @@ export async function recordPortfolioDailySnapshot(
     dash.stocks.map((s) => s.id),
     prevHoldingIds,
   );
+  const nonEtfListedEquityQuantityTotal = sumNonEtfListedEquityQuantity(dash.stocks);
 
   const existing = await db.execute({
     sql: `SELECT 1 FROM portfolio_daily_snapshots WHERE user_id = ? AND snapshot_date = ? LIMIT 1`,
@@ -632,9 +720,10 @@ export async function recordPortfolioDailySnapshot(
               benchmark_change_pct,
               total_market_value_jpy, total_unrealized_pnl_jpy, total_profit, cost_basis,
               holdings_count, holdings_added_count, holdings_removed_count, holdings_continuing_count,
+              non_etf_listed_equity_quantity_total,
               portfolio_avg_alpha,
               portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
               id = excluded.id,
               recorded_at = excluded.recorded_at,
@@ -649,6 +738,7 @@ export async function recordPortfolioDailySnapshot(
               holdings_added_count = excluded.holdings_added_count,
               holdings_removed_count = excluded.holdings_removed_count,
               holdings_continuing_count = excluded.holdings_continuing_count,
+              non_etf_listed_equity_quantity_total = excluded.non_etf_listed_equity_quantity_total,
               portfolio_avg_alpha = excluded.portfolio_avg_alpha,
               portfolio_return_vs_prev_pct = excluded.portfolio_return_vs_prev_pct,
               benchmark_return_vs_prev_pct = excluded.benchmark_return_vs_prev_pct,
@@ -670,6 +760,7 @@ export async function recordPortfolioDailySnapshot(
         holdingCountFields.holdingsAddedCount,
         holdingCountFields.holdingsRemovedCount,
         holdingCountFields.holdingsContinuingCount,
+        nonEtfListedEquityQuantityTotal,
         avgAlpha,
         portfolioReturnVsPrev,
         benchmarkReturnVsPrev,

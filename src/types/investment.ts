@@ -360,6 +360,11 @@ export type PortfolioDailySnapshotRow = {
   holdingsRemovedCount: number | null;
   /** 同上・両日に存在した `holding_id` 数。比較不可時は null */
   holdingsContinuingCount: number | null;
+  /**
+   * 米株・日本上場株の数量合計のうち、`isLikelyEtfOrFundHolding` が false の行のみ（投信は種別上対象外）。
+   * DB: `non_etf_listed_equity_quantity_total`。033 未適用の旧行は null。
+   */
+  nonEtfListedEquityQuantityTotal: number | null;
   portfolioAvgAlpha: number | null;
   portfolioReturnVsPrevPct: number | null;
   benchmarkReturnVsPrevPct: number | null;

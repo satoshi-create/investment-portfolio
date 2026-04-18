@@ -46,6 +46,13 @@ function fmtIntOrDash(v: number | null): string {
   return String(Math.trunc(v));
 }
 
+function fmtQuantityTotal(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const t = Math.trunc(v);
+  if (Math.abs(v - t) < 1e-9) return String(t);
+  return v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
 function marketSummary(indicators: PortfolioDailySnapshotRow["marketIndicators"]): string {
   if (indicators == null) return "—";
   if (indicators.length === 0) return "（空）";
@@ -57,7 +64,8 @@ function marketSummary(indicators: PortfolioDailySnapshotRow["marketIndicators"]
   return parts.length > 0 ? parts.join(" · ") : `${indicators.length} 指標`;
 }
 
-const COL_COUNT = 14;
+/** Main snapshot table column count (expanded detail row colspan). */
+const COL_COUNT = 19;
 
 function finiteNumbers<T>(items: T[], pick: (row: T) => number | null | undefined): number[] {
   const out: number[] = [];
@@ -269,7 +277,7 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[1480px]">
+          <table className="w-full text-left text-sm min-w-[1580px]">
             <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th className={`px-4 py-3 whitespace-nowrap min-w-[6.5rem] ${stickyThFirst}`}>日付 (UTC)</th>
@@ -316,6 +324,12 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
                   title="同上・両日に存在した holding_id 数"
                 >
                   継続
+                </th>
+                <th
+                  className="px-4 py-3 text-right whitespace-nowrap"
+                  title="米株・日本上場株の数量合計（isLikelyEtfOrFundHolding で ETF/投信型を除外。投信コードは種別外）"
+                >
+                  個別株数量計
                 </th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">平均 α</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">PF 前日比</th>
@@ -388,6 +402,12 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-slate-300 text-xs" title="holdings_continuing_count">
                         {fmtIntOrDash(r.holdingsContinuingCount)}
+                      </td>
+                      <td
+                        className="px-4 py-2.5 text-right font-mono text-slate-300 text-xs"
+                        title="non_etf_listed_equity_quantity_total"
+                      >
+                        {fmtQuantityTotal(r.nonEtfListedEquityQuantityTotal)}
                       </td>
                       <td className={`px-4 py-2.5 text-right font-mono text-xs ${pctClass(r.portfolioAvgAlpha)}`}>
                         {fmtPct(r.portfolioAvgAlpha)}

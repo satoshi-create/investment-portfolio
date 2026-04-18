@@ -100,6 +100,7 @@ export function portfolioSnapshotsToCsvRows(rows: PortfolioDailySnapshotRow[]): 
     holdingsAddedCount: r.holdingsAddedCount,
     holdingsRemovedCount: r.holdingsRemovedCount,
     holdingsContinuingCount: r.holdingsContinuingCount,
+    nonEtfListedEquityQuantityTotal: r.nonEtfListedEquityQuantityTotal,
     portfolioAvgAlpha: r.portfolioAvgAlpha,
     portfolioReturnVsPrevPct: r.portfolioReturnVsPrevPct,
     benchmarkReturnVsPrevPct: r.benchmarkReturnVsPrevPct,
@@ -122,6 +123,10 @@ export const PORTFOLIO_SNAPSHOT_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "holdingsAddedCount", header: "銘柄追加数（前スナップ比）" },
   { key: "holdingsRemovedCount", header: "銘柄削除数（前スナップ比）" },
   { key: "holdingsContinuingCount", header: "継続銘柄数（前スナップ比）" },
+  {
+    key: "nonEtfListedEquityQuantityTotal",
+    header: "個別株数量計（ETF除く・米日上場）",
+  },
   { key: "portfolioAvgAlpha", header: "平均Alpha" },
   { key: "portfolioReturnVsPrevPct", header: "PF前日比（%）" },
   { key: "benchmarkReturnVsPrevPct", header: "BM前日比（%）" },

@@ -151,6 +151,7 @@ CREATE TABLE portfolio_daily_snapshots (
   holdings_added_count INTEGER,
   holdings_removed_count INTEGER,
   holdings_continuing_count INTEGER,
+  non_etf_listed_equity_quantity_total REAL,
   portfolio_avg_alpha REAL,
   portfolio_return_vs_prev_pct REAL,
   benchmark_return_vs_prev_pct REAL,
