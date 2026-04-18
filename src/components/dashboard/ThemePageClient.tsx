@@ -343,6 +343,30 @@ function normalizeThemeDetailResponse(
       rest.themeStructuralTrendStartDate.length > 0
         ? rest.themeStructuralTrendStartDate.slice(0, 10)
         : null,
+    themeSyntheticUsRatio:
+      typeof rest.themeSyntheticUsRatio === "number" && Number.isFinite(rest.themeSyntheticUsRatio)
+        ? rest.themeSyntheticUsRatio
+        : null,
+    themeSyntheticJpRatio:
+      typeof rest.themeSyntheticJpRatio === "number" && Number.isFinite(rest.themeSyntheticJpRatio)
+        ? rest.themeSyntheticJpRatio
+        : null,
+    themeSyntheticBasis:
+      rest.themeSyntheticBasis === "market_value" || rest.themeSyntheticBasis === "equal_count"
+        ? rest.themeSyntheticBasis
+        : null,
+    themeBenchmarkVooClose:
+      typeof rest.themeBenchmarkVooClose === "number" && Number.isFinite(rest.themeBenchmarkVooClose)
+        ? rest.themeBenchmarkVooClose
+        : null,
+    themeBenchmarkTopixClose:
+      typeof rest.themeBenchmarkTopixClose === "number" && Number.isFinite(rest.themeBenchmarkTopixClose)
+        ? rest.themeBenchmarkTopixClose
+        : null,
+    themeSyntheticBenchmarkTooltip:
+      typeof rest.themeSyntheticBenchmarkTooltip === "string" && rest.themeSyntheticBenchmarkTooltip.trim().length > 0
+        ? rest.themeSyntheticBenchmarkTooltip.trim()
+        : null,
   } as ThemeDetailData;
 }
 
@@ -1175,12 +1199,42 @@ export function ThemePageClient({
                 がこのテーマ名と一致する保有のみ
               </p>
             </div>
-            {data?.benchmarkLatestPrice != null &&
-            data.benchmarkLatestPrice > 0 ? (
-              <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right shrink-0">
+            {data?.themeSyntheticUsRatio != null && data.themeSyntheticJpRatio != null ? (
+              <div
+                className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right shrink-0 max-w-[16rem]"
+                title={data.themeSyntheticBenchmarkTooltip ?? undefined}
+              >
                 <p className="text-[9px] font-bold uppercase text-slate-500">
-                  VOO (ref)
+                  Synthetic{" "}
+                  <span className="font-mono text-slate-400 normal-case">
+                    (US:{Math.round(data.themeSyntheticUsRatio * 100)}% JP:
+                    {Math.round(data.themeSyntheticJpRatio * 100)}%)
+                  </span>
                 </p>
+                <div className="mt-1 space-y-0.5 font-mono text-[11px] text-slate-300 leading-snug">
+                  {data.themeBenchmarkVooClose != null && data.themeBenchmarkVooClose > 0 ? (
+                    <p>
+                      <span className="text-slate-500">VOO</span>{" "}
+                      {data.themeBenchmarkVooClose.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  ) : null}
+                  {data.themeBenchmarkTopixClose != null && data.themeBenchmarkTopixClose > 0 ? (
+                    <p>
+                      <span className="text-slate-500">1306.T</span>{" "}
+                      {data.themeBenchmarkTopixClose.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  ) : null}
+                  {data.themeBenchmarkVooClose == null && data.themeBenchmarkTopixClose == null ? (
+                    <p className="text-slate-500">参照価格未取得</p>
+                  ) : null}
+                </div>
+                <p className="text-[9px] text-slate-600 mt-1">
+                  加重: {data.themeSyntheticBasis === "equal_count" ? "銘柄数" : "評価額"}
+                </p>
+              </div>
+            ) : data?.benchmarkLatestPrice != null && data.benchmarkLatestPrice > 0 ? (
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right shrink-0">
+                <p className="text-[9px] font-bold uppercase text-slate-500">VOO (ref)</p>
                 <p className="font-mono text-lg text-slate-200">
                   {data.benchmarkLatestPrice.toLocaleString(undefined, {
                     maximumFractionDigits: 2,

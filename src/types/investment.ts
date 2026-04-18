@@ -319,6 +319,18 @@ export type ThemeDetailData = {
   /** テーマ内銘柄の最新日次 Alpha の単純平均 */
   themeAverageAlpha: number;
   benchmarkLatestPrice: number;
+  /**
+   * テーマ保有の地域構成（合成ベンチマーク用）。評価額が付いている銘柄は時価加重、全ゼロ時は銘柄数。
+   * `null` は保有ゼロ等で算出不能。
+   */
+  themeSyntheticUsRatio: number | null;
+  themeSyntheticJpRatio: number | null;
+  themeSyntheticBasis: "market_value" | "equal_count" | null;
+  /** ヘッダー / ツールチップ用の参照終値（取得失敗時は null） */
+  themeBenchmarkVooClose: number | null;
+  themeBenchmarkTopixClose: number | null;
+  /** 合成物差しの説明（title 用） */
+  themeSyntheticBenchmarkTooltip: string | null;
   /** `theme_ecosystem_members` を拡張したウォッチリスト（テーブル未作成時は []） */
   ecosystem: ThemeEcosystemWatchItem[];
   /** `investment_themes.created_at` 起点のテーマ加重累積 Alpha 系列 */

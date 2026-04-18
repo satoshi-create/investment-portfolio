@@ -29,6 +29,8 @@ export async function GET(request: Request) {
     if (perf && requestId) {
       console.log(`[perf] ${requestId} start theme="${theme.trim()}" user="${userId}"`);
     }
+    // Theme cumulative Alpha / synthetic benchmark weights are computed in `getThemeDetailData`
+    // (mixed US+JP themes blend VOO + 1306.T daily returns; see `alpha-logic`).
     const data = await getThemeDetailData(getDb(), userId, theme.trim(), { perf, requestId, fast });
     if (perf && requestId) {
       console.log(`[perf] ${requestId} done totalMs=${Date.now() - t0}`);

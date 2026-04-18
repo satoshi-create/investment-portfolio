@@ -5,7 +5,11 @@
  * For **portfolio valuation weights** (dashboard), pass a live `usdJpyRate` from `price-service` (`JPY=X`).
  */
 
-import { DEFAULT_BENCHMARK_BY_INSTRUMENT_KIND, type TickerInstrumentKind } from "@/src/types/investment";
+import {
+  DEFAULT_BENCHMARK_BY_INSTRUMENT_KIND,
+  type CumulativeAlphaPoint,
+  type TickerInstrumentKind,
+} from "@/src/types/investment";
 
 /** Benchmark ticker persisted in `alpha_history` / used by signal rules (must exist in `benchmarks`). */
 export const SIGNAL_BENCHMARK_TICKER = "VOO";
@@ -52,6 +56,148 @@ export function defaultBenchmarkTickerForInstrumentKind(kind: TickerInstrumentKi
 
 export function defaultBenchmarkTickerForTicker(ticker: string): string {
   return defaultBenchmarkTickerForInstrumentKind(classifyTickerInstrument(ticker));
+}
+
+/** TOPIX ETF（日本リージョンの既定ベンチ）。合成ベンチの JP レッグに使用。 */
+export const TOPIX_ETF_BENCHMARK_TICKER = DEFAULT_BENCHMARK_BY_INSTRUMENT_KIND.JP_LISTED_EQUITY;
+
+/**
+ * テーマ内の US / JP 構成比（0..1、合算 1）。
+ * - いずれかの `marketValue` が正なら **評価額加重**
+ * - すべて 0 / 非有限なら **銘柄数**（US vs JP）
+ */
+export function computeThemeUsJpRatiosFromStocks(
+  stocks: { instrumentKind: TickerInstrumentKind; marketValue: number }[],
+): { usRatio: number; jpRatio: number; basis: "market_value" | "equal_count" } {
+  if (stocks.length === 0) {
+    return { usRatio: 1, jpRatio: 0, basis: "equal_count" };
+  }
+  let mvUs = 0;
+  let mvJp = 0;
+  for (const s of stocks) {
+    const mv = Number.isFinite(s.marketValue) && s.marketValue > 0 ? s.marketValue : 0;
+    if (s.instrumentKind === "US_EQUITY") mvUs += mv;
+    else mvJp += mv;
+  }
+  const mvTotal = mvUs + mvJp;
+  if (mvTotal > 0) {
+    return { usRatio: mvUs / mvTotal, jpRatio: mvJp / mvTotal, basis: "market_value" };
+  }
+  let nUs = 0;
+  let nJp = 0;
+  for (const s of stocks) {
+    if (s.instrumentKind === "US_EQUITY") nUs += 1;
+    else nJp += 1;
+  }
+  const n = nUs + nJp;
+  if (n === 0) return { usRatio: 1, jpRatio: 0, basis: "equal_count" };
+  return { usRatio: nUs / n, jpRatio: nJp / n, basis: "equal_count" };
+}
+
+/**
+ * 日次の合成ベンチマーク騰落率（%）。
+ * `Synthetic_Return = VOO_Return * US_Ratio + TOPIX_Return * JP_Ratio`（正規化済み比率）。
+ * 片側のみのテーマは単一ベンチのリターンに一致。
+ */
+export function computeSyntheticBenchmarkDailyReturnPercent(
+  vooReturnPct: number | null,
+  topixReturnPct: number | null,
+  usRatio: number,
+  jpRatio: number,
+): number | null {
+  const u = Math.max(0, usRatio);
+  const j = Math.max(0, jpRatio);
+  const denom = u + j;
+  if (denom <= 1e-15) return null;
+  const nu = u / denom;
+  const nj = j / denom;
+  if (nj < 1e-12) {
+    if (vooReturnPct == null || !Number.isFinite(vooReturnPct)) return null;
+    return roundAlphaMetric(vooReturnPct);
+  }
+  if (nu < 1e-12) {
+    if (topixReturnPct == null || !Number.isFinite(topixReturnPct)) return null;
+    return roundAlphaMetric(topixReturnPct);
+  }
+  if (vooReturnPct == null || topixReturnPct == null || !Number.isFinite(vooReturnPct) || !Number.isFinite(topixReturnPct)) {
+    return null;
+  }
+  return roundAlphaMetric(nu * vooReturnPct + nj * topixReturnPct);
+}
+
+/** 日足バーの終了日 `date` に対するセッション騰落率（%）を Map に格納。 */
+export function benchmarkDailyReturnPercentByEndDate(bars: { date: string; close: number }[]): Map<string, number> {
+  const sorted = [...bars]
+    .filter((b) => typeof b.date === "string" && b.date.length >= 10 && Number.isFinite(b.close) && b.close > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const out = new Map<string, number>();
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1]!.close;
+    const cur = sorted[i]!.close;
+    const ret = dailyReturnPercent(prev, cur);
+    if (ret != null) out.set(sorted[i]!.date.slice(0, 10), ret);
+  }
+  return out;
+}
+
+export type ThemeSyntheticStockInput = {
+  ticker: string;
+  weight: number;
+  instrumentKind: TickerInstrumentKind;
+  /** 終了営業日 YYYY-MM-DD → その日の日次 Alpha（対銘柄種別デフォルトベンチ） */
+  dailyAlphaByEndDateYmd: Map<string, number>;
+};
+
+/**
+ * テーマ加重の銘柄リターン対 **合成ベンチ** の日次超過を積み上げた累積 Alpha 系列。
+ * 純 US / 純 JP では合成リターンが VOO / TOPIX に一致するため、物差しは Lv.1 と整合。
+ */
+export function computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses(input: {
+  startAnchorYmd: string;
+  stocks: ThemeSyntheticStockInput[];
+  usRatio: number;
+  jpRatio: number;
+  vooReturnByEndDateYmd: Map<string, number>;
+  topixReturnByEndDateYmd: Map<string, number>;
+}): CumulativeAlphaPoint[] {
+  const { stocks, usRatio, jpRatio, vooReturnByEndDateYmd, topixReturnByEndDateYmd, startAnchorYmd } = input;
+  const dateSet = new Set<string>();
+  for (const s of stocks) {
+    for (const d of s.dailyAlphaByEndDateYmd.keys()) {
+      if (d.length === 10) dateSet.add(d);
+    }
+  }
+  const dates = [...dateSet].sort();
+  const dailyRows: DatedAlphaRow[] = [];
+
+  for (const d of dates) {
+    const rv = vooReturnByEndDateYmd.get(d) ?? null;
+    const rj = topixReturnByEndDateYmd.get(d) ?? null;
+    const rSynth = computeSyntheticBenchmarkDailyReturnPercent(rv, rj, usRatio, jpRatio);
+    if (rSynth == null) continue;
+
+    let sumW = 0;
+    let sumWr = 0;
+    for (const s of stocks) {
+      const a = s.dailyAlphaByEndDateYmd.get(d);
+      if (a == null || !Number.isFinite(a)) continue;
+      const rNative = s.instrumentKind === "US_EQUITY" ? rv : rj;
+      if (rNative == null || !Number.isFinite(rNative)) continue;
+      const rStock = a + rNative;
+      if (!Number.isFinite(rStock)) continue;
+      const w = Math.max(0, s.weight);
+      if (w <= 0) continue;
+      sumW += w;
+      sumWr += w * rStock;
+    }
+    if (sumW <= 0) continue;
+    const rTheme = sumWr / sumW;
+    const excess = roundAlphaMetric(rTheme - rSynth);
+    dailyRows.push({ recordedAt: d, alphaValue: excess });
+  }
+
+  if (dailyRows.length < 2) return [];
+  return calculateCumulativeAlpha(dailyRows, startAnchorYmd);
 }
 
 /**

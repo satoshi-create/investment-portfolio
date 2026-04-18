@@ -4,11 +4,15 @@
 import assert from "node:assert/strict";
 
 import {
+  benchmarkDailyReturnPercentByEndDate,
   calculateCumulativeAlpha,
   classifyTickerInstrument,
   computeAlphaDeviationZScore,
   computeAlphaPercent,
   computePriceDrawdownFromHighPercent,
+  computeSyntheticBenchmarkDailyReturnPercent,
+  computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses,
+  computeThemeUsJpRatiosFromStocks,
   convertValueToJpy,
   dailyReturnPercent,
   isCumulativeSeriesTrendUpward,
@@ -68,6 +72,66 @@ eq(quoteCurrencyForDashboardWeights("NVDA"), "USD");
 eq(quoteCurrencyForDashboardWeights("06311181"), "JPY");
 eq(quoteCurrencyForDashboardWeights("4401"), "JPY");
 eq(quoteCurrencyForDashboardWeights("7203.T"), "JPY");
+
+// Theme synthetic: US/JP ratios (market-value weighted)
+{
+  const r = computeThemeUsJpRatiosFromStocks([
+    { instrumentKind: "US_EQUITY", marketValue: 70 },
+    { instrumentKind: "JP_LISTED_EQUITY", marketValue: 30 },
+  ]);
+  eq(r.basis, "market_value");
+  eq(r.usRatio, 0.7);
+  eq(r.jpRatio, 0.3);
+}
+// All US → JP ratio 0 (single VOO leg)
+{
+  const r = computeThemeUsJpRatiosFromStocks([
+    { instrumentKind: "US_EQUITY", marketValue: 100 },
+    { instrumentKind: "US_EQUITY", marketValue: 50 },
+  ]);
+  eq(r.usRatio, 1);
+  eq(r.jpRatio, 0);
+}
+// Synthetic daily return: 0.7*1 + 0.3*2 = 1.3
+eq(computeSyntheticBenchmarkDailyReturnPercent(1, 2, 0.7, 0.3), 1.3);
+eq(computeSyntheticBenchmarkDailyReturnPercent(1, null, 1, 0), 1);
+eq(computeSyntheticBenchmarkDailyReturnPercent(null, 2, 0, 1), 2);
+
+// End-date return map
+{
+  const m = benchmarkDailyReturnPercentByEndDate([
+    { date: "2025-01-01", close: 100 },
+    { date: "2025-01-02", close: 110 },
+  ]);
+  eq(m.get("2025-01-02"), 10);
+}
+
+// Pure-US theme: cumulative sums daily excess after anchor session (see `calculateCumulativeAlpha`)
+{
+  const series = computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses({
+    startAnchorYmd: "2025-01-02",
+    stocks: [
+      {
+        ticker: "A",
+        weight: 1,
+        instrumentKind: "US_EQUITY",
+        dailyAlphaByEndDateYmd: new Map([
+          ["2025-01-02", 0.5],
+          ["2025-01-03", 0.3],
+        ]),
+      },
+    ],
+    usRatio: 1,
+    jpRatio: 0,
+    vooReturnByEndDateYmd: new Map([
+      ["2025-01-02", 1],
+      ["2025-01-03", 0],
+    ]),
+    topixReturnByEndDateYmd: new Map(),
+  });
+  eq(series.length >= 2, true);
+  eq(series[series.length - 1]!.cumulative, 0.3);
+}
 
 // NVDA: qty × USD price × factor × USD/JPY
 eq(

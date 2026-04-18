@@ -14,10 +14,13 @@ import type {
   TickerInstrumentKind,
 } from "@/src/types/investment";
 import {
+  benchmarkDailyReturnPercentByEndDate,
   calculateCumulativeAlpha,
   classifyTickerInstrument,
   computeAlphaDeviationZScore,
   computePriceDrawdownFromHighPercent,
+  computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses,
+  computeThemeUsJpRatiosFromStocks,
   convertValueToJpy,
   defaultBenchmarkTickerForTicker,
   dailyReturnPercent,
@@ -26,9 +29,11 @@ import {
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
+  TOPIX_ETF_BENCHMARK_TICKER,
   toYmd,
   ymdDaysAgoUtc,
   type DatedAlphaRow,
+  type ThemeSyntheticStockInput,
 } from "@/src/lib/alpha-logic";
 import {
   alphaWatchTargetsFromEcosystemMembers,
@@ -1201,6 +1206,13 @@ export async function getThemeDetailData(
       ? String(theme.createdAt).trim().slice(0, 10)
       : null;
 
+  let themeSyntheticUsRatio: number | null = null;
+  let themeSyntheticJpRatio: number | null = null;
+  let themeSyntheticBasis: "market_value" | "equal_count" | null = null;
+  let themeBenchmarkVooClose: number | null = null;
+  let themeBenchmarkTopixClose: number | null = null;
+  let themeSyntheticBenchmarkTooltip: string | null = null;
+
   if (matching.length > 0) {
     const tickers = [...new Set(matching.map((r) => String(r.ticker)))];
     const tAlphaQ = perf.enabled ? Date.now() : 0;
@@ -1224,6 +1236,33 @@ export async function getThemeDetailData(
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
     themeAverageUnrealizedPnlPercent = computeThemeAverageUnrealizedPnlPercent(stocks);
     themeAverageAlpha = computePortfolioAverageAlpha(stocks);
+
+    const { usRatio, jpRatio, basis: synthBasis } = computeThemeUsJpRatiosFromStocks(
+      stocks.map((s) => ({ instrumentKind: s.instrumentKind, marketValue: s.marketValue })),
+    );
+    themeSyntheticUsRatio = usRatio;
+    themeSyntheticJpRatio = jpRatio;
+    themeSyntheticBasis = synthBasis;
+    themeBenchmarkVooClose =
+      benchmarkSnap.close != null && Number.isFinite(benchmarkSnap.close) && benchmarkSnap.close > 0
+        ? benchmarkSnap.close
+        : null;
+    if (!fast) {
+      try {
+        const tp = await fetchLatestPrice(TOPIX_ETF_BENCHMARK_TICKER, null);
+        if (tp != null && Number.isFinite(tp.close) && tp.close > 0) {
+          themeBenchmarkTopixClose = tp.close;
+        }
+      } catch {
+        /* optional ref price */
+      }
+    }
+    const pctU = Math.round(usRatio * 100);
+    const pctJ = Math.round(jpRatio * 100);
+    themeSyntheticBenchmarkTooltip = `テーマ累積 Alpha の物差し: 日次の合成騰落率（${pctU}%×VOO + ${pctJ}%×1306.T / TOPIX ETF）を基準線とし、テーマ加重の銘柄騰落率から差し引いた超過を積み上げています。各銘柄の日次 Alpha は Lv.1 どおり米株→VOO、日本株・投信→1306.T です。`;
+    if (fast && usRatio > 1e-6 && jpRatio > 1e-6) {
+      themeSyntheticBenchmarkTooltip += `（fast モード: 累積系列はベンチ取得を省略し、従来の銘柄別累積の加重マージを表示）`;
+    }
 
     const startAnchor =
       theme?.createdAt != null && String(theme.createdAt).trim().length > 0
@@ -1252,7 +1291,71 @@ export async function getThemeDetailData(
       }
     }
 
-    cumulativeAlphaSeries = mergeWeightedCumulativeAlphaSeries(perTicker);
+    const mergedCumulativeFallback = mergeWeightedCumulativeAlphaSeries(perTicker);
+    const isMixedRegion = usRatio > 1e-6 && jpRatio > 1e-6;
+    cumulativeAlphaSeries = mergedCumulativeFallback;
+
+    if (isMixedRegion && !fast && perTicker.length > 0) {
+      try {
+        let minD = "9999-12-31";
+        let maxD = "1970-01-01";
+        for (const s of stocks) {
+          const dr = byTickerDated.get(s.ticker);
+          if (dr == null || dr.length === 0) continue;
+          const first = toYmd(dr[0]!.recordedAt);
+          const last = toYmd(dr[dr.length - 1]!.recordedAt);
+          if (first < minD) minD = first;
+          if (last > maxD) maxD = last;
+        }
+        const spanDays =
+          minD.length === 10 && maxD.length === 10
+            ? Math.max(
+                30,
+                Math.ceil(
+                  (new Date(`${maxD}T12:00:00Z`).getTime() - new Date(`${minD}T12:00:00Z`).getTime()) /
+                    86_400_000,
+                ),
+              )
+            : 90;
+        const benchDays = Math.min(180, Math.max(70, spanDays + 45));
+        const [vooBars, topixBars] = await Promise.all([
+          fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, benchDays, null),
+          fetchPriceHistory(TOPIX_ETF_BENCHMARK_TICKER, benchDays, null),
+        ]);
+        const vooRet = benchmarkDailyReturnPercentByEndDate(vooBars);
+        const topixRet = benchmarkDailyReturnPercentByEndDate(topixBars);
+        const stockInputs: ThemeSyntheticStockInput[] = stocks
+          .map((s) => {
+            const dated = byTickerDated.get(s.ticker) ?? [];
+            const m = new Map<string, number>();
+            for (const r of dated) {
+              m.set(toYmd(r.recordedAt), r.alphaValue);
+            }
+            return {
+              ticker: s.ticker,
+              weight: sanitizeMarketValueForAggregation(s.marketValue),
+              instrumentKind: s.instrumentKind,
+              dailyAlphaByEndDateYmd: m,
+            };
+          })
+          .filter((x) => x.weight > 0);
+
+        const synthSeries = computeThemeCumulativeAlphaVsSyntheticFromDailyExcesses({
+          startAnchorYmd: toYmd(startAnchor),
+          stocks: stockInputs,
+          usRatio,
+          jpRatio,
+          vooReturnByEndDateYmd: vooRet,
+          topixReturnByEndDateYmd: topixRet,
+        });
+        if (synthSeries.length >= 2) {
+          cumulativeAlphaSeries = synthSeries;
+        }
+      } catch {
+        /* keep mergedCumulativeFallback */
+      }
+    }
+
     if (cumulativeAlphaSeries.length > 0) {
       structuralAlphaTotalPct = cumulativeAlphaSeries[cumulativeAlphaSeries.length - 1]!.cumulative;
     }
@@ -1361,6 +1464,12 @@ export async function getThemeDetailData(
     themeAverageUnrealizedPnlPercent,
     themeAverageAlpha,
     benchmarkLatestPrice: benchmarkSnap.close,
+    themeSyntheticUsRatio,
+    themeSyntheticJpRatio,
+    themeSyntheticBasis,
+    themeBenchmarkVooClose,
+    themeBenchmarkTopixClose,
+    themeSyntheticBenchmarkTooltip,
     ecosystem,
     cumulativeAlphaSeries,
     structuralAlphaTotalPct,
