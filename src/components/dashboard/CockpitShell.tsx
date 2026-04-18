@@ -36,7 +36,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Close the drawer after navigation
-    setMobileSidebarOpen(false);
+    queueMicrotask(() => setMobileSidebarOpen(false));
   }, [pathname]);
 
   const {

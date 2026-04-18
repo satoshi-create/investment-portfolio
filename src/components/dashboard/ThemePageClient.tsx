@@ -252,6 +252,37 @@ function normalizeThemeDetailResponse(
           ...item,
           instrumentKind,
           countryName: instrumentKind === "US_EQUITY" ? "米国" : "日本",
+          revenueGrowth: (() => {
+            const v =
+              (item as Record<string, unknown>).revenueGrowth ??
+              (item as Record<string, unknown>).revenue_growth;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : Number.NaN;
+          })(),
+          fcfMargin: (() => {
+            const v =
+              (item as Record<string, unknown>).fcfMargin ??
+              (item as Record<string, unknown>).fcf_margin;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : Number.NaN;
+          })(),
+          fcfYield: (() => {
+            const v =
+              (item as Record<string, unknown>).fcfYield ??
+              (item as Record<string, unknown>).fcf_yield;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : Number.NaN;
+          })(),
+          ruleOf40: (() => {
+            const v =
+              (item as Record<string, unknown>).ruleOf40 ??
+              (item as Record<string, unknown>).rule_of_40;
+            const n = Number(v);
+            if (Number.isFinite(n)) return n;
+            const rg = Number((item as Record<string, unknown>).revenueGrowth ?? (item as Record<string, unknown>).revenue_growth);
+            const fm = Number((item as Record<string, unknown>).fcfMargin ?? (item as Record<string, unknown>).fcf_margin);
+            return Number.isFinite(rg) && Number.isFinite(fm) ? rg + fm : Number.NaN;
+          })(),
           lastRoundValuation: (() => {
             const v =
               (item as Record<string, unknown>).lastRoundValuation ??
@@ -727,6 +758,19 @@ export function ThemePageClient({
       ? data.themeAverageFxNeutralAlpha
       : data.themeAverageAlpha;
   }, [data, alphaDisplayMode]);
+
+  const ecosystemEfficiencySummary = useMemo(() => {
+    const finite = (n: number) => Number.isFinite(n);
+    const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+    const r40s = ecosystem.map((e) => e.ruleOf40).filter(finite);
+    const fys = ecosystem.map((e) => e.fcfYield).filter(finite);
+    return {
+      avgRuleOf40: avg(r40s),
+      avgFcfYield: avg(fys),
+      countRuleOf40: r40s.length,
+      countFcfYield: fys.length,
+    };
+  }, [ecosystem]);
 
   const defensiveHolders = useMemo(() => {
     if (!isDefensiveTheme) return [];
@@ -1456,7 +1500,7 @@ export function ThemePageClient({
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
                   <p className="text-[9px] font-bold uppercase text-slate-500 flex items-center gap-1">
                     <TrendingUp size={12} className="opacity-70" />
@@ -1499,6 +1543,43 @@ export function ThemePageClient({
                     {alphaDisplayMode === "fxNeutral"
                       ? "現地通貨の超過収益（名目為替レンズに依存しない）"
                       : "テーマ内銘柄の単純平均"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-500" title="Rule of 40（売上成長率% + FCFマージン%）">
+                    平均 Rule of 40（Eco）
+                  </p>
+                  <p
+                    className={cn(
+                      "text-xl font-mono font-bold mt-1",
+                      ecosystemEfficiencySummary.avgRuleOf40 == null
+                        ? "text-slate-600"
+                        : ecosystemEfficiencySummary.avgRuleOf40 >= 40
+                          ? "text-emerald-300"
+                          : ecosystemEfficiencySummary.avgRuleOf40 >= 0
+                            ? "text-slate-100"
+                            : "text-rose-300",
+                    )}
+                  >
+                    {ecosystemEfficiencySummary.avgRuleOf40 == null
+                      ? "—"
+                      : `${ecosystemEfficiencySummary.avgRuleOf40.toFixed(1)}%`}
+                  </p>
+                  <p className="text-[8px] text-slate-500 mt-1 leading-snug">
+                    n={ecosystemEfficiencySummary.countRuleOf40}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-500" title="FCF Yield（%）">
+                    平均 FCF Yield（Eco）
+                  </p>
+                  <p className="text-xl font-mono font-bold text-slate-100 mt-1">
+                    {ecosystemEfficiencySummary.avgFcfYield == null
+                      ? "—"
+                      : `${ecosystemEfficiencySummary.avgFcfYield.toFixed(1)}%`}
+                  </p>
+                  <p className="text-[8px] text-slate-500 mt-1 leading-snug">
+                    n={ecosystemEfficiencySummary.countFcfYield}
                   </p>
                 </div>
               </div>

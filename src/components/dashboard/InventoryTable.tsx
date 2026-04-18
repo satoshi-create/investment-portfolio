@@ -267,6 +267,25 @@ export function InventoryTable({
     return v.toFixed(3);
   }
 
+  function fmtPct0(v: number): string {
+    if (!Number.isFinite(v)) return "—";
+    return `${v.toFixed(1)}%`;
+  }
+
+  function rule40Tone(v: number): { text: string; cls: string } {
+    if (!Number.isFinite(v)) return { text: "—", cls: "text-muted-foreground" };
+    if (v >= 40) return { text: fmtPct0(v), cls: "text-emerald-300 font-bold" };
+    if (v >= 0) return { text: fmtPct0(v), cls: "text-foreground/90 font-bold" };
+    return { text: fmtPct0(v), cls: "text-rose-300 font-bold" };
+  }
+
+  function fcfYieldTone(v: number): { text: string; cls: string } {
+    if (!Number.isFinite(v)) return { text: "—", cls: "text-muted-foreground" };
+    if (v >= 6) return { text: fmtPct0(v), cls: "text-emerald-300 font-bold" };
+    if (v >= 0) return { text: fmtPct0(v), cls: "text-foreground/90 font-bold" };
+    return { text: fmtPct0(v), cls: "text-rose-300 font-bold" };
+  }
+
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
       <div className="p-5 border-b border-border flex justify-between items-center bg-card/60">
@@ -436,6 +455,19 @@ export function InventoryTable({
                       </div>
                     </div>
                   </div>
+
+                  <div className="mt-2 flex items-center gap-3 text-[11px] font-mono">
+                    <span className="text-muted-foreground">R40</span>
+                    {(() => {
+                      const r40 = rule40Tone(stock.ruleOf40);
+                      return <span className={r40.cls}>{r40.text}</span>;
+                    })()}
+                    <span className="text-muted-foreground">FCF</span>
+                    {(() => {
+                      const fy = fcfYieldTone(stock.fcfYield);
+                      return <span className={fy.cls}>{fy.text}</span>;
+                    })()}
+                  </div>
                 </div>
               );
             })
@@ -461,6 +493,12 @@ export function InventoryTable({
                 title="Sort"
               >
                 Research{sortMark("research")}
+              </th>
+              <th className="px-6 py-4 text-right whitespace-nowrap" title="Rule of 40（売上成長率% + FCFマージン%）">
+                Rule of 40
+              </th>
+              <th className="px-6 py-4 text-right whitespace-nowrap" title="FCF Yield（%）">
+                FCF Yield
               </th>
               <th className="px-4 py-4 text-center whitespace-nowrap" title="押し目（Dip）判定">
                 Opportunity
@@ -654,6 +692,26 @@ export function InventoryTable({
                         {stock.accountType ?? "特定"}
                       </span>
                     </div>
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono text-xs">
+                    {(() => {
+                      const r40 = rule40Tone(stock.ruleOf40);
+                      return (
+                        <span className={r40.cls} title="Rule of 40 = revenueGrowth + fcfMargin">
+                          {r40.text}
+                        </span>
+                      );
+                    })()}
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono text-xs">
+                    {(() => {
+                      const fy = fcfYieldTone(stock.fcfYield);
+                      return (
+                        <span className={fy.cls} title="FCF Yield（高いほど割安・キャッシュ効率）">
+                          {fy.text}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-4 text-center">
                     {opportunityType === "DEEP_VALUE" ? (

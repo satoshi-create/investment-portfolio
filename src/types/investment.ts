@@ -130,6 +130,17 @@ export interface Stock {
   expectationCategory: ExpectationCategory | null;
   /** `holdings.earnings_summary_note`（決算要約メモ）。未設定は null */
   earningsSummaryNote: string | null;
+
+  /**
+   * Efficiency metrics (theme ecosystem enriched).
+   * NOTE: Some DBs / rows may not have these; in that case runtime may carry NaN.
+   * UI should treat non-finite values as "—".
+   */
+  revenueGrowth: number;
+  fcfMargin: number;
+  fcfYield: number;
+  /** revenueGrowth + fcfMargin */
+  ruleOf40: number;
 }
 
 /** DB `signals.signal_type` and client-side synthetic live signals. */
@@ -326,6 +337,16 @@ export type ThemeEcosystemWatchItem = {
   defensiveStrength: string | null;
   /** `theme_ecosystem_members.is_kept` — 投資タイミング待ちの候補としてキープ */
   isKept: boolean;
+
+  /**
+   * Efficiency metrics (stored on theme_ecosystem_members; NaN when unknown).
+   * - Rule of 40 = revenue growth % + FCF margin %.
+   * - FCF Yield = FCF / valuation × 100 (listed: stored; unlisted: can be estimated from lastRoundValuation/estimatedValuation).
+   */
+  revenueGrowth: number;
+  fcfMargin: number;
+  fcfYield: number;
+  ruleOf40: number;
 };
 
 /**

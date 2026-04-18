@@ -471,6 +471,125 @@ function parseEarningsSummaryNote(raw: unknown): string | null {
 
 type StockDraft = Omit<Stock, "weight"> & { structureTagsJson: string };
 
+type EcosystemEfficiencyRow = {
+  ticker: unknown;
+  revenue_growth?: unknown;
+  fcf_margin?: unknown;
+  fcf_yield?: unknown;
+  fcf?: unknown;
+};
+
+function parsePercentOrNaN(raw: unknown): number {
+  if (raw == null) return Number.NaN;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : Number.NaN;
+}
+
+function parseMoneyOrNaN(raw: unknown): number {
+  if (raw == null) return Number.NaN;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : Number.NaN;
+}
+
+function computeRuleOf40(revenueGrowth: number, fcfMargin: number): number {
+  if (!Number.isFinite(revenueGrowth) || !Number.isFinite(fcfMargin)) return Number.NaN;
+  return revenueGrowth + fcfMargin;
+}
+
+function ecosystemMissingEfficiencyColumns(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("no such column") &&
+    (lower.includes("revenue_growth") || lower.includes("fcf_margin") || lower.includes("fcf_yield"))
+  );
+}
+
+async function fetchEcosystemEfficiencyByTickerUpper(
+  db: Client,
+  tickers: string[],
+): Promise<Map<string, { revenueGrowth: number; fcfMargin: number; fcfYield: number; ruleOf40: number }>> {
+  const out = new Map<string, { revenueGrowth: number; fcfMargin: number; fcfYield: number; ruleOf40: number }>();
+  const unique = [...new Set(tickers.map((t) => String(t ?? "").trim()).filter((t) => t.length > 0))];
+  if (unique.length === 0) return out;
+  try {
+    const ph = unique.map(() => "?").join(",");
+    // Prefer ticker-level table (shared across holdings + ecosystem).
+    let rs;
+    try {
+      rs = await db.execute({
+        sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
+              FROM ticker_efficiency_metrics
+              WHERE ticker IN (${ph})`,
+        args: unique,
+      });
+    } catch (eTickerTable) {
+      // Fallback for older DBs: use theme_ecosystem_members columns when available.
+      rs = await db.execute({
+        sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
+              FROM theme_ecosystem_members
+              WHERE ticker IN (${ph})`,
+        args: unique,
+      });
+    }
+    for (const row of rs.rows as unknown as EcosystemEfficiencyRow[]) {
+      const tk = String(row.ticker ?? "").trim();
+      if (tk.length === 0) continue;
+      const revenueGrowth = parsePercentOrNaN(row.revenue_growth);
+      const fcfMargin = parsePercentOrNaN(row.fcf_margin);
+      const fcfYield = parsePercentOrNaN(row.fcf_yield);
+      out.set(tk.toUpperCase(), {
+        revenueGrowth,
+        fcfMargin,
+        fcfYield,
+        ruleOf40: computeRuleOf40(revenueGrowth, fcfMargin),
+      });
+    }
+    return out;
+  } catch (e) {
+    if (ecosystemMissingEfficiencyColumns(e)) return out;
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("no such table") || msg.toLowerCase().includes("theme_ecosystem_members")) return out;
+    throw e;
+  }
+}
+
+/**
+ * Parse human-ish valuation text into number (USD).
+ * Examples:
+ * - "$10B" / "10B" / "10 b" -> 10_000_000_000
+ * - "$750M" -> 750_000_000
+ * - "1.2T" -> 1_200_000_000_000
+ * Returns NaN when unknown.
+ */
+function parseEstimatedValuationTextToNumber(raw: string | null): number {
+  if (!raw) return Number.NaN;
+  const s = raw.trim();
+  if (s.length === 0) return Number.NaN;
+  const m = s.replace(/,/g, "").match(/(-?\d+(?:\.\d+)?)\s*([KMBT])?/i);
+  if (!m) return Number.NaN;
+  const base = Number(m[1]);
+  if (!Number.isFinite(base) || base <= 0) return Number.NaN;
+  const suf = (m[2] ?? "").toUpperCase();
+  const mult =
+    suf === "K"
+      ? 1_000
+      : suf === "M"
+        ? 1_000_000
+        : suf === "B"
+          ? 1_000_000_000
+          : suf === "T"
+            ? 1_000_000_000_000
+            : 1;
+  return base * mult;
+}
+
+function estimateFcfYieldPercent(input: { fcf: number; valuation: number }): number {
+  const { fcf, valuation } = input;
+  if (!Number.isFinite(fcf) || !Number.isFinite(valuation) || valuation <= 0) return Number.NaN;
+  return (fcf / valuation) * 100;
+}
+
 function buildByTickerFromAlphaRows(rows: Iterable<Record<string, unknown>>): Map<string, AlphaPoint[]> {
   const byTickerDay = new Map<string, Map<string, AlphaPoint>>();
   for (const row of rows) {
@@ -540,6 +659,7 @@ function buildDraftsFromHoldingRows(
   >,
   fxUsdJpy: number,
   hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
+  efficiencyByTickerUpper: Map<string, { revenueGrowth: number; fcfMargin: number; fcfYield: number; ruleOf40: number }>,
 ): StockDraft[] {
   return rows.map((row) => {
     const id = String(row.id);
@@ -622,6 +742,12 @@ function buildDraftsFromHoldingRows(
             return dayChangeRaw != null && Number.isFinite(dayChangeRaw) ? roundAlphaMetric(dayChangeRaw) : null;
           })();
 
+    const eff = efficiencyByTickerUpper.get(ticker.trim().toUpperCase()) ?? null;
+    const revenueGrowth = eff?.revenueGrowth ?? Number.NaN;
+    const fcfMargin = eff?.fcfMargin ?? Number.NaN;
+    const fcfYield = eff?.fcfYield ?? Number.NaN;
+    const ruleOf40 = eff?.ruleOf40 ?? computeRuleOf40(revenueGrowth, fcfMargin);
+
     return {
       id,
       ticker,
@@ -662,6 +788,10 @@ function buildDraftsFromHoldingRows(
       structureTagsJson: tagsJson,
       expectationCategory: parseExpectationCategory(row.expectation_category),
       earningsSummaryNote: parseEarningsSummaryNote(row.earnings_summary_note),
+      revenueGrowth,
+      fcfMargin,
+      fcfYield,
+      ruleOf40,
     };
   });
 }
@@ -765,7 +895,7 @@ async function computeThemeStructuralSparklinesForDashboard(
       portfolioThemeTagMatchesThemePage(themeFromStructureTags(d.structureTagsJson), theme.name),
     );
 
-    let structuralTrendInputs: { weight: number; dailyAlphaByYmd: Map<string, number> }[] = [];
+    const structuralTrendInputs: { weight: number; dailyAlphaByYmd: Map<string, number> }[] = [];
 
     if (matchingDrafts.length > 0) {
       const mergedByTickerUpper = new Map<
@@ -1088,6 +1218,20 @@ async function enrichEcosystemMemberRow(
   const isKept =
     rawKept != null && String(rawKept).trim() !== "" ? Number(rawKept) === 1 : false;
 
+  const revenueGrowth = parsePercentOrNaN(row["revenue_growth"]);
+  const fcfMargin = parsePercentOrNaN(row["fcf_margin"]);
+  const fcf = parseMoneyOrNaN(row["fcf"]);
+  const storedFcfYield = parsePercentOrNaN(row["fcf_yield"]);
+  const valuationForUnlisted = (() => {
+    if (!isUnlisted) return Number.NaN;
+    if (lastRoundValuation != null && Number.isFinite(lastRoundValuation) && lastRoundValuation > 0) return lastRoundValuation;
+    return parseEstimatedValuationTextToNumber(estimatedValuation);
+  })();
+  const estimatedFcfYield = estimateFcfYieldPercent({ fcf, valuation: valuationForUnlisted });
+  const fcfYield =
+    Number.isFinite(storedFcfYield) ? storedFcfYield : isUnlisted ? estimatedFcfYield : storedFcfYield;
+  const ruleOf40 = computeRuleOf40(revenueGrowth, fcfMargin);
+
   return {
     id,
     themeId,
@@ -1130,6 +1274,10 @@ async function enrichEcosystemMemberRow(
     dividendMonths,
     defensiveStrength,
     isKept,
+    revenueGrowth,
+    fcfMargin,
+    fcfYield,
+    ruleOf40,
   };
 }
 
@@ -1176,61 +1324,67 @@ async function fetchEnrichedThemeEcosystem(
     let rows: Record<string, unknown>[];
     try {
       try {
-        const rs = await db.execute({
-          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
-                       last_round_valuation, private_credit_backing, observation_notes,
-                       company_name, field, role, is_major_player, observation_started_at,
-                       adoption_stage, adoption_stage_rationale, expectation_category,
-                       holder_tags, dividend_months, defensive_strength, is_kept
-                FROM theme_ecosystem_members
-                WHERE theme_id = ?
-                ORDER BY field ASC, ticker ASC`,
-          args: [themeId],
-        });
-        rows = rs.rows as unknown as Record<string, unknown>[];
-      } catch (err) {
-        if (!ecosystemMissingIsKeptColumn(err)) throw err;
-        const rs = await db.execute({
-          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
-                       last_round_valuation, private_credit_backing, observation_notes,
-                       company_name, field, role, is_major_player, observation_started_at,
-                       adoption_stage, adoption_stage_rationale, expectation_category,
-                       holder_tags, dividend_months, defensive_strength
-                FROM theme_ecosystem_members
-                WHERE theme_id = ?
-                ORDER BY field ASC, ticker ASC`,
-          args: [themeId],
-        });
-        rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
-          ...r,
-          is_kept: 0,
-        }));
-      }
-    } catch (e) {
-      if (ecosystemMissingUnicornColumns(e)) {
-        // Older DB without unicorn fields: fallback and inject nulls.
-        const rs = await db.execute({
-          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
-                       company_name, field, role, is_major_player, observation_started_at,
-                       adoption_stage, adoption_stage_rationale, expectation_category,
-                       holder_tags, dividend_months, defensive_strength
-                FROM theme_ecosystem_members
-                WHERE theme_id = ?
-                ORDER BY field ASC, ticker ASC`,
-          args: [themeId],
-        });
-        rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
-          ...r,
-          last_round_valuation: null,
-          private_credit_backing: null,
-        }));
-      } else if (ecosystemMissingExpectationCategoryColumn(e)) {
         try {
           const rs = await db.execute({
             sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
                          last_round_valuation, private_credit_backing, observation_notes,
                          company_name, field, role, is_major_player, observation_started_at,
-                         adoption_stage, adoption_stage_rationale,
+                         adoption_stage, adoption_stage_rationale, expectation_category,
+                         holder_tags, dividend_months, defensive_strength, is_kept,
+                         revenue_growth, fcf_margin, fcf, fcf_yield
+                  FROM theme_ecosystem_members
+                  WHERE theme_id = ?
+                  ORDER BY field ASC, ticker ASC`,
+            args: [themeId],
+          });
+          rows = rs.rows as unknown as Record<string, unknown>[];
+        } catch (eEff) {
+          if (!ecosystemMissingEfficiencyColumns(eEff)) throw eEff;
+          const rs = await db.execute({
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                         last_round_valuation, private_credit_backing, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at,
+                         adoption_stage, adoption_stage_rationale, expectation_category,
+                         holder_tags, dividend_months, defensive_strength, is_kept
+                  FROM theme_ecosystem_members
+                  WHERE theme_id = ?
+                  ORDER BY field ASC, ticker ASC`,
+            args: [themeId],
+          });
+          rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            revenue_growth: null,
+            fcf_margin: null,
+            fcf: null,
+            fcf_yield: null,
+          }));
+        }
+      } catch (err) {
+        if (!ecosystemMissingIsKeptColumn(err)) throw err;
+        try {
+          const rs = await db.execute({
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                         last_round_valuation, private_credit_backing, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at,
+                         adoption_stage, adoption_stage_rationale, expectation_category,
+                         holder_tags, dividend_months, defensive_strength,
+                         revenue_growth, fcf_margin, fcf, fcf_yield
+                  FROM theme_ecosystem_members
+                  WHERE theme_id = ?
+                  ORDER BY field ASC, ticker ASC`,
+            args: [themeId],
+          });
+          rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            is_kept: 0,
+          }));
+        } catch (eEff2) {
+          if (!ecosystemMissingEfficiencyColumns(eEff2)) throw eEff2;
+          const rs = await db.execute({
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                         last_round_valuation, private_credit_backing, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at,
+                         adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength
                   FROM theme_ecosystem_members
                   WHERE theme_id = ?
@@ -1239,17 +1393,155 @@ async function fetchEnrichedThemeEcosystem(
           });
           rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
             ...r,
-            expectation_category: null,
+            is_kept: 0,
+            revenue_growth: null,
+            fcf_margin: null,
+            fcf: null,
+            fcf_yield: null,
           }));
-        } catch (e2) {
-          if (!ecosystemMissingAdoptionColumns(e2)) throw e2;
+        }
+      }
+    } catch (e) {
+      if (ecosystemMissingUnicornColumns(e)) {
+        // Older DB without unicorn fields: fallback and inject nulls.
+        try {
           const rs = await db.execute({
-            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
-                         last_round_valuation, private_credit_backing, observation_notes,
-                         company_name, field, role, is_major_player, observation_started_at
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at,
+                         adoption_stage, adoption_stage_rationale, expectation_category,
+                         holder_tags, dividend_months, defensive_strength,
+                         revenue_growth, fcf_margin, fcf, fcf_yield
                   FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
+            args: [themeId],
+          });
+          rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            last_round_valuation: null,
+            private_credit_backing: null,
+          }));
+        } catch (eEff3) {
+          if (!ecosystemMissingEfficiencyColumns(eEff3)) throw eEff3;
+          const rs = await db.execute({
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at,
+                         adoption_stage, adoption_stage_rationale, expectation_category,
+                         holder_tags, dividend_months, defensive_strength
+                  FROM theme_ecosystem_members
+                  WHERE theme_id = ?
+                  ORDER BY field ASC, ticker ASC`,
+            args: [themeId],
+          });
+          rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            last_round_valuation: null,
+            private_credit_backing: null,
+            revenue_growth: null,
+            fcf_margin: null,
+            fcf: null,
+            fcf_yield: null,
+          }));
+        }
+      } else if (ecosystemMissingExpectationCategoryColumn(e)) {
+        try {
+          try {
+            const rs = await db.execute({
+              sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                           last_round_valuation, private_credit_backing, observation_notes,
+                           company_name, field, role, is_major_player, observation_started_at,
+                           adoption_stage, adoption_stage_rationale,
+                           holder_tags, dividend_months, defensive_strength,
+                           revenue_growth, fcf_margin, fcf, fcf_yield
+                    FROM theme_ecosystem_members
+                    WHERE theme_id = ?
+                    ORDER BY field ASC, ticker ASC`,
+              args: [themeId],
+            });
+            rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+              ...r,
+              expectation_category: null,
+            }));
+          } catch (eEff4) {
+            if (!ecosystemMissingEfficiencyColumns(eEff4)) throw eEff4;
+            const rs = await db.execute({
+              sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                           last_round_valuation, private_credit_backing, observation_notes,
+                           company_name, field, role, is_major_player, observation_started_at,
+                           adoption_stage, adoption_stage_rationale,
+                           holder_tags, dividend_months, defensive_strength
+                    FROM theme_ecosystem_members
+                    WHERE theme_id = ?
+                    ORDER BY field ASC, ticker ASC`,
+              args: [themeId],
+            });
+            rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+              ...r,
+              expectation_category: null,
+              revenue_growth: null,
+              fcf_margin: null,
+              fcf: null,
+              fcf_yield: null,
+            }));
+          }
+        } catch (e2) {
+          if (!ecosystemMissingAdoptionColumns(e2)) throw e2;
+          try {
+            const rs = await db.execute({
+              sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                           last_round_valuation, private_credit_backing, observation_notes,
+                           company_name, field, role, is_major_player, observation_started_at,
+                           revenue_growth, fcf_margin, fcf, fcf_yield
+                    FROM theme_ecosystem_members
+                    WHERE theme_id = ?
+                    ORDER BY field ASC, ticker ASC`,
+              args: [themeId],
+            });
+            rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+              ...r,
+              adoption_stage: null,
+              adoption_stage_rationale: null,
+              expectation_category: null,
+              holder_tags: "[]",
+              dividend_months: "[]",
+              defensive_strength: null,
+            }));
+          } catch (eEff5) {
+            if (!ecosystemMissingEfficiencyColumns(eEff5)) throw eEff5;
+            const rs = await db.execute({
+              sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                           last_round_valuation, private_credit_backing, observation_notes,
+                           company_name, field, role, is_major_player, observation_started_at
+                    FROM theme_ecosystem_members
+                    WHERE theme_id = ?
+                    ORDER BY field ASC, ticker ASC`,
+              args: [themeId],
+            });
+            rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+              ...r,
+              adoption_stage: null,
+              adoption_stage_rationale: null,
+              expectation_category: null,
+              holder_tags: "[]",
+              dividend_months: "[]",
+              defensive_strength: null,
+              revenue_growth: null,
+              fcf_margin: null,
+              fcf: null,
+              fcf_yield: null,
+            }));
+          }
+        }
+      } else if (ecosystemMissingAdoptionColumns(e)) {
+        try {
+          const rs = await db.execute({
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                         last_round_valuation, private_credit_backing, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at,
+                         revenue_growth, fcf_margin, fcf, fcf_yield
+                FROM theme_ecosystem_members
+                WHERE theme_id = ?
+                ORDER BY field ASC, ticker ASC`,
             args: [themeId],
           });
           rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
@@ -1261,26 +1553,31 @@ async function fetchEnrichedThemeEcosystem(
             dividend_months: "[]",
             defensive_strength: null,
           }));
+        } catch (eEff6) {
+          if (!ecosystemMissingEfficiencyColumns(eEff6)) throw eEff6;
+          const rs = await db.execute({
+            sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
+                         last_round_valuation, private_credit_backing, observation_notes,
+                         company_name, field, role, is_major_player, observation_started_at
+                FROM theme_ecosystem_members
+                WHERE theme_id = ?
+                ORDER BY field ASC, ticker ASC`,
+            args: [themeId],
+          });
+          rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            adoption_stage: null,
+            adoption_stage_rationale: null,
+            expectation_category: null,
+            holder_tags: "[]",
+            dividend_months: "[]",
+            defensive_strength: null,
+            revenue_growth: null,
+            fcf_margin: null,
+            fcf: null,
+            fcf_yield: null,
+          }));
         }
-      } else if (ecosystemMissingAdoptionColumns(e)) {
-        const rs = await db.execute({
-          sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
-                       last_round_valuation, private_credit_backing, observation_notes,
-                       company_name, field, role, is_major_player, observation_started_at
-              FROM theme_ecosystem_members
-              WHERE theme_id = ?
-              ORDER BY field ASC, ticker ASC`,
-          args: [themeId],
-        });
-        rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
-          ...r,
-          adoption_stage: null,
-          adoption_stage_rationale: null,
-          expectation_category: null,
-          holder_tags: "[]",
-          dividend_months: "[]",
-          defensive_strength: null,
-        }));
       } else {
         throw e;
       }
@@ -1476,6 +1773,7 @@ export async function getThemeDetailData(
 
   if (matching.length > 0) {
     const tickers = [...new Set(matching.map((r) => String(r.ticker)))];
+    const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, tickers);
     const tAlphaQ = perf.enabled ? Date.now() : 0;
     const rows = await fetchAlphaHistoryRowsForTickers(db, userId, tickers);
     if (perf.enabled && perf.requestId) {
@@ -1492,6 +1790,7 @@ export async function getThemeDetailData(
       researchByTicker,
       fxUsdJpy,
       hybridPriceByHoldingKey,
+      efficiencyByTickerUpper,
     );
     themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
@@ -1820,6 +2119,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   const byTicker = buildByTickerFromAlphaRows(alphaRows);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
   const holdingRowsForDash = h.rows as unknown as HoldingQueryRow[];
+  const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, tickers);
   const [researchByTicker, hybridPriceByHoldingKey] = await Promise.all([
     fetchEquityResearchSnapshots(
       holdingRowsForDash.map((r) => ({
@@ -1840,6 +2140,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     researchByTicker,
     fxUsdJpy,
     hybridPriceByHoldingKey,
+    efficiencyByTickerUpper,
   );
 
   const totalMarketValue = drafts.reduce(
@@ -1971,6 +2272,10 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       currentPrice: null,
       alphaDeviationZ: null,
       drawdownFromHigh90dPct: null,
+      revenueGrowth: Number.NaN,
+      fcfMargin: Number.NaN,
+      fcfYield: Number.NaN,
+      ruleOf40: Number.NaN,
       marketValue: 0,
       valuationFactor: 1,
       isWarning: isWarn,

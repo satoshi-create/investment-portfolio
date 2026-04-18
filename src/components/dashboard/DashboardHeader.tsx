@@ -55,6 +55,7 @@ export function DashboardHeader({
   const { convert, viewCurrency, setViewCurrency } = useCurrencyConverter();
   const displayedPortfolioAlpha = totalAlpha;
   const alphaFmt = formatAlphaPercent(displayedPortfolioAlpha);
+  const fxNeutralAlphaFmt = formatAlphaPercent(portfolioFxNeutralAlpha);
   const daySpreadPct =
     portfolioAvgDayChangePct != null &&
     benchmarkChangePct != null &&
@@ -192,6 +193,7 @@ export function DashboardHeader({
                 subLabel={
                   "Latest daily α vs VOO, equal-weighted"
                 }
+                title={`FX-neutral avg α: ${fxNeutralAlphaFmt.text}`}
                 footnote={
                   [
                     portfolioAvgAlphaAsOfDisplay,

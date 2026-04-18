@@ -86,6 +86,45 @@ export function UnicornCard({
         </div>
       </div>
 
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/30 px-3 py-2">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Rev YoY</p>
+          <p className="mt-0.5 font-mono text-sm font-bold text-slate-200">
+            {Number.isFinite(item.revenueGrowth) ? `${item.revenueGrowth.toFixed(1)}%` : "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/30 px-3 py-2">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">FCF margin</p>
+          <p className="mt-0.5 font-mono text-sm font-bold text-slate-200">
+            {Number.isFinite(item.fcfMargin) ? `${item.fcfMargin.toFixed(1)}%` : "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/30 px-3 py-2">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Rule of 40</p>
+          <p
+            className={cn(
+              "mt-0.5 font-mono text-sm font-bold",
+              !Number.isFinite(item.ruleOf40)
+                ? "text-slate-600"
+                : item.ruleOf40 >= 40
+                  ? "text-emerald-300"
+                  : item.ruleOf40 >= 0
+                    ? "text-slate-200"
+                    : "text-rose-300",
+            )}
+            title="Rule of 40 = revenue growth + FCF margin"
+          >
+            {Number.isFinite(item.ruleOf40) ? `${item.ruleOf40.toFixed(1)}%` : "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/30 px-3 py-2">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">FCF yield</p>
+          <p className="mt-0.5 font-mono text-sm font-bold text-slate-200" title="未上場は valuation 推定に基づく推定値">
+            {Number.isFinite(item.fcfYield) ? `${item.fcfYield.toFixed(1)}%` : "—"}
+          </p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 space-y-2">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
