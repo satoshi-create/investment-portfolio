@@ -31,12 +31,23 @@ function formatChange(pct: number): string {
   return `${sign}${pct.toFixed(2)}%`;
 }
 
+/** `fetchGlobalMarketIndicators`（price-service）のラベルと Yahoo シンボルを同期 */
+const MACRO_LABEL_TO_YAHOO_SYMBOL: Record<string, string> = {
+  "USD/JPY": "JPY=X",
+  "Crude (USO)": "USO",
+  Gold: "GC=F",
+  BTC: "BTC-USD",
+  "S&P 500": "^GSPC",
+  "NASDAQ 100": "^NDX",
+  SOX: "^SOX",
+  VIX: "^VIX",
+  "Nikkei 225": "^N225",
+  "10Y Yield": "^TNX",
+  DJIA: "^DJI",
+};
+
 function macroSymbolForLabel(label: string): string | null {
-  if (label === "Gold") return "GC=F";
-  if (label === "BTC") return "BTC-USD";
-  if (label === "USD/JPY") return "JPY=X";
-  if (label === "VIX") return "^VIX";
-  return null;
+  return MACRO_LABEL_TO_YAHOO_SYMBOL[label] ?? null;
 }
 
 function pctClass(v: number): string {
@@ -183,7 +194,8 @@ export function MarketBar({
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr,18rem]">
           <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
             {indicators.map((m) => {
-              const clickable = macroSymbolForLabel(m.label) != null && m.value >= 0;
+              const sym = macroSymbolForLabel(m.label);
+              const clickable = sym != null && Number.isFinite(m.value) && m.value >= 0;
               return (
                 <li key={m.label} className="relative">
                   <button
@@ -259,7 +271,7 @@ export function MarketBar({
 
             <div className="mt-3">
               {openLabel == null ? (
-                <p className="text-xs text-muted-foreground">Gold / BTC / VIX / USD/JPY をクリック。</p>
+                <p className="text-xs text-muted-foreground">いずれかの指標カードをクリックすると年輪チャートを表示します。</p>
               ) : loading ? (
                 <p className="text-xs text-muted-foreground">Loading…</p>
               ) : error ? (

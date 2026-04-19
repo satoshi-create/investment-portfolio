@@ -28,6 +28,9 @@
     "migrate:portfolio-benchmark-pct": "tsx scripts/migrate-portfolio-benchmark-change-pct.ts"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@libsql/client": "^0.17.2",
     "lucide-react": "^1.7.0",
     "next": "16.2.2",

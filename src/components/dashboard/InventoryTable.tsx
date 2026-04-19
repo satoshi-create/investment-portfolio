@@ -2,7 +2,24 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileSpreadsheet, NotebookPen, Search, X } from "lucide-react";
+import { FileSpreadsheet, GripVertical, NotebookPen, Search, X } from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  horizontalListSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import type { ExpectationCategory, Stock } from "@/src/types/investment";
 import { EXPECTATION_CATEGORY_KEYS, EXPECTATION_CATEGORY_LABEL_JA } from "@/src/types/investment";
@@ -16,7 +33,6 @@ import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryFor
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
-import { detectOpportunityType } from "@/src/lib/alpha-logic";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import {
   formatJpyValueForView,
@@ -24,6 +40,13 @@ import {
   nativeCurrencyForStock,
 } from "@/src/lib/format-display-currency";
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
+import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
+import {
+  DEFAULT_COLUMN_ORDER,
+  type InventoryColId,
+  loadInventoryColumnOrder,
+  saveInventoryColumnOrder,
+} from "@/src/lib/inventory-column-order";
 
 type SortKey =
   | "asset"
@@ -34,7 +57,10 @@ type SortKey =
   | "deviation"
   | "drawdown"
   | "ruleOf40"
-  | "fcfYield";
+  | "fcfYield"
+  | "judgment"
+  | "pe"
+  | "eps";
 
 type EarningsNoteModalTab = "edit" | "preview";
 
@@ -72,11 +98,55 @@ function fcfYieldSortValue(s: Stock): number | null {
   return Number.isFinite(s.fcfYield) ? s.fcfYield : null;
 }
 
+function SortableInventoryTh({
+  id,
+  className,
+  align = "left",
+  title,
+  children,
+}: {
+  id: InventoryColId;
+  className?: string;
+  align?: "left" | "right" | "center";
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    ...(isDragging ? { opacity: 0.88, zIndex: 50 } : {}),
+  };
+  const justify =
+    align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
+  return (
+    <th ref={setNodeRef} style={style} className={className} title={title}>
+      <div className={`flex w-full items-center gap-1 ${justify}`}>
+        <button
+          type="button"
+          className="cursor-grab touch-none shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted/60 hover:text-foreground active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+          aria-label="列をドラッグして並べ替え"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <div
+          className={`min-w-0 ${align === "right" ? "text-right" : align === "center" ? "text-center" : ""}`}
+        >
+          {children}
+        </div>
+      </div>
+    </th>
+  );
+}
+
 export function InventoryTable({
   stocks,
   totalHoldings,
   averageAlpha,
-  averageFxNeutralAlpha: averageFxNeutralAlphaProp,
+  averageFxNeutralAlpha: _averageFxNeutralAlpha,
   userId,
   onEarningsNoteSaved,
   onTrade,
@@ -103,9 +173,6 @@ export function InventoryTable({
   onToggleEcosystemKeep?: (memberId: string) => void | Promise<void>;
 }) {
   const { convert, viewCurrency, alphaDisplayMode } = useCurrencyConverter();
-  const averageFxNeutralAlpha = averageFxNeutralAlphaProp ?? averageAlpha;
-  const displayAvgAlpha =
-    alphaDisplayMode === "fxNeutral" ? averageFxNeutralAlpha : averageAlpha;
 
   const [noteModalStock, setNoteModalStock] = useState<Stock | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
@@ -167,6 +234,40 @@ export function InventoryTable({
   const [showValueCols, setShowValueCols] = useState(false);
   const [structureFilter, setStructureFilter] = useState("");
   const [expectationFilter, setExpectationFilter] = useState<"" | "__unset__" | ExpectationCategory>("");
+  const [columnOrder, setColumnOrder] = useState<InventoryColId[]>(DEFAULT_COLUMN_ORDER);
+
+  useEffect(() => {
+    setColumnOrder(loadInventoryColumnOrder());
+  }, []);
+
+  useEffect(() => {
+    saveInventoryColumnOrder(columnOrder);
+  }, [columnOrder]);
+
+  const visibleColumnIds = useMemo(
+    () =>
+      columnOrder.filter((id) => {
+        if (id === "deviation" || id === "drawdown") return showValueCols;
+        return true;
+      }),
+    [columnOrder, showValueCols],
+  );
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleInventoryColumnDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setColumnOrder((items) => {
+      const oldIndex = items.indexOf(active.id as InventoryColId);
+      const newIndex = items.indexOf(over.id as InventoryColId);
+      if (oldIndex < 0 || newIndex < 0) return items;
+      return arrayMove(items, oldIndex, newIndex);
+    });
+  }
 
   const filteredStocks = useMemo(() => {
     const q = structureFilter.trim().toLowerCase();
@@ -205,6 +306,14 @@ export function InventoryTable({
       if (key === "alpha") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
       if (key === "trend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
       if (key === "position") return dir * cmpNum(a.marketValue, b.marketValue);
+      if (key === "judgment") {
+        const ja = judgmentPriorityRank(a.judgmentStatus as JudgmentStatus);
+        const jb = judgmentPriorityRank(b.judgmentStatus as JudgmentStatus);
+        if (ja !== jb) return dir * (ja - jb);
+        return dir * cmpStr(a.ticker, b.ticker);
+      }
+      if (key === "pe") return dir * cmpNum(peOf(a), peOf(b));
+      if (key === "eps") return dir * cmpNum(epsOf(a), epsOf(b));
       if (key === "ruleOf40") return dir * cmpNum(ruleOf40SortValue(a), ruleOf40SortValue(b));
       if (key === "fcfYield") return dir * cmpNum(fcfYieldSortValue(a), fcfYieldSortValue(b));
       if (key === "deviation") return dir * cmpNum(deviationOf(a), deviationOf(b));
@@ -279,12 +388,43 @@ export function InventoryTable({
 
     const avgAlphaVisible = alphaRowN > 0 ? alphaRowSum / alphaRowN : null;
 
+    let peSum = 0;
+    let peN = 0;
+    let epsSum = 0;
+    let epsN = 0;
+    let trend5dSum = 0;
+    let trend5dN = 0;
+    for (const s of rows) {
+      const pe = peOf(s);
+      if (pe != null) {
+        peSum += pe;
+        peN += 1;
+      }
+      const ep = epsOf(s);
+      if (ep != null) {
+        epsSum += ep;
+        epsN += 1;
+      }
+      const h = s.alphaHistory;
+      if (h.length >= 5) {
+        const last = h[h.length - 1]!;
+        const prev5 = h[h.length - 5]!;
+        if (Number.isFinite(last) && Number.isFinite(prev5)) {
+          trend5dSum += last - prev5;
+          trend5dN += 1;
+        }
+      }
+    }
+
     return {
       avgRuleOf40,
       avgFcfYield,
       avgZ: zN > 0 ? zSum / zN : null,
       avgDd: ddN > 0 ? ddSum / ddN : null,
       avgAlphaVisible,
+      avgPeVisible: peN > 0 ? peSum / peN : null,
+      avgEpsVisible: epsN > 0 ? epsSum / epsN : null,
+      avgFiveDayAlphaDelta: trend5dN > 0 ? trend5dSum / trend5dN : null,
       totalMarketValueVisible: totalMv,
       sumWeightVisible: sumWt,
     };
@@ -308,9 +448,19 @@ export function InventoryTable({
     return sortDir === "asc" ? " ▲" : " ▼";
   }
 
-  const avgAlphaClass =
-    displayAvgAlpha > 0 ? "text-emerald-400" : displayAvgAlpha < 0 ? "text-rose-400" : "text-slate-400";
-  const avgAlphaSign = displayAvgAlpha > 0 ? "+" : "";
+  function tradeInitialForStock(stock: Stock): TradeEntryInitial {
+    return {
+      ticker: stock.ticker,
+      name: stock.name || undefined,
+      ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
+      sector: stock.sector ?? stock.secondaryTag,
+      quantityDefault: 1,
+      ...(stock.expectationCategory != null ? { expectationCategory: stock.expectationCategory } : {}),
+      ...(stock.currentPrice != null && Number.isFinite(stock.currentPrice) && stock.currentPrice > 0
+        ? { unitPrice: stock.currentPrice }
+        : {}),
+    };
+  }
 
   function fmtZ(z: number | null): string {
     if (z == null) return "—";
@@ -430,526 +580,775 @@ export function InventoryTable({
       </div>
 
       <div className="relative w-full max-w-full overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full min-w-[760px] text-left text-xs lg:text-sm">
-          <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
-            <tr>
-              <th
-                className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyThFirst} cursor-pointer select-none`}
-                onClick={() => toggleSort("asset")}
-                title="Sort"
-              >
-                Asset{sortMark("asset")}
-              </th>
-              <th
-                className="px-6 py-4 text-left cursor-pointer select-none"
-                onClick={() => toggleSort("research")}
-                title="Sort"
-              >
-                Research{sortMark("research")}
-              </th>
-              <th
-                className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                onClick={() => toggleSort("ruleOf40")}
-                title="Rule of 40（売上成長率% + FCFマージン%）"
-              >
-                Rule of 40{sortMark("ruleOf40")}
-              </th>
-              <th
-                className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                onClick={() => toggleSort("fcfYield")}
-                title="FCF Yield（%）= 年次 FCF / (株価×希薄化株数)。負の FCF はマイナス%で表示"
-              >
-                FCF Yield{sortMark("fcfYield")}
-              </th>
-              <th
-                className="px-4 py-4 text-center whitespace-nowrap"
-                title="R40×FCF Yield に基づく投資判定（期待カテゴリーをナラティブにマッピング）"
-              >
-                判定
-              </th>
-              <th className="px-4 py-4 text-center whitespace-nowrap" title="押し目（Dip）判定">
-                Opportunity
-              </th>
-              {showValueCols ? (
-                <>
-                  <th
-                    className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                    onClick={() => toggleSort("deviation")}
-                    title="Alpha 乖離（σ）"
-                  >
-                    乖離{sortMark("deviation")}
-                  </th>
-                  <th
-                    className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                    onClick={() => toggleSort("drawdown")}
-                    title="90 日高値比"
-                  >
-                    落率{sortMark("drawdown")}
-                  </th>
-                </>
-              ) : null}
-              <th
-                className="px-6 py-4 text-right cursor-pointer select-none"
-                onClick={() => toggleSort("alpha")}
-                title="Sort"
-              >
-                <span className="block">Alpha{sortMark("alpha")}</span>
-                {alphaDisplayMode === "fxNeutral" ? (
-                  <span className="block text-[8px] font-normal normal-case tracking-normal text-muted-foreground/85">
-                    FX-neutral
-                  </span>
-                ) : null}
-              </th>
-              <th
-                className="px-6 py-4 text-center cursor-pointer select-none"
-                onClick={() => toggleSort("trend")}
-                title="Sort"
-              >
-                5D Trend{sortMark("trend")}
-              </th>
-              <th
-                className="px-6 py-4 text-right cursor-pointer select-none"
-                onClick={() => toggleSort("position")}
-                title="Sort"
-              >
-                Position{sortMark("position")}
-              </th>
-              <th
-                className="px-4 py-4 text-right whitespace-nowrap bg-background md:sticky md:right-[5.75rem] md:z-10 md:border-l md:border-border/60"
-                title="現在値（Price）"
-              >
-                Price
-              </th>
-              <th
-                className="px-4 py-4 text-right whitespace-nowrap bg-background md:sticky md:right-0 md:z-10"
-                title="取引"
-              >
-                Trade
-              </th>
-            </tr>
-          </thead>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleInventoryColumnDragEnd}>
+          <table className="w-full min-w-[920px] text-left text-xs lg:text-sm">
+            <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
+              <tr>
+                <SortableContext items={visibleColumnIds} strategy={horizontalListSortingStrategy}>
+                  {visibleColumnIds.map((colId, idx) => {
+                    const isFirst = idx === 0;
+                    const stickyFirst = isFirst ? stickyThFirst : "";
+                    switch (colId) {
+                      case "asset":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="left"
+                            className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyFirst} cursor-pointer select-none`}
+                            title="Sort"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-left font-[inherit] text-inherit"
+                              onClick={() => toggleSort("asset")}
+                            >
+                              Asset{sortMark("asset")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "research":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="left"
+                            className="px-6 py-4 text-left cursor-pointer select-none"
+                            title="Sort"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-left font-[inherit] text-inherit"
+                              onClick={() => toggleSort("research")}
+                            >
+                              Research{sortMark("research")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "ruleOf40":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="Rule of 40（売上成長率% + FCFマージン%）"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("ruleOf40")}
+                            >
+                              Rule of 40{sortMark("ruleOf40")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "fcfYield":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="FCF Yield（%）= 年次 FCF / (株価×希薄化株数)。負の FCF はマイナス%で表示"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("fcfYield")}
+                            >
+                              FCF Yield{sortMark("fcfYield")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "judgment":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="center"
+                            className="px-4 py-4 text-center cursor-pointer select-none whitespace-nowrap"
+                            title="投資優先度（ELITE → ACCUMULATE → WATCH → DANGER）"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 font-[inherit] text-inherit"
+                              onClick={() => toggleSort("judgment")}
+                            >
+                              判定{sortMark("judgment")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "deviation":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="Alpha 乖離（σ）"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("deviation")}
+                            >
+                              乖離{sortMark("deviation")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "drawdown":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="90 日高値比"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("drawdown")}
+                            >
+                              落率{sortMark("drawdown")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "alpha":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-6 py-4 text-right cursor-pointer select-none"
+                            title="Sort"
+                          >
+                            <button
+                              type="button"
+                              className="block w-full bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("alpha")}
+                            >
+                              <span className="block">Alpha{sortMark("alpha")}</span>
+                              {alphaDisplayMode === "fxNeutral" ? (
+                                <span className="block text-[8px] font-normal normal-case tracking-normal text-muted-foreground/85">
+                                  FX-neutral
+                                </span>
+                              ) : null}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "trend":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="center"
+                            className="px-6 py-4 text-center cursor-pointer select-none"
+                            title="Sort"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 font-[inherit] text-inherit"
+                              onClick={() => toggleSort("trend")}
+                            >
+                              5D Trend{sortMark("trend")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "position":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-6 py-4 text-right cursor-pointer select-none"
+                            title="Sort"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("position")}
+                            >
+                              Position{sortMark("position")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "pe":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="Trailing 優先、なければ Forward PER"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("pe")}
+                            >
+                              PER{sortMark("pe")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "eps":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="Trailing 優先、なければ Forward EPS"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("eps")}
+                            >
+                              EPS{sortMark("eps")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "price":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right whitespace-nowrap"
+                            title="現在値（Price）"
+                          >
+                            <span className="pointer-events-none">Price</span>
+                          </SortableInventoryTh>
+                        );
+                      default: {
+                        const _exhaustive: never = colId;
+                        return _exhaustive;
+                      }
+                    }
+                  })}
+                </SortableContext>
+              </tr>
+            </thead>
           <tbody className="divide-y divide-border/60">
             {sortedStocks.map((stock) => {
               const opp = isOpportunityRow(stock, themeStructuralTrendUp);
               const z = deviationOf(stock);
               const dd = drawdownOf(stock);
-              const opportunityType = detectOpportunityType({
-                alphaDeviationZ: z,
-                drawdownFromHighPct: dd,
-              });
               const ecoKeep =
                 resolveEcosystemKeep != null ? resolveEcosystemKeep(stock.ticker) : null;
               return (
                 <tr key={stock.id} className="group hover:bg-muted/60 transition-all">
-                  <td className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyTdFirst}`}>
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-1 min-w-0">
-                          {opp ? (
-                            <span
-                              className="shrink-0 text-base leading-none"
-                              title="テーマの構造トレンドは上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"
-                              aria-label="Opportunity"
-                            >
-                              ✨
-                            </span>
-                          ) : null}
-                          <span className="truncate">{stock.ticker}</span>
-                          {stock.expectationCategory ? (
-                            <span
-                              className={`shrink-0 text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(stock.expectationCategory)}`}
-                              title={EXPECTATION_CATEGORY_LABEL_JA[stock.expectationCategory]}
-                            >
-                              {expectationCategoryBadgeShortJa(stock.expectationCategory)}
-                            </span>
-                          ) : null}
-                        </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {ecoKeep != null && onToggleEcosystemKeep != null ? (
-                            <EcosystemKeepButton
-                              size="xs"
-                              isKept={ecoKeep.isKept}
-                              onClick={() => void onToggleEcosystemKeep(ecoKeep.memberId)}
-                            />
-                          ) : null}
-                          <span
-                            className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
-                              (stock.accountType ?? "特定") === "NISA"
-                                ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
-                                : "text-muted-foreground border-border bg-background/60"
+                  {visibleColumnIds.map((colId, idx) => {
+                    const isFirst = idx === 0;
+                    const stickyFirst = isFirst ? stickyTdFirst : "";
+                    switch (colId) {
+                      case "asset":
+                        return (
+                          <td key={colId} className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyFirst}`}>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-1 min-w-0">
+                                  {opp ? (
+                                    <span
+                                      className="shrink-0 text-base leading-none"
+                                      title="テーマの構造トレンドは上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"
+                                      aria-label="Opportunity"
+                                    >
+                                      ✨
+                                    </span>
+                                  ) : null}
+                                  <span className="truncate">{stock.ticker}</span>
+                                  {stock.expectationCategory ? (
+                                    <span
+                                      className={`shrink-0 text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(stock.expectationCategory)}`}
+                                      title={EXPECTATION_CATEGORY_LABEL_JA[stock.expectationCategory]}
+                                    >
+                                      {expectationCategoryBadgeShortJa(stock.expectationCategory)}
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {ecoKeep != null && onToggleEcosystemKeep != null ? (
+                                    <EcosystemKeepButton
+                                      size="xs"
+                                      isKept={ecoKeep.isKept}
+                                      onClick={() => void onToggleEcosystemKeep(ecoKeep.memberId)}
+                                    />
+                                  ) : null}
+                                  <span
+                                    className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                                      (stock.accountType ?? "特定") === "NISA"
+                                        ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
+                                        : "text-muted-foreground border-border bg-background/60"
+                                    }`}
+                                    title="口座区分（holdings.account_type）"
+                                  >
+                                    {stock.accountType ?? "特定"}
+                                  </span>
+                                </div>
+                              </div>
+                              {onTrade ? (
+                                <div className="mt-1 flex flex-wrap items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => onTrade(tradeInitialForStock(stock))}
+                                    className="text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-0.5 rounded-md hover:bg-accent-cyan/10"
+                                  >
+                                    Trade
+                                  </button>
+                                </div>
+                              ) : null}
+                              {stock.name ? (
+                                <span
+                                  className="text-[10px] text-muted-foreground leading-snug line-clamp-2"
+                                  title={stock.name}
+                                >
+                                  {stock.name}
+                                </span>
+                              ) : null}
+                              {stock.tag.trim().length > 0 ? (
+                                <Link
+                                  href={`/themes/${encodeURIComponent(stock.tag)}`}
+                                  className="inline-flex items-center w-fit text-[10px] font-bold uppercase tracking-tight text-accent-cyan hover:text-accent-cyan/90 border border-accent-cyan/40 rounded-md px-2 py-0.5 mt-0.5 hover:bg-accent-cyan/10 transition-colors"
+                                >
+                                  {stock.tag}
+                                </Link>
+                              ) : null}
+                            </div>
+                          </td>
+                        );
+                      case "research":
+                        return (
+                          <td key={colId} className="px-6 py-4">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
+                                  {stock.countryName}
+                                </span>
+                                {stock.nextEarningsDate ? (
+                                  <span
+                                    className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
+                                    title={`次期決算予定日: ${stock.nextEarningsDate}`}
+                                  >
+                                    E:{stock.daysToEarnings != null ? `D${stock.daysToEarnings}` : stock.nextEarningsDate}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">E:—</span>
+                                )}
+                                {stock.dividendYieldPercent != null ? (
+                                  <span
+                                    className={`text-[10px] font-bold border px-2 py-0.5 rounded-md ${
+                                      stock.dividendYieldPercent >= 3
+                                        ? "text-amber-200 border-amber-500/40 bg-amber-500/10"
+                                        : "text-foreground/90 border-border bg-card/60"
+                                    }`}
+                                    title={
+                                      stock.annualDividendRate != null
+                                        ? `年間配当: ${stock.annualDividendRate}`
+                                        : "年間配当: —"
+                                    }
+                                  >
+                                    Div:{stock.dividendYieldPercent.toFixed(2)}%
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">Div:—</span>
+                                )}
+                                {stock.dividendYieldPercent != null && stock.dividendYieldPercent >= 3 ? (
+                                  <span
+                                    className="text-[10px] font-bold text-amber-200 border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 rounded-md"
+                                    title="高配当（Div% >= 3）"
+                                  >
+                                    還流
+                                  </span>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => setNoteModalStock(stock)}
+                                  className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide border px-2 py-0.5 rounded-md transition-colors ${
+                                    stock.earningsSummaryNote != null && stock.earningsSummaryNote.trim().length > 0
+                                      ? "text-violet-200 border-violet-500/45 bg-violet-500/15 hover:bg-violet-500/25"
+                                      : "text-muted-foreground border-border bg-background/60 hover:bg-muted/70 hover:text-foreground/90"
+                                  }`}
+                                  title="決算要約メモを表示・編集"
+                                >
+                                  <NotebookPen size={12} className="shrink-0" aria-hidden />
+                                  メモ
+                                </button>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">
+                                {stock.accountType ?? "特定"}
+                              </span>
+                            </div>
+                          </td>
+                        );
+                      case "ruleOf40":
+                        return (
+                          <td key={colId} className="px-6 py-4 text-right font-mono text-xs">
+                            {(() => {
+                              const r40 = rule40Tone(stock.ruleOf40);
+                              return (
+                                <span className={r40.cls} title="Rule of 40 = revenueGrowth + fcfMargin">
+                                  {r40.text}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                        );
+                      case "fcfYield":
+                        return (
+                          <td key={colId} className="px-6 py-4 text-right font-mono text-xs">
+                            {(() => {
+                              const fy = fcfYieldTone(stock.fcfYield);
+                              return (
+                                <span
+                                  className={fy.cls}
+                                  title="FCF Yield（高いほど割安。年次 FCF が負のときはマイナス%）"
+                                >
+                                  {fy.text}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                        );
+                      case "judgment":
+                        return (
+                          <td key={colId} className="px-4 py-4 text-center">
+                            <JudgmentBadge status={stock.judgmentStatus} reason={stock.judgmentReason} />
+                          </td>
+                        );
+                      case "deviation":
+                        return (
+                          <td
+                            key={colId}
+                            className={`px-6 py-4 text-right font-mono text-xs font-bold ${
+                              z == null
+                                ? "text-muted-foreground"
+                                : z < -1
+                                  ? "text-amber-400"
+                                  : z > 1
+                                    ? "text-emerald-400"
+                                    : "text-foreground/90"
                             }`}
-                            title="口座区分（holdings.account_type）"
                           >
-                            {stock.accountType ?? "特定"}
-                          </span>
-                        </div>
-                      </div>
-                      {stock.name ? (
-                        <span className="text-[10px] text-muted-foreground leading-snug line-clamp-2" title={stock.name}>
-                          {stock.name}
-                        </span>
-                      ) : null}
-                      {stock.tag.trim().length > 0 ? (
-                        <Link
-                          href={`/themes/${encodeURIComponent(stock.tag)}`}
-                          className="inline-flex items-center w-fit text-[10px] font-bold uppercase tracking-tight text-accent-cyan hover:text-accent-cyan/90 border border-accent-cyan/40 rounded-md px-2 py-0.5 mt-0.5 hover:bg-accent-cyan/10 transition-colors"
-                        >
-                          {stock.tag}
-                        </Link>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
-                          {stock.countryName}
-                        </span>
-                        {stock.nextEarningsDate ? (
-                          <span
-                            className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
-                            title={`次期決算予定日: ${stock.nextEarningsDate}`}
+                            {fmtZ(z)}
+                          </td>
+                        );
+                      case "drawdown":
+                        return (
+                          <td
+                            key={colId}
+                            className={`px-6 py-4 text-right font-mono text-xs font-bold ${
+                              dd == null ? "text-muted-foreground" : dd < -10 ? "text-rose-400" : "text-foreground/90"
+                            }`}
                           >
-                            E:{stock.daysToEarnings != null ? `D${stock.daysToEarnings}` : stock.nextEarningsDate}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground">E:—</span>
-                        )}
-                        {stock.dividendYieldPercent != null ? (
-                          <span
-                            className={`text-[10px] font-bold border px-2 py-0.5 rounded-md ${
-                              stock.dividendYieldPercent >= 3
-                                ? "text-amber-200 border-amber-500/40 bg-amber-500/10"
-                                : "text-foreground/90 border-border bg-card/60"
+                            {fmtDd(dd)}
+                          </td>
+                        );
+                      case "alpha":
+                        return (
+                          <td
+                            key={colId}
+                            className={`px-6 py-4 text-right font-mono font-bold ${
+                              stock.alphaHistory.length === 0
+                                ? "text-muted-foreground"
+                                : stock.alphaHistory.slice(-1)[0]! > 0
+                                  ? "text-emerald-400"
+                                  : "text-rose-400"
+                            }`}
+                          >
+                            {stock.alphaHistory.length === 0 ? (
+                              "—"
+                            ) : (
+                              <>
+                                {stock.alphaHistory.slice(-1)[0]! > 0 ? "+" : ""}
+                                {stock.alphaHistory.slice(-1)[0]}%
+                              </>
+                            )}
+                          </td>
+                        );
+                      case "trend":
+                        return (
+                          <td key={colId} className="px-6 py-4">
+                            {stock.alphaHistory.length === 0 ? (
+                              <span className="text-muted-foreground text-xs">No data</span>
+                            ) : (
+                              <TrendMiniChart history={stock.alphaHistory} maxPoints={5} />
+                            )}
+                          </td>
+                        );
+                      case "position":
+                        return (
+                          <td key={colId} className="px-6 py-4 text-right">
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="font-mono text-foreground/90 font-bold">{stock.quantity}</span>
+                              <span className="text-[9px] text-muted-foreground font-bold tracking-tighter">
+                                {stock.marketValue > 0
+                                  ? `${formatJpyValueForView(stock.marketValue, viewCurrency, convert)}（推定）`
+                                  : "—"}
+                              </span>
+                              {stock.valuationFactor !== 1 ? (
+                                <span className="text-[8px] text-amber-500/90 font-mono">factor {stock.valuationFactor}</span>
+                              ) : null}
+                              <span className="text-[9px] font-bold uppercase tracking-tighter text-blue-400">
+                                {stock.weight > 0
+                                  ? `${stock.weight.toFixed(1)}% wt`
+                                  : stock.marketValue > 0
+                                    ? "0% wt"
+                                    : "—"}
+                              </span>
+                            </div>
+                          </td>
+                        );
+                      case "pe":
+                        return (
+                          <td key={colId} className="px-4 py-4 text-right font-mono text-xs tabular-nums text-foreground/90">
+                            {fmtPe(peOf(stock))}
+                          </td>
+                        );
+                      case "eps":
+                        return (
+                          <td
+                            key={colId}
+                            className={`px-4 py-4 text-right font-mono text-xs font-bold tabular-nums ${
+                              (() => {
+                                const ep = epsOf(stock);
+                                if (ep == null) return "text-muted-foreground";
+                                return ep <= 0 ? "text-rose-300" : "text-foreground/90";
+                              })()
                             }`}
                             title={
-                              stock.annualDividendRate != null
-                                ? `年間配当: ${stock.annualDividendRate}`
-                                : "年間配当: —"
+                              epsOf(stock) != null && epsOf(stock)! <= 0
+                                ? "EPS <= 0（赤字・特損など含む）。PERは参考になりにくい場合があります。"
+                                : undefined
                             }
                           >
-                            Div:{stock.dividendYieldPercent.toFixed(2)}%
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground">Div:—</span>
-                        )}
-                        {stock.dividendYieldPercent != null && stock.dividendYieldPercent >= 3 ? (
-                          <span
-                            className="text-[10px] font-bold text-amber-200 border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 rounded-md"
-                            title="高配当（Div% >= 3）"
-                          >
-                            還流
-                          </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setNoteModalStock(stock)}
-                          className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide border px-2 py-0.5 rounded-md transition-colors ${
-                            stock.earningsSummaryNote != null && stock.earningsSummaryNote.trim().length > 0
-                              ? "text-violet-200 border-violet-500/45 bg-violet-500/15 hover:bg-violet-500/25"
-                              : "text-muted-foreground border-border bg-background/60 hover:bg-muted/70 hover:text-foreground/90"
-                          }`}
-                          title="決算要約メモを表示・編集"
-                        >
-                          <NotebookPen size={12} className="shrink-0" aria-hidden />
-                          メモ
-                        </button>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground">
-                        {stock.accountType ?? "特定"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right font-mono text-xs">
-                    {(() => {
-                      const r40 = rule40Tone(stock.ruleOf40);
-                      return (
-                        <span className={r40.cls} title="Rule of 40 = revenueGrowth + fcfMargin">
-                          {r40.text}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-6 py-4 text-right font-mono text-xs">
-                    {(() => {
-                      const fy = fcfYieldTone(stock.fcfYield);
-                      return (
-                        <span
-                          className={fy.cls}
-                          title="FCF Yield（高いほど割安。年次 FCF が負のときはマイナス%）"
-                        >
-                          {fy.text}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <JudgmentBadge status={stock.judgmentStatus} reason={stock.judgmentReason} />
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    {opportunityType === "DEEP_VALUE" ? (
-                      <span className="text-base leading-none" title="Deep Value（Z<-1.5σ & 落率>20%）" aria-label="Deep Value">
-                        💎
-                      </span>
-                    ) : opportunityType === "STRUCTURAL_DIP" ? (
-                      <span className="text-base leading-none" title="Structural Dip（-0.5σ<Z<+0.5σ & 落率>30%）" aria-label="Structural Dip">
-                        🌊
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  {showValueCols ? (
-                    <>
-                      <td
-                        className={`px-6 py-4 text-right font-mono text-xs font-bold ${
-                          z == null ? "text-muted-foreground" : z < -1 ? "text-amber-400" : z > 1 ? "text-emerald-400" : "text-foreground/90"
-                        }`}
-                      >
-                        {fmtZ(z)}
-                      </td>
-                      <td
-                        className={`px-6 py-4 text-right font-mono text-xs font-bold ${
-                          dd == null ? "text-muted-foreground" : dd < -10 ? "text-rose-400" : "text-foreground/90"
-                        }`}
-                      >
-                        {fmtDd(dd)}
-                      </td>
-                    </>
-                  ) : null}
-                  <td
-                    className={`px-6 py-4 text-right font-mono font-bold ${
-                      stock.alphaHistory.length === 0
-                        ? "text-muted-foreground"
-                        : stock.alphaHistory.slice(-1)[0]! > 0
-                          ? "text-emerald-400"
-                          : "text-rose-400"
-                    }`}
-                  >
-                    {stock.alphaHistory.length === 0 ? (
-                      "—"
-                    ) : (
-                      <>
-                        {stock.alphaHistory.slice(-1)[0]! > 0 ? "+" : ""}
-                        {stock.alphaHistory.slice(-1)[0]}%
-                      </>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    {stock.alphaHistory.length === 0 ? (
-                      <span className="text-muted-foreground text-xs">No data</span>
-                    ) : (
-                      <TrendMiniChart history={stock.alphaHistory} maxPoints={5} />
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span className="font-mono text-foreground/90 font-bold">{stock.quantity}</span>
-                      <span className="text-[9px] text-muted-foreground font-bold tracking-tighter">
-                        {stock.marketValue > 0
-                          ? `${formatJpyValueForView(stock.marketValue, viewCurrency, convert)}（推定）`
-                          : "—"}
-                      </span>
-                      {stock.valuationFactor !== 1 ? (
-                        <span className="text-[8px] text-amber-500/90 font-mono">factor {stock.valuationFactor}</span>
-                      ) : null}
-                      <span className="text-[9px] font-bold uppercase tracking-tighter text-blue-400">
-                        {stock.weight > 0 ? `${stock.weight.toFixed(1)}% wt` : stock.marketValue > 0 ? "0% wt" : "—"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-right bg-card md:sticky md:right-[5.75rem] md:z-10 md:bg-background group-hover:bg-muted/60 md:border-l md:border-border/60">
-                    <div className="flex flex-col items-end gap-0.5 min-w-[5.75rem]">
-                      <span className="font-mono text-foreground/90 font-bold tabular-nums">
-                        {stock.currentPrice != null && stock.currentPrice > 0
-                          ? formatLocalPriceForView(
-                              stock.currentPrice,
-                              nativeCurrencyForStock(stock),
-                              viewCurrency,
-                              convert,
-                            )
-                          : "—"}
-                      </span>
-                      {stock.priceSource === "live" && stock.lastUpdatedAt ? (
-                        <span
-                          className="inline-flex items-center gap-1 text-[9px] text-muted-foreground font-mono"
-                          title={`Live（Yahoo quote）\n${new Date(stock.lastUpdatedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 motion-safe:animate-pulse" aria-hidden />
-                          <span className="text-[7px] font-bold uppercase tracking-wide text-emerald-400/90">Live</span>
-                        </span>
-                      ) : null}
-                      {(() => {
-                        const pe = peOf(stock);
-                        const eps = epsOf(stock);
-                        const epsIsLoss = eps != null && eps <= 0;
-                        const hasAny = pe != null || eps != null || epsIsLoss;
-                        if (!hasAny) return null;
-                        return (
-                          <span
-                            className="text-[9px] font-mono text-muted-foreground whitespace-nowrap"
-                            title={[
-                              `PER: trailing=${stock.trailingPe ?? "—"} / forward=${stock.forwardPe ?? "—"}`,
-                              `EPS: trailing=${stock.trailingEps ?? "—"} / forward=${stock.forwardEps ?? "—"}`,
-                              epsIsLoss ? "EPS <= 0（赤字・特損など含む）。PERは参考になりにくいので注意。" : "",
-                            ]
-                              .filter((x) => x.length > 0)
-                              .join("\n")}
-                          >
-                            <span className={epsIsLoss ? "text-rose-300 font-bold" : ""}>
-                              {epsIsLoss ? "赤字 " : ""}
-                            </span>
-                            <span>PER {fmtPe(pe)}</span>
-                            <span className="mx-1">/</span>
-                            <span>EPS {fmtEps(eps)}</span>
-                          </span>
+                            {fmtEps(epsOf(stock))}
+                          </td>
                         );
-                      })()}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-right bg-card md:sticky md:right-0 md:z-10 md:bg-background group-hover:bg-muted/60 min-w-[5.75rem]">
-                    {onTrade ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onTrade({
-                            ticker: stock.ticker,
-                            name: stock.name || undefined,
-                            ...(stock.tag.trim().length > 0 ? { theme: stock.tag } : {}),
-                            sector: stock.sector ?? stock.secondaryTag,
-                            quantityDefault: 1,
-                            ...(stock.expectationCategory != null
-                              ? { expectationCategory: stock.expectationCategory }
-                              : {}),
-                            ...(stock.currentPrice != null &&
-                            Number.isFinite(stock.currentPrice) &&
-                            stock.currentPrice > 0
-                              ? { unitPrice: stock.currentPrice }
-                              : {}),
-                          })
-                        }
-                        className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-1 rounded-md hover:bg-accent-cyan/10"
-                      >
-                        Trade
-                      </button>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground">—</span>
-                    )}
-                  </td>
+                      case "price":
+                        return (
+                          <td key={colId} className="px-4 py-4 text-right group-hover:bg-muted/60">
+                            <div className="flex flex-col items-end gap-0.5 min-w-[5.75rem]">
+                              <span className="font-mono text-foreground/90 font-bold tabular-nums">
+                                {stock.currentPrice != null && stock.currentPrice > 0
+                                  ? formatLocalPriceForView(
+                                      stock.currentPrice,
+                                      nativeCurrencyForStock(stock),
+                                      viewCurrency,
+                                      convert,
+                                    )
+                                  : "—"}
+                              </span>
+                              {stock.priceSource === "live" && stock.lastUpdatedAt ? (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[9px] text-muted-foreground font-mono"
+                                  title={`Live（Yahoo quote）\n${new Date(stock.lastUpdatedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`}
+                                >
+                                  <span
+                                    className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 motion-safe:animate-pulse"
+                                    aria-hidden
+                                  />
+                                  <span className="text-[7px] font-bold uppercase tracking-wide text-emerald-400/90">
+                                    Live
+                                  </span>
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                        );
+                      default: {
+                        const _exhaustive: never = colId;
+                        return _exhaustive;
+                      }
+                    }
+                  })}
                 </tr>
               );
             })}
           </tbody>
           <tfoot>
             <tr className="group bg-card/90 border-t border-border">
-              <td className={`px-6 py-3 text-xs font-bold text-foreground/90 min-w-[10rem] max-w-[11rem] ${stickyTdFootFirst}`}>
-                Total: {sortedStocks.length}
-                {sortedStocks.length === 1 ? " item" : " items"}
-                {structureFilter.trim() || expectationFilter !== "" ? `（全 ${totalHoldings}）` : ""}
-              </td>
-              <td className="px-6 py-3" />
-              <td className="px-6 py-3 text-right align-top">
-                {(() => {
-                  const r40 = footerStats.avgRuleOf40;
-                  const tone =
-                    r40 == null || !Number.isFinite(r40)
-                      ? { text: "—", cls: "text-muted-foreground" }
-                      : rule40Tone(r40);
-                  return (
-                    <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
-                      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Rule of 40</span>
-                      <span className={`font-bold ${tone.cls}`} title="時価加重（MV がある銘柄）。MV なしのみは単純平均">
-                        加重 {tone.text}
-                      </span>
-                    </div>
-                  );
-                })()}
-              </td>
-              <td className="px-6 py-3 text-right align-top">
-                {(() => {
-                  const fy = footerStats.avgFcfYield;
-                  const tone =
-                    fy == null || !Number.isFinite(fy)
-                      ? { text: "—", cls: "text-muted-foreground" }
-                      : fcfYieldTone(fy);
-                  return (
-                    <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
-                      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">FCF Yld</span>
-                      <span className={`font-bold ${tone.cls}`} title="時価加重（MV がある銘柄）。MV なしのみは単純平均">
-                        加重 {tone.text}
-                      </span>
-                    </div>
-                  );
-                })()}
-              </td>
-              <td className="px-4 py-3 text-center align-top text-[10px] text-muted-foreground">—</td>
-              <td className="px-4 py-3 text-center align-top text-[10px] text-muted-foreground">
-                —
-              </td>
-              {showValueCols ? (
-                <>
-                  <td className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">乖離</span>
-                      <span className="font-bold text-foreground/90">{fmtZ(footerStats.avgZ)}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">落率</span>
-                      <span className="font-bold text-foreground/90">{fmtDd(footerStats.avgDd)}</span>
-                    </div>
-                  </td>
-                </>
-              ) : null}
-              <td className={`px-6 py-3 text-right align-top font-mono text-[11px] leading-tight`}>
-                <div className="flex flex-col items-end gap-1">
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Alpha（PF）</span>
-                    <span className={`font-bold ${avgAlphaClass}`}>
-                      {Number.isFinite(displayAvgAlpha) ? `${avgAlphaSign}${displayAvgAlpha.toFixed(2)}%` : "—"}
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-end gap-0.5 border-t border-border/50 pt-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Alpha（表示行）</span>
-                    <span
-                      className={`font-bold ${
-                        footerStats.avgAlphaVisible != null && footerStats.avgAlphaVisible > 0
-                          ? "text-emerald-400"
-                          : footerStats.avgAlphaVisible != null && footerStats.avgAlphaVisible < 0
-                            ? "text-rose-400"
-                            : "text-slate-400"
-                      }`}
-                    >
-                      {footerStats.avgAlphaVisible != null && Number.isFinite(footerStats.avgAlphaVisible)
-                        ? `${footerStats.avgAlphaVisible > 0 ? "+" : ""}${footerStats.avgAlphaVisible.toFixed(2)}%`
-                        : "—"}
-                    </span>
-                  </div>
-                </div>
-              </td>
-              <td className="px-6 py-3 text-center align-top text-[10px] text-muted-foreground uppercase font-bold leading-snug">
-                Portfolio
-              </td>
-              <td className="px-6 py-3 text-right align-top">
-                <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
-                  <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Σ 時価</span>
-                  <span className="font-bold text-foreground/90 tabular-nums">
-                    {footerStats.totalMarketValueVisible > 0
-                      ? formatJpyValueForView(footerStats.totalMarketValueVisible, viewCurrency, convert)
-                      : "—"}
-                  </span>
-                  <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground pt-0.5">Σ ウエイト</span>
-                  <span className="font-bold text-blue-400 tabular-nums">
-                    {footerStats.sumWeightVisible > 0 ? `${footerStats.sumWeightVisible.toFixed(1)}%` : "—"}
-                  </span>
-                </div>
-              </td>
-              <td className="px-4 py-3 bg-card/90 md:sticky md:right-[5.75rem] md:z-10 md:border-l md:border-border/60" />
-              <td className="px-4 py-3 bg-card/90 md:sticky md:right-0 md:z-10" />
+              {visibleColumnIds.map((colId, idx) => {
+                const isFirst = idx === 0;
+                const stickyFoot = isFirst ? stickyTdFootFirst : "";
+                switch (colId) {
+                  case "asset":
+                    return (
+                      <td
+                        key={colId}
+                        className={`px-6 py-3 text-xs font-bold text-foreground/90 min-w-[10rem] max-w-[11rem] ${stickyFoot}`}
+                      >
+                        Total: {sortedStocks.length}
+                        {sortedStocks.length === 1 ? " item" : " items"}
+                        {structureFilter.trim() || expectationFilter !== "" ? `（全 ${totalHoldings}）` : ""}
+                      </td>
+                    );
+                  case "research":
+                    return <td key={colId} className="px-6 py-3" />;
+                  case "ruleOf40":
+                    return (
+                      <td key={colId} className="px-6 py-3 text-right align-top">
+                        {(() => {
+                          const r40 = footerStats.avgRuleOf40;
+                          const tone =
+                            r40 == null || !Number.isFinite(r40)
+                              ? { text: "—", cls: "text-muted-foreground" }
+                              : rule40Tone(r40);
+                          return (
+                            <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
+                              <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                                Rule of 40
+                              </span>
+                              <span
+                                className={`font-bold ${tone.cls}`}
+                                title="時価加重（MV がある銘柄）。MV なしのみは単純平均"
+                              >
+                                加重 {tone.text}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    );
+                  case "fcfYield":
+                    return (
+                      <td key={colId} className="px-6 py-3 text-right align-top">
+                        {(() => {
+                          const fy = footerStats.avgFcfYield;
+                          const tone =
+                            fy == null || !Number.isFinite(fy)
+                              ? { text: "—", cls: "text-muted-foreground" }
+                              : fcfYieldTone(fy);
+                          return (
+                            <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
+                              <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                                FCF Yld
+                              </span>
+                              <span
+                                className={`font-bold ${tone.cls}`}
+                                title="時価加重（MV がある銘柄）。MV なしのみは単純平均"
+                              >
+                                加重 {tone.text}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    );
+                  case "judgment":
+                    return (
+                      <td key={colId} className="px-4 py-3 text-center align-top text-[10px] text-muted-foreground">
+                        —
+                      </td>
+                    );
+                  case "deviation":
+                    return (
+                      <td key={colId} className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">乖離</span>
+                          <span className="font-bold text-foreground/90">{fmtZ(footerStats.avgZ)}</span>
+                        </div>
+                      </td>
+                    );
+                  case "drawdown":
+                    return (
+                      <td key={colId} className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">落率</span>
+                          <span className="font-bold text-foreground/90">{fmtDd(footerStats.avgDd)}</span>
+                        </div>
+                      </td>
+                    );
+                  case "alpha":
+                    return (
+                      <td key={colId} className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                            Alpha（表示行）
+                          </span>
+                          <span
+                            className={`font-bold ${
+                              footerStats.avgAlphaVisible != null && footerStats.avgAlphaVisible > 0
+                                ? "text-emerald-400"
+                                : footerStats.avgAlphaVisible != null && footerStats.avgAlphaVisible < 0
+                                  ? "text-rose-400"
+                                  : "text-slate-400"
+                            }`}
+                          >
+                            {footerStats.avgAlphaVisible != null && Number.isFinite(footerStats.avgAlphaVisible)
+                              ? `${footerStats.avgAlphaVisible > 0 ? "+" : ""}${footerStats.avgAlphaVisible.toFixed(2)}%`
+                              : "—"}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  case "trend":
+                    return (
+                      <td key={colId} className="px-6 py-3 text-center align-top font-mono text-[11px] leading-tight">
+                        {footerStats.avgFiveDayAlphaDelta != null && Number.isFinite(footerStats.avgFiveDayAlphaDelta) ? (
+                          <span
+                            className={`font-bold tabular-nums ${
+                              footerStats.avgFiveDayAlphaDelta > 0
+                                ? "text-emerald-400"
+                                : footerStats.avgFiveDayAlphaDelta < 0
+                                  ? "text-rose-400"
+                                  : "text-muted-foreground"
+                            }`}
+                            title="表示行の Alpha 終値における直近5営業日変化の単純平均"
+                          >
+                            {footerStats.avgFiveDayAlphaDelta > 0 ? "+" : ""}
+                            {footerStats.avgFiveDayAlphaDelta.toFixed(2)}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    );
+                  case "position":
+                    return (
+                      <td key={colId} className="px-6 py-3 text-right align-top">
+                        <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Σ 時価</span>
+                          <span className="font-bold text-foreground/90 tabular-nums">
+                            {footerStats.totalMarketValueVisible > 0
+                              ? formatJpyValueForView(footerStats.totalMarketValueVisible, viewCurrency, convert)
+                              : "—"}
+                          </span>
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground pt-0.5">
+                            Σ ウエイト
+                          </span>
+                          <span className="font-bold text-blue-400 tabular-nums">
+                            {footerStats.sumWeightVisible > 0 ? `${footerStats.sumWeightVisible.toFixed(1)}%` : "—"}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  case "pe":
+                    return (
+                      <td key={colId} className="px-4 py-3 text-right align-top font-mono text-[11px] text-foreground/90">
+                        {footerStats.avgPeVisible != null ? fmtPe(footerStats.avgPeVisible) : "—"}
+                      </td>
+                    );
+                  case "eps":
+                    return (
+                      <td key={colId} className="px-4 py-3 text-right align-top font-mono text-[11px] text-foreground/90">
+                        {footerStats.avgEpsVisible != null ? fmtEps(footerStats.avgEpsVisible) : "—"}
+                      </td>
+                    );
+                  case "price":
+                    return <td key={colId} className="px-4 py-3 align-top" />;
+                  default: {
+                    const _exhaustive: never = colId;
+                    return _exhaustive;
+                  }
+                }
+              })}
             </tr>
           </tfoot>
         </table>
+        </DndContext>
       </div>
 
       {noteModalStock ? (

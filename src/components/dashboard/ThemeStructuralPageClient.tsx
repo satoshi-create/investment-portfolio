@@ -18,7 +18,7 @@ import type {
   ThemeEcosystemWatchItem,
   TickerInstrumentKind,
 } from "@/src/types/investment";
-import type { JudgmentStatus } from "@/src/lib/judgment-logic";
+import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import {
   ecoFcfYieldSortValue,
@@ -537,6 +537,7 @@ export function ThemePageClient({
     | "drawdown"
     | "ruleOf40"
     | "fcfYield"
+    | "judgment"
   >("alpha");
   const [ecoSortDir, setEcoSortDir] = useState<"asc" | "desc">("desc");
   const [ecoSortMode, setEcoSortMode] = useState<
@@ -1215,6 +1216,12 @@ export function ThemePageClient({
       }
 
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
+      if (ecoSortKey === "judgment") {
+        const ja = judgmentPriorityRank(a.judgmentStatus as JudgmentStatus);
+        const jb = judgmentPriorityRank(b.judgmentStatus as JudgmentStatus);
+        if (ja !== jb) return dir * (ja - jb);
+        return dir * cmpStr(a.ticker, b.ticker);
+      }
       if (ecoSortKey === "ruleOf40")
         return dir * cmpNum(ecoRuleOf40SortValue(a), ecoRuleOf40SortValue(b));
       if (ecoSortKey === "fcfYield")
@@ -2365,10 +2372,11 @@ export function ThemePageClient({
                             FCF Yield{ecoSortMark("fcfYield")}
                           </th>
                           <th
-                            className="px-4 py-4 text-center whitespace-nowrap"
-                            title="R40×FCF Yield に基づく投資判定"
+                            className="px-4 py-4 text-center cursor-pointer select-none whitespace-nowrap"
+                            onClick={() => toggleEcoSort("judgment")}
+                            title="投資優先度（ELITE → ACCUMULATE → WATCH → DANGER）"
                           >
-                            判定
+                            判定{ecoSortMark("judgment")}
                           </th>
                           {ecoShowValueCols ? (
                             <>

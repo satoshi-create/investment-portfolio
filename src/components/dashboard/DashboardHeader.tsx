@@ -117,7 +117,7 @@ export function DashboardHeader({
   return (
     <header className={`border-b border-border ${compact ? "pb-3" : "pb-6"}`}>
       <div
-        className={`flex flex-col md:flex-row md:items-end md:justify-between ${
+        className={`flex flex-col md:flex-row md:items-start md:justify-between ${
           compact ? "gap-3 md:gap-4" : "gap-6 md:gap-8"
         }`}
       >
@@ -140,7 +140,7 @@ export function DashboardHeader({
           </h1>
         </div>
 
-        <div className="flex flex-row flex-wrap justify-start gap-x-8 gap-y-4 md:justify-end items-end shrink-0 min-w-0 w-full md:w-auto">
+        <div className="flex flex-row flex-wrap justify-start gap-x-8 gap-y-4 md:justify-end md:items-start shrink-0 min-w-0 w-full md:w-auto">
           {/* スマホ: Market glance を Alpha の上（小さめ）。md+: ボタン左・Alpha 右 */}
           <div className="flex w-full min-w-0 flex-col gap-1.5 md:w-auto md:flex-row md:items-end md:gap-3">
             <div className="order-1 flex flex-wrap items-center gap-1.5 self-start md:self-end md:mb-0.5 md:gap-2">

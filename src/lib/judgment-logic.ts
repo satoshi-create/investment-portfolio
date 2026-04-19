@@ -20,6 +20,22 @@ export type JudgmentResult = {
   reason: string;
 };
 
+/** ソート用: 数値が小さいほど投資優先度が高い（ELITE → … → DANGER）。 */
+export function judgmentPriorityRank(status: JudgmentStatus): number {
+  switch (status) {
+    case "ELITE":
+      return 0;
+    case "ACCUMULATE":
+      return 1;
+    case "WATCH":
+      return 2;
+    case "DANGER":
+      return 3;
+    default:
+      return 9;
+  }
+}
+
 function fmt(n: number): string {
   return Number.isFinite(n) ? n.toFixed(1) : "—";
 }
