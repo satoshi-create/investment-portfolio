@@ -10,6 +10,8 @@
     "verify:alpha": "tsx scripts/verify-alpha-logic.ts",
     "seed:benchmarks": "tsx scripts/seed-benchmarks.ts",
     "seed:efficiency": "tsx scripts/seed-ticker-efficiency-metrics.ts",
+    "fetch:fundamentals": "tsx scripts/fetch-fundamental-metrics.ts",
+    "fetch:fundamental-metrics": "tsx scripts/fetch-fundamental-metrics.ts",
     "fetch:fmp-metrics": "tsx scripts/fetch-fmp-metrics.ts",
     "db:apply": "tsx scripts/apply-migration.ts",
     "db:migrate:efficiency": "tsx scripts/apply-migration.ts migrations/038_ticker_efficiency_metrics.sql",

@@ -1,8 +1,9 @@
 /**
- * Rule of 40 / FCF Yield 用メトリクスを FMP から取得し `ticker_efficiency_metrics` に UPSERT。
+ * （任意 / 有料 FMP 向け）FMP から `ticker_efficiency_metrics` へ UPSERT。
+ * 通常の自動取得は **Yahoo** `npm run fetch:fundamentals`（`fetch-fundamental-metrics.ts`）を推奨。
  *
- * - Legacy の `/financial-growth/`、`/key-metrics-ttm/` は使用しない（新規キーで 403 になりやすい）。
- * - **財務三表（年次）**と **`/quote`** から自前計算する。
+ * - Legacy の `/financial-growth/`、`/key-metrics-ttm/` は使用しない。
+ * - 財務三表（年次）＋`/quote` から自前計算。
  *
  * Env:
  *   FMP_API_KEY           — required

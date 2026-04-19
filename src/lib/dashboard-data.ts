@@ -513,6 +513,7 @@ function computeRuleOf40(revenueGrowth: number, fcfMargin: number): number {
 /**
  * FCF Yield（%）≈ annual_fcf / (livePrice × diluted shares)。
  * 米国上場株のみ動的算出し、それ以外・欠損時は DB の静的 `fcf_yield` を返す。
+ * 年次 FCF が負でも（マイナス Yield として）算出する。
  */
 export function computeDynamicFcfYieldPercent(opts: {
   instrumentKind: TickerInstrumentKind;
@@ -526,7 +527,7 @@ export function computeDynamicFcfYieldPercent(opts: {
     const af = annualFcf != null ? Number(annualFcf) : Number.NaN;
     const sh = sharesOutstanding != null ? Number(sharesOutstanding) : Number.NaN;
     const px = livePrice != null ? Number(livePrice) : Number.NaN;
-    if (Number.isFinite(af) && Number.isFinite(sh) && Number.isFinite(px) && af >= 0 && sh > 0 && px > 0) {
+    if (Number.isFinite(af) && Number.isFinite(sh) && Number.isFinite(px) && sh > 0 && px > 0) {
       return (af / (px * sh)) * 100;
     }
   }

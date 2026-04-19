@@ -360,7 +360,10 @@ export function InventoryTable({
               <th className="px-6 py-4 text-right whitespace-nowrap" title="Rule of 40（売上成長率% + FCFマージン%）">
                 Rule of 40
               </th>
-              <th className="px-6 py-4 text-right whitespace-nowrap" title="FCF Yield（%）">
+              <th
+                className="px-6 py-4 text-right whitespace-nowrap"
+                title="FCF Yield（%）= 年次 FCF / (株価×希薄化株数)。負の FCF はマイナス%で表示"
+              >
                 FCF Yield
               </th>
               <th className="px-4 py-4 text-center whitespace-nowrap" title="押し目（Dip）判定">
@@ -570,7 +573,10 @@ export function InventoryTable({
                     {(() => {
                       const fy = fcfYieldTone(stock.fcfYield);
                       return (
-                        <span className={fy.cls} title="FCF Yield（高いほど割安・キャッシュ効率）">
+                        <span
+                          className={fy.cls}
+                          title="FCF Yield（高いほど割安。年次 FCF が負のときはマイナス%）"
+                        >
                           {fy.text}
                         </span>
                       );
