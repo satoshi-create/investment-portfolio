@@ -47,6 +47,10 @@ import {
 import { parseAdoptionStage } from "@/src/lib/adoption-stage";
 import { parseExpectationCategory } from "@/src/lib/expectation-category";
 import {
+  computeInvestmentJudgment,
+  expectationCategoryToInvestmentNarrative,
+} from "@/src/lib/judgment-logic";
+import {
   formatPortfolioAvgAlphaAsOfDisplay,
 } from "@/src/lib/us-market-session";
 import {
@@ -480,6 +484,8 @@ export type TickerEfficiencyBundle = {
   ruleOf40: number;
   annualFcf: number | null;
   sharesOutstanding: number | null;
+  /** 前期比較用（ACCUMULATE など）。未記録は null */
+  priorRuleOf40: number | null;
 };
 
 type EcosystemEfficiencyRow = {
@@ -491,6 +497,7 @@ type EcosystemEfficiencyRow = {
   annual_fcf?: unknown;
   shares_outstanding?: unknown;
   rule_of_40?: unknown;
+  prior_rule_of_40?: unknown;
 };
 
 function parsePercentOrNaN(raw: unknown): number {
@@ -534,6 +541,12 @@ export function computeDynamicFcfYieldPercent(opts: {
   return Number.isFinite(storedFcfYieldPercent) ? storedFcfYieldPercent : Number.NaN;
 }
 
+function tickerEfficiencyMissingPriorRuleColumn(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("prior_rule_of_40");
+}
+
 function tickerEfficiencyMissingExtendedColumns(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   const lower = msg.toLowerCase();
@@ -568,22 +581,34 @@ async function fetchEcosystemEfficiencyByTickerUpper(
     // Prefer ticker-level table (shared across holdings + ecosystem).
     let rs;
     try {
+      const sqlExtendedNoPrior = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
+                       annual_fcf, shares_outstanding, rule_of_40
+                FROM ticker_efficiency_metrics
+                WHERE ticker IN (${ph})`;
+      const sqlMinimal = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
+                FROM ticker_efficiency_metrics
+                WHERE ticker IN (${ph})`;
       try {
         rs = await db.execute({
           sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
-                       annual_fcf, shares_outstanding, rule_of_40
+                       annual_fcf, shares_outstanding, rule_of_40, prior_rule_of_40
                 FROM ticker_efficiency_metrics
                 WHERE ticker IN (${ph})`,
           args: unique,
         });
-      } catch (extErr) {
-        if (!tickerEfficiencyMissingExtendedColumns(extErr)) throw extErr;
-        rs = await db.execute({
-          sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
-                FROM ticker_efficiency_metrics
-                WHERE ticker IN (${ph})`,
-          args: unique,
-        });
+      } catch (e1) {
+        if (tickerEfficiencyMissingPriorRuleColumn(e1)) {
+          try {
+            rs = await db.execute({ sql: sqlExtendedNoPrior, args: unique });
+          } catch (e2) {
+            if (!tickerEfficiencyMissingExtendedColumns(e2)) throw e2;
+            rs = await db.execute({ sql: sqlMinimal, args: unique });
+          }
+        } else if (tickerEfficiencyMissingExtendedColumns(e1)) {
+          rs = await db.execute({ sql: sqlMinimal, args: unique });
+        } else {
+          throw e1;
+        }
       }
     } catch (eTickerTable) {
       // Fallback for older DBs: use theme_ecosystem_members columns when available.
@@ -618,6 +643,13 @@ async function fetchEcosystemEfficiencyByTickerUpper(
         if (Number.isFinite(n) && n > 0) sharesOutstanding = n;
       }
 
+      let priorRuleOf40: number | null = null;
+      const rawPr = row.prior_rule_of_40;
+      if (rawPr != null) {
+        const n = Number(rawPr);
+        if (Number.isFinite(n)) priorRuleOf40 = n;
+      }
+
       out.set(tk.toUpperCase(), {
         revenueGrowth,
         fcfMargin,
@@ -625,6 +657,7 @@ async function fetchEcosystemEfficiencyByTickerUpper(
         ruleOf40,
         annualFcf,
         sharesOutstanding,
+        priorRuleOf40,
       });
     }
     return out;
@@ -837,6 +870,15 @@ function buildDraftsFromHoldingRows(
       storedFcfYieldPercent: storedYield,
     });
 
+    const expectationCategory = parseExpectationCategory(row.expectation_category);
+    const judgment = computeInvestmentJudgment({
+      ruleOf40,
+      fcfYield,
+      narrative: expectationCategoryToInvestmentNarrative(expectationCategory),
+      priorRuleOf40: eff?.priorRuleOf40 ?? null,
+      revenueGrowth: Number.isFinite(revenueGrowth) ? revenueGrowth : null,
+    });
+
     return {
       id,
       ticker,
@@ -875,12 +917,14 @@ function buildDraftsFromHoldingRows(
       valuationFactor,
       providerSymbol,
       structureTagsJson: tagsJson,
-      expectationCategory: parseExpectationCategory(row.expectation_category),
+      expectationCategory,
       earningsSummaryNote: parseEarningsSummaryNote(row.earnings_summary_note),
       revenueGrowth,
       fcfMargin,
       fcfYield,
       ruleOf40,
+      judgmentStatus: judgment.status,
+      judgmentReason: judgment.reason,
     };
   });
 }
@@ -1347,6 +1391,15 @@ async function enrichEcosystemMemberRow(
         storedFcfYieldPercent: storedFcfYield,
       });
 
+  const expectationCategoryEco = parseExpectationCategory(row["expectation_category"]);
+  const judgmentEco = computeInvestmentJudgment({
+    ruleOf40,
+    fcfYield,
+    narrative: expectationCategoryToInvestmentNarrative(expectationCategoryEco),
+    priorRuleOf40: eff?.priorRuleOf40 ?? null,
+    revenueGrowth: Number.isFinite(revenueGrowth) ? revenueGrowth : null,
+  });
+
   return {
     id,
     themeId,
@@ -1384,7 +1437,7 @@ async function enrichEcosystemMemberRow(
     drawdownFromHigh90dPct,
     adoptionStage,
     adoptionStageRationale,
-    expectationCategory: parseExpectationCategory(row["expectation_category"]),
+    expectationCategory: expectationCategoryEco,
     holderTags,
     dividendMonths,
     defensiveStrength,
@@ -1393,6 +1446,8 @@ async function enrichEcosystemMemberRow(
     fcfMargin,
     fcfYield,
     ruleOf40,
+    judgmentStatus: judgmentEco.status,
+    judgmentReason: judgmentEco.reason,
   };
 }
 
@@ -2398,6 +2453,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       fcfMargin: Number.NaN,
       fcfYield: Number.NaN,
       ruleOf40: Number.NaN,
+      judgmentStatus: "WATCH",
+      judgmentReason: "シグナル行のため財務ベースの判定は保留。",
       marketValue: 0,
       valuationFactor: 1,
       isWarning: isWarn,

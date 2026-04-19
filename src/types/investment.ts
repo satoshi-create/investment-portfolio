@@ -1,3 +1,5 @@
+import type { JudgmentStatus } from "@/src/lib/judgment-logic";
+
 export type AlphaHistory = number[];
 
 /** Interpretation of `holdings.ticker` for Alpha inputs (see `src/lib/alpha-logic.ts`). */
@@ -141,6 +143,9 @@ export interface Stock {
   fcfYield: number;
   /** revenueGrowth + fcfMargin */
   ruleOf40: number;
+  /** R40×FCF Yield 判定エンジン（`computeInvestmentJudgment`） */
+  judgmentStatus: JudgmentStatus;
+  judgmentReason: string;
 }
 
 /** DB `signals.signal_type` and client-side synthetic live signals. */
@@ -347,6 +352,9 @@ export type ThemeEcosystemWatchItem = {
   fcfMargin: number;
   fcfYield: number;
   ruleOf40: number;
+  /** サーバー強制。キャッシュ済みテーマ JSON では欠損しうる */
+  judgmentStatus?: JudgmentStatus;
+  judgmentReason?: string;
 };
 
 /**
