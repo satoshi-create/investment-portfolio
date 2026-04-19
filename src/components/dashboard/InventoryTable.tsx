@@ -24,7 +24,16 @@ import {
   nativeCurrencyForStock,
 } from "@/src/lib/format-display-currency";
 
-type SortKey = "asset" | "alpha" | "trend" | "position" | "research" | "deviation" | "drawdown";
+type SortKey =
+  | "asset"
+  | "alpha"
+  | "trend"
+  | "position"
+  | "research"
+  | "deviation"
+  | "drawdown"
+  | "ruleOf40"
+  | "fcfYield";
 
 type EarningsNoteModalTab = "edit" | "preview";
 
@@ -52,6 +61,14 @@ function isOpportunityRow(s: Stock, themeStructuralTrendUp: boolean): boolean {
   if (!themeStructuralTrendUp) return false;
   const z = deviationOf(s);
   return z != null && z <= -1.5;
+}
+
+function ruleOf40SortValue(s: Stock): number | null {
+  return Number.isFinite(s.ruleOf40) ? s.ruleOf40 : null;
+}
+
+function fcfYieldSortValue(s: Stock): number | null {
+  return Number.isFinite(s.fcfYield) ? s.fcfYield : null;
 }
 
 export function InventoryTable({
@@ -187,6 +204,8 @@ export function InventoryTable({
       if (key === "alpha") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
       if (key === "trend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
       if (key === "position") return dir * cmpNum(a.marketValue, b.marketValue);
+      if (key === "ruleOf40") return dir * cmpNum(ruleOf40SortValue(a), ruleOf40SortValue(b));
+      if (key === "fcfYield") return dir * cmpNum(fcfYieldSortValue(a), fcfYieldSortValue(b));
       if (key === "deviation") return dir * cmpNum(deviationOf(a), deviationOf(b));
       if (key === "drawdown") return dir * cmpNum(drawdownOf(a), drawdownOf(b));
       // research: prioritize upcoming earnings (smaller days), then yield.
@@ -199,6 +218,76 @@ export function InventoryTable({
     });
     return arr;
   }, [filteredStocks, sortDir, sortKey]);
+
+  const footerStats = useMemo(() => {
+    const rows = sortedStocks;
+    function weightedMean(pick: (s: Stock) => number | null): number | null {
+      let num = 0;
+      let den = 0;
+      const simple: number[] = [];
+      for (const s of rows) {
+        const v = pick(s);
+        if (v == null || !Number.isFinite(v)) continue;
+        simple.push(v);
+        const mv = s.marketValue;
+        if (mv > 0 && Number.isFinite(mv)) {
+          num += v * mv;
+          den += mv;
+        }
+      }
+      if (den > 0) return num / den;
+      if (simple.length === 0) return null;
+      return simple.reduce((acc, x) => acc + x, 0) / simple.length;
+    }
+
+    const avgRuleOf40 = weightedMean((s) => (Number.isFinite(s.ruleOf40) ? s.ruleOf40 : null));
+    const avgFcfYield = weightedMean((s) => (Number.isFinite(s.fcfYield) ? s.fcfYield : null));
+
+    let zSum = 0;
+    let zN = 0;
+    let ddSum = 0;
+    let ddN = 0;
+    let alphaRowSum = 0;
+    let alphaRowN = 0;
+    for (const s of rows) {
+      const z = deviationOf(s);
+      if (z != null) {
+        zSum += z;
+        zN += 1;
+      }
+      const dd = drawdownOf(s);
+      if (dd != null) {
+        ddSum += dd;
+        ddN += 1;
+      }
+      if (s.alphaHistory.length > 0) {
+        const la = s.alphaHistory[s.alphaHistory.length - 1]!;
+        if (Number.isFinite(la)) {
+          alphaRowSum += la;
+          alphaRowN += 1;
+        }
+      }
+    }
+
+    let totalMv = 0;
+    let sumWt = 0;
+    for (const s of rows) {
+      if (s.marketValue > 0 && Number.isFinite(s.marketValue)) totalMv += s.marketValue;
+      if (s.weight > 0 && Number.isFinite(s.weight)) sumWt += s.weight;
+    }
+
+    const avgAlphaVisible = alphaRowN > 0 ? alphaRowSum / alphaRowN : null;
+
+    return {
+      avgRuleOf40,
+      avgFcfYield,
+      avgZ: zN > 0 ? zSum / zN : null,
+      avgDd: ddN > 0 ? ddSum / ddN : null,
+      avgAlphaVisible,
+      totalMarketValueVisible: totalMv,
+      sumWeightVisible: sumWt,
+    };
+  }, [sortedStocks]);
 
   function handleCsvDownload() {
     exportToCSV(stocksToCsvRows(sortedStocks), portfolioCsvFileName("portfolio"), STOCK_CSV_COLUMNS);
@@ -357,14 +446,19 @@ export function InventoryTable({
               >
                 Research{sortMark("research")}
               </th>
-              <th className="px-6 py-4 text-right whitespace-nowrap" title="Rule of 40（売上成長率% + FCFマージン%）">
-                Rule of 40
+              <th
+                className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                onClick={() => toggleSort("ruleOf40")}
+                title="Rule of 40（売上成長率% + FCFマージン%）"
+              >
+                Rule of 40{sortMark("ruleOf40")}
               </th>
               <th
-                className="px-6 py-4 text-right whitespace-nowrap"
+                className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                onClick={() => toggleSort("fcfYield")}
                 title="FCF Yield（%）= 年次 FCF / (株価×希薄化株数)。負の FCF はマイナス%で表示"
               >
-                FCF Yield
+                FCF Yield{sortMark("fcfYield")}
               </th>
               <th className="px-4 py-4 text-center whitespace-nowrap" title="押し目（Dip）判定">
                 Opportunity
@@ -744,20 +838,102 @@ export function InventoryTable({
                 {structureFilter.trim() || expectationFilter !== "" ? `（全 ${totalHoldings}）` : ""}
               </td>
               <td className="px-6 py-3" />
-              <td className="px-4 py-3" />
+              <td className="px-6 py-3 text-right align-top">
+                {(() => {
+                  const r40 = footerStats.avgRuleOf40;
+                  const tone =
+                    r40 == null || !Number.isFinite(r40)
+                      ? { text: "—", cls: "text-muted-foreground" }
+                      : rule40Tone(r40);
+                  return (
+                    <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Rule of 40</span>
+                      <span className={`font-bold ${tone.cls}`} title="時価加重（MV がある銘柄）。MV なしのみは単純平均">
+                        加重 {tone.text}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </td>
+              <td className="px-6 py-3 text-right align-top">
+                {(() => {
+                  const fy = footerStats.avgFcfYield;
+                  const tone =
+                    fy == null || !Number.isFinite(fy)
+                      ? { text: "—", cls: "text-muted-foreground" }
+                      : fcfYieldTone(fy);
+                  return (
+                    <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">FCF Yld</span>
+                      <span className={`font-bold ${tone.cls}`} title="時価加重（MV がある銘柄）。MV なしのみは単純平均">
+                        加重 {tone.text}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </td>
+              <td className="px-4 py-3 text-center align-top text-[10px] text-muted-foreground">
+                —
+              </td>
               {showValueCols ? (
                 <>
-                  <td className="px-6 py-3" />
-                  <td className="px-6 py-3" />
+                  <td className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">乖離</span>
+                      <span className="font-bold text-foreground/90">{fmtZ(footerStats.avgZ)}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">落率</span>
+                      <span className="font-bold text-foreground/90">{fmtDd(footerStats.avgDd)}</span>
+                    </div>
+                  </td>
                 </>
               ) : null}
-              <td className={`px-6 py-3 text-right text-xs font-mono font-bold ${avgAlphaClass}`}>
-                Avg: {Number.isFinite(displayAvgAlpha) ? `${avgAlphaSign}${displayAvgAlpha.toFixed(2)}%` : "—"}
+              <td className={`px-6 py-3 text-right align-top font-mono text-[11px] leading-tight`}>
+                <div className="flex flex-col items-end gap-1">
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Alpha（PF）</span>
+                    <span className={`font-bold ${avgAlphaClass}`}>
+                      {Number.isFinite(displayAvgAlpha) ? `${avgAlphaSign}${displayAvgAlpha.toFixed(2)}%` : "—"}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-end gap-0.5 border-t border-border/50 pt-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Alpha（表示行）</span>
+                    <span
+                      className={`font-bold ${
+                        footerStats.avgAlphaVisible != null && footerStats.avgAlphaVisible > 0
+                          ? "text-emerald-400"
+                          : footerStats.avgAlphaVisible != null && footerStats.avgAlphaVisible < 0
+                            ? "text-rose-400"
+                            : "text-slate-400"
+                      }`}
+                    >
+                      {footerStats.avgAlphaVisible != null && Number.isFinite(footerStats.avgAlphaVisible)
+                        ? `${footerStats.avgAlphaVisible > 0 ? "+" : ""}${footerStats.avgAlphaVisible.toFixed(2)}%`
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
               </td>
-              <td className="px-6 py-3 text-center text-[10px] text-muted-foreground uppercase font-bold">
+              <td className="px-6 py-3 text-center align-top text-[10px] text-muted-foreground uppercase font-bold leading-snug">
                 Portfolio
               </td>
-              <td className="px-6 py-3" />
+              <td className="px-6 py-3 text-right align-top">
+                <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Σ 時価</span>
+                  <span className="font-bold text-foreground/90 tabular-nums">
+                    {footerStats.totalMarketValueVisible > 0
+                      ? formatJpyValueForView(footerStats.totalMarketValueVisible, viewCurrency, convert)
+                      : "—"}
+                  </span>
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground pt-0.5">Σ ウエイト</span>
+                  <span className="font-bold text-blue-400 tabular-nums">
+                    {footerStats.sumWeightVisible > 0 ? `${footerStats.sumWeightVisible.toFixed(1)}%` : "—"}
+                  </span>
+                </div>
+              </td>
               <td className="px-4 py-3 bg-card/90 md:sticky md:right-[5.75rem] md:z-10 md:border-l md:border-border/60" />
               <td className="px-4 py-3 bg-card/90 md:sticky md:right-0 md:z-10" />
             </tr>
