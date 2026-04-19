@@ -1,4 +1,4 @@
-import { ThemePageClient } from "@/src/components/dashboard/ThemePageClient";
+import { ThemePageClient } from "@/src/components/dashboard/ThemeStructuralPageClient";
 
 export const dynamic = "force-dynamic";
 

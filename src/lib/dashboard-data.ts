@@ -518,8 +518,74 @@ function computeRuleOf40(revenueGrowth: number, fcfMargin: number): number {
 }
 
 /**
+ * エコシステム行の財務指標: **`ticker_efficiency_metrics`（eff）を最優先**し、
+ * 中央テーブルに行が無い・列が欠ける場合のみ `theme_ecosystem_members` のレガシー列を参照する。
+ */
+function ecosystemEfficiencyFromCentralThenMemberRow(
+  eff: TickerEfficiencyBundle | null,
+  row: Record<string, unknown>,
+): {
+  revenueGrowth: number;
+  fcfMargin: number;
+  storedFcfYieldPercent: number;
+  ruleOf40: number;
+  annualFcf: number | null;
+  sharesOutstanding: number | null;
+  priorRuleOf40: number | null;
+} {
+  const rgRow = parsePercentOrNaN(row["revenue_growth"]);
+  const fmRow = parsePercentOrNaN(row["fcf_margin"]);
+  const fyRow = parsePercentOrNaN(row["fcf_yield"]);
+  const ruleRow = parsePercentOrNaN(row["rule_of_40"]);
+  const priorRaw = row["prior_rule_of_40"];
+  const priorRow =
+    priorRaw != null && Number.isFinite(Number(priorRaw)) ? Number(priorRaw) : null;
+
+  if (eff == null) {
+    const rc = computeRuleOf40(rgRow, fmRow);
+    const r40 = Number.isFinite(ruleRow) ? ruleRow : rc;
+    return {
+      revenueGrowth: rgRow,
+      fcfMargin: fmRow,
+      storedFcfYieldPercent: fyRow,
+      ruleOf40: r40,
+      annualFcf: null,
+      sharesOutstanding: null,
+      priorRuleOf40: priorRow,
+    };
+  }
+
+  const revenueGrowth = Number.isFinite(eff.revenueGrowth) ? eff.revenueGrowth : rgRow;
+  const fcfMargin = Number.isFinite(eff.fcfMargin) ? eff.fcfMargin : fmRow;
+  const storedFcfYieldPercent = Number.isFinite(eff.fcfYieldStatic) ? eff.fcfYieldStatic : fyRow;
+  const rc = computeRuleOf40(revenueGrowth, fcfMargin);
+  const ruleOf40 = Number.isFinite(eff.ruleOf40)
+    ? eff.ruleOf40
+    : Number.isFinite(rc)
+      ? rc
+      : Number.isFinite(ruleRow)
+        ? ruleRow
+        : Number.NaN;
+
+  const priorRuleOf40 =
+    eff.priorRuleOf40 != null && Number.isFinite(eff.priorRuleOf40)
+      ? eff.priorRuleOf40
+      : priorRow;
+
+  return {
+    revenueGrowth,
+    fcfMargin,
+    storedFcfYieldPercent,
+    ruleOf40,
+    annualFcf: eff.annualFcf,
+    sharesOutstanding: eff.sharesOutstanding,
+    priorRuleOf40,
+  };
+}
+
+/**
  * FCF Yield（%）≈ annual_fcf / (livePrice × diluted shares)。
- * 米国上場株のみ動的算出し、それ以外・欠損時は DB の静的 `fcf_yield` を返す。
+ * 米国・日本の上場株で動的算出し、それ以外・欠損時は DB の静的 `fcf_yield` を返す。
  * 年次 FCF が負でも（マイナス Yield として）算出する。
  */
 export function computeDynamicFcfYieldPercent(opts: {
@@ -530,7 +596,8 @@ export function computeDynamicFcfYieldPercent(opts: {
   storedFcfYieldPercent: number;
 }): number {
   const { instrumentKind, annualFcf, sharesOutstanding, livePrice, storedFcfYieldPercent } = opts;
-  if (instrumentKind === "US_EQUITY") {
+  const dynamicKinds: TickerInstrumentKind[] = ["US_EQUITY", "JP_LISTED_EQUITY", "JP_INVESTMENT_TRUST"];
+  if (dynamicKinds.includes(instrumentKind)) {
     const af = annualFcf != null ? Number(annualFcf) : Number.NaN;
     const sh = sharesOutstanding != null ? Number(sharesOutstanding) : Number.NaN;
     const px = livePrice != null ? Number(livePrice) : Number.NaN;
@@ -1352,41 +1419,53 @@ async function enrichEcosystemMemberRow(
   const isKept =
     rawKept != null && String(rawKept).trim() !== "" ? Number(rawKept) === 1 : false;
 
-  let revenueGrowth = parsePercentOrNaN(row["revenue_growth"]);
-  let fcfMargin = parsePercentOrNaN(row["fcf_margin"]);
-  const fcf = parseMoneyOrNaN(row["fcf"]);
-  let storedFcfYield = parsePercentOrNaN(row["fcf_yield"]);
   const effListedKey = ticker.trim().toUpperCase();
-  const eff = efficiencyByTickerUpper.get(effListedKey) ?? null;
-  /** エコシステム行が空のときのみ共有テーブルで埋める（日本株の手入力を上書きしない）。 */
-  if (!isUnlisted && eff != null) {
-    if (!Number.isFinite(revenueGrowth) && Number.isFinite(eff.revenueGrowth)) revenueGrowth = eff.revenueGrowth;
-    if (!Number.isFinite(fcfMargin) && Number.isFinite(eff.fcfMargin)) fcfMargin = eff.fcfMargin;
-    if (!Number.isFinite(storedFcfYield) && Number.isFinite(eff.fcfYieldStatic)) {
-      storedFcfYield = eff.fcfYieldStatic;
-    }
+  const eff = !isUnlisted ? efficiencyByTickerUpper.get(effListedKey) ?? null : null;
+  const fcf = parseMoneyOrNaN(row["fcf"]);
+
+  let revenueGrowth: number;
+  let fcfMargin: number;
+  let storedFcfYield: number;
+  let ruleOf40: number;
+  let annualFcfForDynamic: number | null;
+  let sharesForDynamic: number | null;
+  let priorRuleOf40: number | null;
+
+  if (isUnlisted) {
+    revenueGrowth = parsePercentOrNaN(row["revenue_growth"]);
+    fcfMargin = parsePercentOrNaN(row["fcf_margin"]);
+    storedFcfYield = parsePercentOrNaN(row["fcf_yield"]);
+    const ruleRow = parsePercentOrNaN(row["rule_of_40"]);
+    const rc = computeRuleOf40(revenueGrowth, fcfMargin);
+    ruleOf40 = Number.isFinite(ruleRow) ? ruleRow : rc;
+    annualFcfForDynamic = null;
+    sharesForDynamic = null;
+    priorRuleOf40 = null;
+  } else {
+    const merged = ecosystemEfficiencyFromCentralThenMemberRow(eff, row as Record<string, unknown>);
+    revenueGrowth = merged.revenueGrowth;
+    fcfMargin = merged.fcfMargin;
+    storedFcfYield = merged.storedFcfYieldPercent;
+    ruleOf40 = merged.ruleOf40;
+    annualFcfForDynamic = merged.annualFcf;
+    sharesForDynamic = merged.sharesOutstanding;
+    priorRuleOf40 = merged.priorRuleOf40;
   }
+
   const valuationForUnlisted = (() => {
     if (!isUnlisted) return Number.NaN;
     if (lastRoundValuation != null && Number.isFinite(lastRoundValuation) && lastRoundValuation > 0) return lastRoundValuation;
     return parseEstimatedValuationTextToNumber(estimatedValuation);
   })();
   const estimatedFcfYield = estimateFcfYieldPercent({ fcf, valuation: valuationForUnlisted });
-  const ruleComputed = computeRuleOf40(revenueGrowth, fcfMargin);
-  const ruleOf40 =
-    Number.isFinite(ruleComputed)
-      ? ruleComputed
-      : !isUnlisted && eff != null && Number.isFinite(eff.ruleOf40)
-        ? eff.ruleOf40
-        : ruleComputed;
   const fcfYield = isUnlisted
     ? Number.isFinite(storedFcfYield)
       ? storedFcfYield
       : estimatedFcfYield
     : computeDynamicFcfYieldPercent({
         instrumentKind,
-        annualFcf: eff?.annualFcf ?? null,
-        sharesOutstanding: eff?.sharesOutstanding ?? null,
+        annualFcf: annualFcfForDynamic,
+        sharesOutstanding: sharesForDynamic,
         livePrice: displayPrice,
         storedFcfYieldPercent: storedFcfYield,
       });
@@ -1396,7 +1475,7 @@ async function enrichEcosystemMemberRow(
     ruleOf40,
     fcfYield,
     narrative: expectationCategoryToInvestmentNarrative(expectationCategoryEco),
-    priorRuleOf40: eff?.priorRuleOf40 ?? null,
+    priorRuleOf40,
     revenueGrowth: Number.isFinite(revenueGrowth) ? revenueGrowth : null,
   });
 

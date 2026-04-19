@@ -2,6 +2,8 @@ import { randomUUID } from "crypto";
 
 import type { Client } from "@libsql/client";
 
+import { ecosystemTickerShouldBeUnlisted } from "@/src/lib/ecosystem-ticker-hygiene";
+
 export class EcosystemMemberAuthError extends Error {
   readonly code = "THEME_NOT_FOUND" as const;
 }
@@ -59,6 +61,8 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
       ? String(input.observationStartedAt).trim()
       : null;
 
+  const isUnlisted = ecosystemTickerShouldBeUnlisted(ticker) ? 1 : 0;
+
   try {
     await db.execute({
       sql: `INSERT INTO theme_ecosystem_members (
@@ -67,13 +71,14 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
         company_name, field, role, is_major_player, observation_started_at
       ) VALUES (
         ?, ?, ?,
-        0, NULL, NULL, NULL, NULL,
+        ?, NULL, NULL, NULL, NULL,
         ?, NULL, ?, ?, ?
       )`,
       args: [
         randomUUID(),
         input.themeId,
         ticker,
+        isUnlisted,
         companyName,
         role,
         input.isMajorPlayer ? 1 : 0,

@@ -1,10 +1,10 @@
 /**
- * テーマ詳細（累積 Structural Alpha を含むチャート群）は `ThemePageClient` に集約。
+ * テーマ詳細（累積 Structural Alpha を含むチャート群）は `ThemeStructuralPageClient` に集約。
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ThemePageClient } from "@/src/components/dashboard/ThemePageClient";
+import { ThemePageClient } from "@/src/components/dashboard/ThemeStructuralPageClient";
 import {
   buildSemiconductorSupplyChainCatalog,
   SEMICONDUCTOR_SUPPLY_CHAIN_THEME_NAME,

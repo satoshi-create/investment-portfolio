@@ -352,9 +352,9 @@ export type ThemeEcosystemWatchItem = {
   fcfMargin: number;
   fcfYield: number;
   ruleOf40: number;
-  /** サーバー強制。キャッシュ済みテーマ JSON では欠損しうる */
-  judgmentStatus?: JudgmentStatus;
-  judgmentReason?: string;
+  /** `computeInvestmentJudgment` — サーバーが必ず付与（テーマ詳細 API） */
+  judgmentStatus: JudgmentStatus;
+  judgmentReason: string;
 };
 
 /**
