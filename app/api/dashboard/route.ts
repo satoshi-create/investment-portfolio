@@ -12,7 +12,14 @@ import { getDb, isDbConfigured } from "@/src/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const SOFT_BUDGET_MS = 10_000;
+/** Yahoo/DB が重いと 10s で誤タイムアウトしやすいため既定を緩める。`.env`: `DASHBOARD_SOFT_BUDGET_MS` */
+function resolveDashboardSoftBudgetMs(): number {
+  const raw = process.env.DASHBOARD_SOFT_BUDGET_MS?.trim();
+  if (!raw) return 45_000;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 45_000;
+  return Math.min(180_000, Math.max(8_000, Math.floor(n)));
+}
 
 const inflightByUser = new Map<string, Promise<DashboardResponseJson>>();
 
@@ -41,6 +48,8 @@ export async function GET(request: Request) {
     );
   }
 
+  const softBudgetMs = resolveDashboardSoftBudgetMs();
+
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId") ?? defaultProfileUserId();
 
@@ -54,8 +63,27 @@ export async function GET(request: Request) {
 
     const inflight = inflightByUser.get(userId);
     if (inflight) {
-      const json = await withTimeout(inflight, SOFT_BUDGET_MS);
-      return NextResponse.json(json, { headers: { "x-cache": "JOIN" } });
+      try {
+        const json = await withTimeout(inflight, softBudgetMs);
+        return NextResponse.json(json, { headers: { "x-cache": "JOIN" } });
+      } catch (e) {
+        const last = getRawDashboardCache(userId);
+        if (last) {
+          return NextResponse.json({ ...last.json, stale: true }, { headers: { "x-cache": "STALE" } });
+        }
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("timeout after")) {
+          return NextResponse.json(
+            {
+              error: "Dashboard build timed out",
+              hint: "Retry shortly, or raise DASHBOARD_SOFT_BUDGET_MS (default 45000).",
+              timeoutMs: softBudgetMs,
+            },
+            { status: 503, headers: { "retry-after": "5" } },
+          );
+        }
+        throw e;
+      }
     }
 
     const work = (async (): Promise<DashboardResponseJson> => {
@@ -81,13 +109,25 @@ export async function GET(request: Request) {
 
     let json: DashboardResponseJson;
     try {
-      json = await withTimeout(work, SOFT_BUDGET_MS);
+      json = await withTimeout(work, softBudgetMs);
     } catch (e) {
       // Under heavy Yahoo/network slowness, return last known snapshot if any.
       const last = getRawDashboardCache(userId);
       if (last) {
         json = { ...last.json, stale: true };
         return NextResponse.json(json, { headers: { "x-cache": "STALE" } });
+      }
+      const msg = e instanceof Error ? e.message : String(e);
+      const isTimeout = msg.includes("timeout after");
+      if (isTimeout) {
+        return NextResponse.json(
+          {
+            error: "Dashboard build timed out",
+            hint: "Retry shortly, or raise DASHBOARD_SOFT_BUDGET_MS (default 45000).",
+            timeoutMs: softBudgetMs,
+          },
+          { status: 503, headers: { "retry-after": "5" } },
+        );
       }
       throw e;
     } finally {

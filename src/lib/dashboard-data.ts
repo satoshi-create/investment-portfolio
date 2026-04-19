@@ -471,12 +471,26 @@ function parseEarningsSummaryNote(raw: unknown): string | null {
 
 type StockDraft = Omit<Stock, "weight"> & { structureTagsJson: string };
 
+/** Loaded from `ticker_efficiency_metrics` for Rule of 40 / dynamic FCF Yield. */
+export type TickerEfficiencyBundle = {
+  revenueGrowth: number;
+  fcfMargin: number;
+  /** DB column `fcf_yield`（静的・手入力フォールバック） */
+  fcfYieldStatic: number;
+  ruleOf40: number;
+  annualFcf: number | null;
+  sharesOutstanding: number | null;
+};
+
 type EcosystemEfficiencyRow = {
   ticker: unknown;
   revenue_growth?: unknown;
   fcf_margin?: unknown;
   fcf_yield?: unknown;
   fcf?: unknown;
+  annual_fcf?: unknown;
+  shares_outstanding?: unknown;
+  rule_of_40?: unknown;
 };
 
 function parsePercentOrNaN(raw: unknown): number {
@@ -496,6 +510,42 @@ function computeRuleOf40(revenueGrowth: number, fcfMargin: number): number {
   return revenueGrowth + fcfMargin;
 }
 
+/**
+ * FCF Yield（%）≈ annual_fcf / (livePrice × diluted shares)。
+ * 米国上場株のみ動的算出し、それ以外・欠損時は DB の静的 `fcf_yield` を返す。
+ */
+export function computeDynamicFcfYieldPercent(opts: {
+  instrumentKind: TickerInstrumentKind;
+  annualFcf: number | null | undefined;
+  sharesOutstanding: number | null | undefined;
+  livePrice: number | null | undefined;
+  storedFcfYieldPercent: number;
+}): number {
+  const { instrumentKind, annualFcf, sharesOutstanding, livePrice, storedFcfYieldPercent } = opts;
+  if (instrumentKind === "US_EQUITY") {
+    const af = annualFcf != null ? Number(annualFcf) : Number.NaN;
+    const sh = sharesOutstanding != null ? Number(sharesOutstanding) : Number.NaN;
+    const px = livePrice != null ? Number(livePrice) : Number.NaN;
+    if (Number.isFinite(af) && Number.isFinite(sh) && Number.isFinite(px) && af >= 0 && sh > 0 && px > 0) {
+      return (af / (px * sh)) * 100;
+    }
+  }
+  return Number.isFinite(storedFcfYieldPercent) ? storedFcfYieldPercent : Number.NaN;
+}
+
+function tickerEfficiencyMissingExtendedColumns(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  if (!lower.includes("no such column")) return false;
+  return (
+    lower.includes("annual_fcf") ||
+    lower.includes("shares_outstanding") ||
+    lower.includes("rule_of_40") ||
+    lower.includes("last_updated_at") ||
+    lower.includes("source")
+  );
+}
+
 function ecosystemMissingEfficiencyColumns(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   const lower = msg.toLowerCase();
@@ -508,8 +558,8 @@ function ecosystemMissingEfficiencyColumns(e: unknown): boolean {
 async function fetchEcosystemEfficiencyByTickerUpper(
   db: Client,
   tickers: string[],
-): Promise<Map<string, { revenueGrowth: number; fcfMargin: number; fcfYield: number; ruleOf40: number }>> {
-  const out = new Map<string, { revenueGrowth: number; fcfMargin: number; fcfYield: number; ruleOf40: number }>();
+): Promise<Map<string, TickerEfficiencyBundle>> {
+  const out = new Map<string, TickerEfficiencyBundle>();
   const unique = [...new Set(tickers.map((t) => String(t ?? "").trim()).filter((t) => t.length > 0))];
   if (unique.length === 0) return out;
   try {
@@ -517,12 +567,23 @@ async function fetchEcosystemEfficiencyByTickerUpper(
     // Prefer ticker-level table (shared across holdings + ecosystem).
     let rs;
     try {
-      rs = await db.execute({
-        sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
-              FROM ticker_efficiency_metrics
-              WHERE ticker IN (${ph})`,
-        args: unique,
-      });
+      try {
+        rs = await db.execute({
+          sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
+                       annual_fcf, shares_outstanding, rule_of_40
+                FROM ticker_efficiency_metrics
+                WHERE ticker IN (${ph})`,
+          args: unique,
+        });
+      } catch (extErr) {
+        if (!tickerEfficiencyMissingExtendedColumns(extErr)) throw extErr;
+        rs = await db.execute({
+          sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
+                FROM ticker_efficiency_metrics
+                WHERE ticker IN (${ph})`,
+          args: unique,
+        });
+      }
     } catch (eTickerTable) {
       // Fallback for older DBs: use theme_ecosystem_members columns when available.
       rs = await db.execute({
@@ -537,12 +598,32 @@ async function fetchEcosystemEfficiencyByTickerUpper(
       if (tk.length === 0) continue;
       const revenueGrowth = parsePercentOrNaN(row.revenue_growth);
       const fcfMargin = parsePercentOrNaN(row.fcf_margin);
-      const fcfYield = parsePercentOrNaN(row.fcf_yield);
+      const fcfYieldStatic = parsePercentOrNaN(row.fcf_yield);
+      const storedRule40 = parsePercentOrNaN(row.rule_of_40);
+      const ruleFromParts = computeRuleOf40(revenueGrowth, fcfMargin);
+      const ruleOf40 = Number.isFinite(storedRule40) ? storedRule40 : ruleFromParts;
+
+      let annualFcf: number | null = null;
+      const rawAf = row.annual_fcf;
+      if (rawAf != null) {
+        const n = Number(rawAf);
+        if (Number.isFinite(n)) annualFcf = n;
+      }
+
+      let sharesOutstanding: number | null = null;
+      const rawSh = row.shares_outstanding;
+      if (rawSh != null) {
+        const n = Number(rawSh);
+        if (Number.isFinite(n) && n > 0) sharesOutstanding = n;
+      }
+
       out.set(tk.toUpperCase(), {
         revenueGrowth,
         fcfMargin,
-        fcfYield,
-        ruleOf40: computeRuleOf40(revenueGrowth, fcfMargin),
+        fcfYieldStatic,
+        ruleOf40,
+        annualFcf,
+        sharesOutstanding,
       });
     }
     return out;
@@ -659,7 +740,7 @@ function buildDraftsFromHoldingRows(
   >,
   fxUsdJpy: number,
   hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
-  efficiencyByTickerUpper: Map<string, { revenueGrowth: number; fcfMargin: number; fcfYield: number; ruleOf40: number }>,
+  efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
 ): StockDraft[] {
   return rows.map((row) => {
     const id = String(row.id);
@@ -745,8 +826,15 @@ function buildDraftsFromHoldingRows(
     const eff = efficiencyByTickerUpper.get(ticker.trim().toUpperCase()) ?? null;
     const revenueGrowth = eff?.revenueGrowth ?? Number.NaN;
     const fcfMargin = eff?.fcfMargin ?? Number.NaN;
-    const fcfYield = eff?.fcfYield ?? Number.NaN;
     const ruleOf40 = eff?.ruleOf40 ?? computeRuleOf40(revenueGrowth, fcfMargin);
+    const storedYield = eff?.fcfYieldStatic ?? Number.NaN;
+    const fcfYield = computeDynamicFcfYieldPercent({
+      instrumentKind,
+      annualFcf: eff?.annualFcf ?? null,
+      sharesOutstanding: eff?.sharesOutstanding ?? null,
+      livePrice: currentPrice,
+      storedFcfYieldPercent: storedYield,
+    });
 
     return {
       id,
@@ -1026,6 +1114,7 @@ async function enrichEcosystemMemberRow(
       forwardEps: number | null;
     }
   >,
+  efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
   options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem> {
   const id = String(row["id"]);
@@ -1218,19 +1307,44 @@ async function enrichEcosystemMemberRow(
   const isKept =
     rawKept != null && String(rawKept).trim() !== "" ? Number(rawKept) === 1 : false;
 
-  const revenueGrowth = parsePercentOrNaN(row["revenue_growth"]);
-  const fcfMargin = parsePercentOrNaN(row["fcf_margin"]);
+  let revenueGrowth = parsePercentOrNaN(row["revenue_growth"]);
+  let fcfMargin = parsePercentOrNaN(row["fcf_margin"]);
   const fcf = parseMoneyOrNaN(row["fcf"]);
-  const storedFcfYield = parsePercentOrNaN(row["fcf_yield"]);
+  let storedFcfYield = parsePercentOrNaN(row["fcf_yield"]);
+  const effListedKey = ticker.trim().toUpperCase();
+  const eff = efficiencyByTickerUpper.get(effListedKey) ?? null;
+  /** エコシステム行が空のときのみ共有テーブルで埋める（日本株の手入力を上書きしない）。 */
+  if (!isUnlisted && eff != null) {
+    if (!Number.isFinite(revenueGrowth) && Number.isFinite(eff.revenueGrowth)) revenueGrowth = eff.revenueGrowth;
+    if (!Number.isFinite(fcfMargin) && Number.isFinite(eff.fcfMargin)) fcfMargin = eff.fcfMargin;
+    if (!Number.isFinite(storedFcfYield) && Number.isFinite(eff.fcfYieldStatic)) {
+      storedFcfYield = eff.fcfYieldStatic;
+    }
+  }
   const valuationForUnlisted = (() => {
     if (!isUnlisted) return Number.NaN;
     if (lastRoundValuation != null && Number.isFinite(lastRoundValuation) && lastRoundValuation > 0) return lastRoundValuation;
     return parseEstimatedValuationTextToNumber(estimatedValuation);
   })();
   const estimatedFcfYield = estimateFcfYieldPercent({ fcf, valuation: valuationForUnlisted });
-  const fcfYield =
-    Number.isFinite(storedFcfYield) ? storedFcfYield : isUnlisted ? estimatedFcfYield : storedFcfYield;
-  const ruleOf40 = computeRuleOf40(revenueGrowth, fcfMargin);
+  const ruleComputed = computeRuleOf40(revenueGrowth, fcfMargin);
+  const ruleOf40 =
+    Number.isFinite(ruleComputed)
+      ? ruleComputed
+      : !isUnlisted && eff != null && Number.isFinite(eff.ruleOf40)
+        ? eff.ruleOf40
+        : ruleComputed;
+  const fcfYield = isUnlisted
+    ? Number.isFinite(storedFcfYield)
+      ? storedFcfYield
+      : estimatedFcfYield
+    : computeDynamicFcfYieldPercent({
+        instrumentKind,
+        annualFcf: eff?.annualFcf ?? null,
+        sharesOutstanding: eff?.sharesOutstanding ?? null,
+        livePrice: displayPrice,
+        storedFcfYieldPercent: storedFcfYield,
+      });
 
   return {
     id,
@@ -1606,6 +1720,12 @@ async function fetchEnrichedThemeEcosystem(
       );
     }
 
+    const listedTickersForEfficiency = rows
+      .filter((r) => Number(r["is_unlisted"]) !== 1)
+      .map((r) => String(r["ticker"] ?? "").trim())
+      .filter((t) => t.length > 0);
+    const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, listedTickersForEfficiency);
+
     /**
      * Yahoo Finance 等の外部 I/O がボトルネックになりやすいので、適度な並列度で回す。
      * 一部失敗してもページ全体を止めない（Promise.allSettled 相当）。
@@ -1630,6 +1750,7 @@ async function fetchEnrichedThemeEcosystem(
             portfolioTickerSet,
             themeCreatedAt,
             researchByTicker,
+            efficiencyByTickerUpper,
             { fast },
           );
         } catch {

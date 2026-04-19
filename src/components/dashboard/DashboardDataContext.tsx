@@ -28,6 +28,9 @@ import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
+/** `/api/dashboard` のサーバー側ソフト上限（既定 45s）より長くし、先に Abort しないようにする */
+const DASHBOARD_FETCH_TIMEOUT_MS = 55_000;
+
 export const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
   portfolioAverageFxNeutralAlpha: 0,
@@ -112,7 +115,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       const res = await fetchWithTimeout(
         `/api/dashboard?userId=${encodeURIComponent(DEFAULT_USER_ID)}`,
         { cache: "no-store" },
-        { timeoutMs: 12_000 },
+        { timeoutMs: DASHBOARD_FETCH_TIMEOUT_MS },
       );
       const json = (await res.json()) as Partial<DashboardPayload> & { error?: string; hint?: string };
       if (!res.ok) {

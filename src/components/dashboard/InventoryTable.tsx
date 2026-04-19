@@ -254,7 +254,7 @@ export function InventoryTable({
 
   function rule40Tone(v: number): { text: string; cls: string } {
     if (!Number.isFinite(v)) return { text: "—", cls: "text-muted-foreground" };
-    if (v >= 40) return { text: fmtPct0(v), cls: "text-emerald-300 font-bold" };
+    if (v >= 40) return { text: fmtPct0(v), cls: "text-green-500 font-bold" };
     if (v >= 0) return { text: fmtPct0(v), cls: "text-foreground/90 font-bold" };
     return { text: fmtPct0(v), cls: "text-rose-300 font-bold" };
   }

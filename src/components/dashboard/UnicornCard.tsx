@@ -9,6 +9,26 @@ import { daysUntil, parseExpectedIpoDate } from "@/src/lib/unicorn-ipo";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 
+/** `指標:` / `Metrics:` 以下の行を手動メトリクスとして表示（空行または次のセクション見出しまで）。 */
+function extractManualMetricLines(notes: string | null): string[] {
+  if (!notes) return [];
+  const lines = notes.split(/\n/);
+  const startIdx = lines.findIndex((l) => {
+    const t = l.trim();
+    return /^指標\s*[:：]/i.test(t) || /^metrics\s*[:：]/i.test(t);
+  });
+  if (startIdx < 0) return [];
+  const out: string[] = [];
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    const L = lines[i]!.trimEnd();
+    if (L.trim().length === 0) break;
+    const trim = L.trim();
+    if (/^(構造|structure|credit|memo)\s*[:：]/i.test(trim)) break;
+    out.push(trim);
+  }
+  return out;
+}
+
 function extractStructureText(notes: string | null): string | null {
   if (!notes) return null;
   const s = notes.trim();
@@ -40,6 +60,8 @@ export function UnicornCard({
       : d >= 0
         ? `${ipo.label} · T-${d}d`
         : `${ipo.label} · +${Math.abs(d)}d`;
+
+  const manualMetricLines = useMemo(() => extractManualMetricLines(item.observationNotes), [item.observationNotes]);
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 md:p-6 space-y-4">
@@ -124,6 +146,19 @@ export function UnicornCard({
           </p>
         </div>
       </div>
+
+      {isUnlisted && manualMetricLines.length > 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-3 py-2.5 space-y-1">
+          <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">手動指標（メモ）</p>
+          <ul className="text-xs text-slate-400 leading-snug space-y-0.5 list-disc list-inside">
+            {manualMetricLines.map((line, idx) => (
+              <li key={`${idx}-${line.slice(0, 48)}`} className="font-mono">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 space-y-2">
