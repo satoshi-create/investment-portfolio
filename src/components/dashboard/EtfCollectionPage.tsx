@@ -187,104 +187,104 @@ export function EtfCollectionPage() {
   }, [activeEtfs, groupTickers, selectedGroup]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
-      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
-        <div className="rounded-2xl border border-border bg-card/60 p-5 shadow-2xl">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center h-9 w-9 rounded-xl border border-border bg-background/60">
-                  <Globe size={18} className="text-accent-cyan" />
-                </span>
-                <div>
-                  <h1 className="text-lg font-black tracking-tight">Global Strata（ETF Collection）</h1>
-                  <p className="text-xs text-muted-foreground">
-                    「今、世界のどの地層が動いているか」を、ETFの重力で一枚絵にする
-                  </p>
-                </div>
+    <div className="min-h-min bg-background text-foreground pb-8 font-sans">
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6 lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
+        <header className="border-b border-border pb-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                <Globe size={14} className="shrink-0 text-cyan-500/90" aria-hidden />
+                <span>Structural ETF command</span>
               </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDataset("GLOBAL");
-                    setSelectedGroup(null);
-                    setSelectedTicker(null);
-                  }}
-                  className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
-                    dataset === "GLOBAL"
-                      ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
-                      : "text-muted-foreground border-border hover:bg-muted/50"
-                  }`}
-                  title="Global Strata"
-                >
-                  Global
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDataset("COMMODITIES");
-                    setSelectedGroup(null);
-                    setSelectedTicker(null);
-                  }}
-                  className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
-                    dataset === "COMMODITIES"
-                      ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
-                      : "text-muted-foreground border-border hover:bg-muted/50"
-                  }`}
-                  title="Commodities (vs VOO)"
-                >
-                  Commodities
-                </button>
-                {(["ALL", "GLOBAL_DEVELOPED", "EMERGING_FRONTIER", "THEMATIC_STRATA"] as const).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setRegion(k)}
-                    className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
-                      region === k
-                        ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
-                        : "text-muted-foreground border-border hover:bg-muted/50"
-                    }`}
-                    title={regionHintJa(k)}
-                  >
-                    {regionLabelJa(k)}
-                  </button>
-                ))}
-                <Link
-                  href="/"
-                  className="text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border border-border text-muted-foreground hover:bg-muted/50 transition-all"
-                  title="ポートフォリオに戻る"
-                >
-                  Portfolio
-                </Link>
-              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+                Global Strata（ETF Collection）
+              </h1>
+              <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
+                「今、世界のどの地層が動いているか」を、ETFの重力で一枚絵にする
+              </p>
             </div>
-            <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 md:pt-1">
               <button
                 type="button"
                 onClick={() => void load()}
                 disabled={loading}
-                className="text-[10px] font-bold uppercase tracking-wide text-foreground/80 border border-border px-3 py-2 rounded-lg hover:bg-muted transition-all flex items-center gap-2 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-foreground/80 transition-all hover:bg-muted disabled:opacity-50"
                 title="再取得"
               >
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                 Refresh
               </button>
-              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border bg-background/60 px-3 py-2 rounded-lg">
+              <span className="inline-flex items-center rounded-lg border border-border bg-card/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 {data.asOf ? `AsOf ${new Date(data.asOf).toLocaleString("ja-JP")}` : "AsOf —"}
                 {data.stale ? <span className="ml-2 text-amber-300">STALE</span> : null}
               </span>
             </div>
           </div>
 
+          <div className="mt-4 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setDataset("GLOBAL");
+                setSelectedGroup(null);
+                setSelectedTicker(null);
+              }}
+              className={`text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-all ${
+                dataset === "GLOBAL"
+                  ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
+                  : "text-muted-foreground border-border hover:bg-muted/50"
+              }`}
+              title="Global Strata"
+            >
+              Global
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDataset("COMMODITIES");
+                setSelectedGroup(null);
+                setSelectedTicker(null);
+              }}
+              className={`text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-all ${
+                dataset === "COMMODITIES"
+                  ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
+                  : "text-muted-foreground border-border hover:bg-muted/50"
+              }`}
+              title="Commodities (vs VOO)"
+            >
+              Commodities
+            </button>
+            {(["ALL", "GLOBAL_DEVELOPED", "EMERGING_FRONTIER", "THEMATIC_STRATA"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setRegion(k)}
+                className={`text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-all ${
+                  region === k
+                    ? "text-accent-cyan border-accent-cyan/40 bg-accent-cyan/10"
+                    : "text-muted-foreground border-border hover:bg-muted/50"
+                }`}
+                title={regionHintJa(k)}
+              >
+                {regionLabelJa(k)}
+              </button>
+            ))}
+            <Link
+              href="/"
+              className="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border border-border text-muted-foreground transition-all hover:bg-muted/50"
+              title="ポートフォリオに戻る"
+            >
+              Portfolio
+            </Link>
+          </div>
+
           {error ? (
             <div className="mt-4 rounded-xl border border-rose-500/25 bg-rose-500/5 p-4">
               <p className="text-sm font-bold text-rose-300">データ取得に失敗しました</p>
-              <p className="text-xs text-rose-200/80 mt-1">{error}</p>
+              <p className="mt-1 text-xs text-rose-200/80">{error}</p>
             </div>
           ) : null}
-        </div>
+        </header>
 
         <RotationRadarChart
           etfs={activeEtfs ?? []}

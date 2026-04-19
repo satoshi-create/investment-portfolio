@@ -2,7 +2,6 @@
 
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
-import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
 import { EMPTY_SUMMARY, useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
 
@@ -13,23 +12,13 @@ export default function CockpitPortfolioPage() {
     userId,
     loadDashboard,
     openTradeForm,
-    resolveSignalOptimistic,
   } = useDashboardData();
   const summary = data?.summary ?? EMPTY_SUMMARY;
   const structureBySector = data?.structureBySector ?? [];
   const totalMarketValue = data?.totalMarketValue ?? 0;
   const stocks = data?.stocks ?? [];
-  const signals = data?.signals ?? [];
-
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 lg:max-w-7xl 2xl:max-w-[90rem]">
-      <SignalsSection
-        signals={signals}
-        userId={userId}
-        onSignalResolved={resolveSignalOptimistic}
-        onTrade={(init) => openTradeForm(init)}
-      />
-
       <StrategySection
         structureBySector={structureBySector}
         satelliteStockCount={satelliteStockCount}

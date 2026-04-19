@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   Crosshair,
   FileSpreadsheet,
@@ -1351,12 +1350,6 @@ export function ThemePageClient({
     <div className="min-h-min bg-background text-foreground pb-8 font-sans">
       <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-8">
         <header className="border-b border-border pb-8">
-          <Link
-            href="/"
-            className="inline-flex text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-cyan-600 dark:hover:text-cyan-400 mb-4"
-          >
-            ← ダッシュボード
-          </Link>
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
@@ -1420,17 +1413,6 @@ export function ThemePageClient({
           </div>
         </header>
 
-        {loading ? (
-          <div className="text-sm text-muted-foreground">
-            読み込み中…
-            {slowLoading ? (
-              <span className="ml-2 text-muted-foreground">
-                通信に時間がかかっています...
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
         {error ? (
           <div className="rounded-2xl border border-rose-500/25 bg-rose-500/5 p-5">
             <p className="text-sm font-bold text-rose-300">データ取得に失敗しました</p>
@@ -1456,13 +1438,27 @@ export function ThemePageClient({
           </div>
         ) : null}
 
-        {/* Initial skeleton (prevents layout jump when data is empty / slow / offline) */}
+        {/* Initial load: single panel avoids empty “ghost frames” + duplicate status rows */}
         {loading && !canRenderContent ? (
-          <div className="space-y-4" aria-busy="true">
-            <div className="h-36 rounded-2xl border border-border bg-card/40 animate-pulse" />
-            <div className="h-28 rounded-2xl border border-border bg-card/40 animate-pulse" />
-            <div className="h-72 rounded-2xl border border-border bg-card/40 animate-pulse" />
-            <div className="h-80 rounded-2xl border border-border bg-card/40 animate-pulse" />
+          <div
+            className="rounded-2xl border border-border/70 bg-muted/20 p-5 sm:p-6 space-y-5"
+            aria-busy="true"
+          >
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span
+                className="inline-flex h-2 w-2 shrink-0 rounded-full bg-accent-cyan animate-pulse"
+                aria-hidden
+              />
+              <span>読み込み中…</span>
+              {slowLoading ? (
+                <span className="text-muted-foreground/90">通信に時間がかかっています...</span>
+              ) : null}
+            </div>
+            <div className="space-y-3">
+              <div className="h-36 rounded-xl bg-muted/35 animate-pulse" />
+              <div className="h-24 rounded-xl bg-muted/30 animate-pulse" />
+              <div className="h-56 rounded-xl bg-muted/30 animate-pulse" />
+            </div>
           </div>
         ) : null}
 

@@ -4,6 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, FileText, Layers, Menu, Radio, X } from "lucide-react";
 
+import { LiveSignalsStrip } from "@/src/components/dashboard/LiveSignalsStrip";
+import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
+import type { Signal } from "@/src/types/investment";
+
 const NAV = [
   { href: "/", label: "Portfolio", Icon: BarChart3, active: (p: string) => p === "/" },
   {
@@ -25,17 +29,26 @@ export function Sidebar({
   onNavigate,
   onToggleCollapse,
   collapsed,
+  signals = [],
+  liveSignalsPresentation = "compact",
+  signalUserId = "",
+  onSignalResolved,
+  onSignalTrade,
 }: {
   onNavigate?: () => void;
-  /** Desktop: collapse sidebar width via parent */
   onToggleCollapse?: () => void;
   collapsed?: boolean;
+  signals?: Signal[];
+  liveSignalsPresentation?: "prominent" | "compact";
+  signalUserId?: string;
+  onSignalResolved?: (signalId: string) => void;
+  onSignalTrade?: (initial: TradeEntryInitial) => void;
 }) {
   const pathname = usePathname() ?? "";
 
   return (
     <aside className="flex h-full w-[13.5rem] shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur-sm">
-      <div className="border-b border-border px-4 py-4">
+      <div className="shrink-0 border-b border-border px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Cockpit</p>
@@ -54,7 +67,10 @@ export function Sidebar({
           ) : null}
         </div>
       </div>
-      <nav className="flex flex-1 flex-col gap-1 p-2" aria-label="Primary">
+      <nav
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain p-2"
+        aria-label="Primary"
+      >
         {NAV.map(({ href, label, Icon, active }) => {
           const isActive = active(pathname);
           return (
@@ -76,6 +92,16 @@ export function Sidebar({
           );
         })}
       </nav>
+      <div className="shrink-0 border-t border-border bg-muted/10 p-2">
+        <LiveSignalsStrip
+          signals={signals}
+          presentation={liveSignalsPresentation}
+          userId={signalUserId}
+          onSignalResolved={onSignalResolved}
+          onTrade={liveSignalsPresentation === "prominent" ? onSignalTrade : undefined}
+          sidebarMode
+        />
+      </div>
     </aside>
   );
 }

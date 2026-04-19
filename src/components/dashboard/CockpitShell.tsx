@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, Menu, RefreshCw, ScrollText, X } from "lucide-react";
+import { Camera, Menu, RefreshCw, ScrollText, X, Zap } from "lucide-react";
 import { usePathname } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
+import { LiveSignalsStrip } from "@/src/components/dashboard/LiveSignalsStrip";
 import { TradeEntryForm } from "@/src/components/dashboard/TradeEntryForm";
 import { EMPTY_SUMMARY, useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
 import { Sidebar } from "@/src/components/dashboard/Sidebar";
@@ -30,6 +31,7 @@ function CockpitHydrationSkeleton() {
 export function CockpitShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "";
   const hideHeader = useMemo(() => pathname === "/themes" || pathname.startsWith("/themes/"), [pathname]);
+  const isHome = pathname === "/";
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [headerCompact, setHeaderCompact] = useState(false);
@@ -58,9 +60,11 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
     onRecordSnapshot,
     openTradeForm,
     closeTradeForm,
+    resolveSignalOptimistic,
   } = useDashboardData();
 
   const summary = data?.summary ?? EMPTY_SUMMARY;
+  const signals = data?.signals ?? [];
 
   if (!clientReady) {
     return <CockpitHydrationSkeleton />;
@@ -90,10 +94,15 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
             <Sidebar
               collapsed={false}
               onToggleCollapse={() => setSidebarOpen((v) => !v)}
+              signals={signals}
+              liveSignalsPresentation={isHome ? "prominent" : "compact"}
+              signalUserId={userId}
+              onSignalResolved={resolveSignalOptimistic}
+              onSignalTrade={(init) => openTradeForm(init)}
             />
           ) : (
             <div className="h-full border-r border-border bg-card/40 backdrop-blur-sm">
-              <div className="flex h-full flex-col items-center gap-3 px-2 py-3">
+              <div className="flex h-full flex-col items-center px-2 py-3">
                 <button
                   type="button"
                   onClick={() => setSidebarOpen(true)}
@@ -103,6 +112,16 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
                 >
                   <Menu className="h-4 w-4" aria-hidden />
                 </button>
+                <Link
+                  href="/signals"
+                  prefetch
+                  className="mt-auto inline-flex flex-col items-center gap-0.5 rounded-lg border border-border bg-background/60 px-1.5 py-2 text-[9px] font-bold text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title="Live Signals"
+                  aria-label={`Signals${signals.length > 0 ? `: ${signals.length} unresolved` : ""}`}
+                >
+                  <Zap className="h-4 w-4 text-amber-400" aria-hidden />
+                  <span className="font-mono tabular-nums text-foreground">{signals.length}</span>
+                </Link>
               </div>
             </div>
           )}
@@ -118,7 +137,14 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
               onClick={() => setMobileSidebarOpen(false)}
             />
             <div className="absolute inset-y-0 left-0 w-[15rem] max-w-[84vw] shadow-2xl">
-              <Sidebar onNavigate={() => setMobileSidebarOpen(false)} />
+              <Sidebar
+                onNavigate={() => setMobileSidebarOpen(false)}
+                signals={signals}
+                liveSignalsPresentation={isHome ? "prominent" : "compact"}
+                signalUserId={userId}
+                onSignalResolved={resolveSignalOptimistic}
+                onSignalTrade={(init) => openTradeForm(init)}
+              />
             </div>
           </div>
         ) : null}
@@ -146,8 +172,8 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
               />
             </div>
           ) : (
-            <div className="shrink-0 border-b border-border bg-background/95 px-4 py-2 md:hidden">
-              <div className="flex items-center justify-between">
+            <div className="shrink-0 border-b border-border bg-background/92 backdrop-blur-sm px-4 py-2 md:hidden">
+              <div className="flex items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => setMobileSidebarOpen(true)}
@@ -301,6 +327,25 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </div>
+
+      {/* Mobile: Live Signals strip (desktopではサイドバー下部と同等の情報へアクセス) */}
+      {!mobileSidebarOpen ? (
+        <div
+          className="fixed inset-x-0 bottom-0 z-[85] border-t border-border bg-background/95 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.35)] backdrop-blur-md md:hidden"
+          style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))" }}
+        >
+          <div className="max-h-[40vh] overflow-y-auto overscroll-contain px-3 pt-2">
+            <LiveSignalsStrip
+              signals={signals}
+              presentation={isHome ? "prominent" : "compact"}
+              userId={userId}
+              onSignalResolved={resolveSignalOptimistic}
+              onTrade={isHome ? (init) => openTradeForm(init) : undefined}
+              sidebarMode={isHome}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <TradeEntryForm
         userId={userId}

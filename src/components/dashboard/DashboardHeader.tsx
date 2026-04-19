@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { LineChart, Target, X } from "lucide-react";
 
 import { EventCalendarModal } from "@/src/components/dashboard/EventCalendarModal";
@@ -27,6 +28,13 @@ type Props = {
   marketIndicators: MarketIndicator[];
   /** Cockpit: shrink-on-scroll density */
   compact?: boolean;
+};
+
+const MODAL_SAFE_PADDING: React.CSSProperties = {
+  paddingTop: "max(12px, env(safe-area-inset-top, 0px))",
+  paddingRight: "max(12px, env(safe-area-inset-right, 0px))",
+  paddingBottom: "max(12px, env(safe-area-inset-bottom, 0px))",
+  paddingLeft: "max(12px, env(safe-area-inset-left, 0px))",
 };
 
 function formatAlphaPercent(value: number): { text: string; color: string } {
@@ -234,47 +242,54 @@ export function DashboardHeader({
         </div>
       </div>
 
-      {marketOpen ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
-          role="presentation"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
-            aria-label="Close market glance"
-            onClick={() => setMarketOpen(false)}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="market-glance-title"
-            className="relative z-10 flex h-[80dvh] w-[80vw] max-w-[min(100%,80vw)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl min-h-0 sm:max-w-[min(56rem,80vw)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-              <h2 id="market-glance-title" className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground sm:text-sm">
-                Market glance
-              </h2>
+      {marketOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center"
+              style={MODAL_SAFE_PADDING}
+              role="presentation"
+            >
               <button
                 type="button"
+                className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
+                aria-label="Close market glance"
                 onClick={() => setMarketOpen(false)}
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation"
-                aria-label="Close"
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="market-glance-title"
+                className="relative z-10 flex max-h-[min(90dvh,56rem)] w-[min(100%,90vw)] max-w-4xl min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
               >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4 [-webkit-overflow-scrolling:touch]">
-              {marketIndicators.length === 0 ? (
-                <p className="text-sm text-muted-foreground sm:text-base">市場指標を取得できませんでした。</p>
-              ) : (
-                <MarketBar indicators={marketIndicators} showTitle={false} layout="modal" />
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-6 sm:py-4">
+                  <h2
+                    id="market-glance-title"
+                    className="text-sm font-bold uppercase tracking-[0.12em] text-muted-foreground sm:text-base"
+                  >
+                    Market glance
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setMarketOpen(false)}
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation"
+                    aria-label="Close"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 text-sm sm:px-6 sm:py-5 sm:text-base [-webkit-overflow-scrolling:touch]">
+                  {marketIndicators.length === 0 ? (
+                    <p className="text-muted-foreground">市場指標を取得できませんでした。</p>
+                  ) : (
+                    <MarketBar indicators={marketIndicators} showTitle={false} layout="modal" />
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       <EventCalendarModal open={koyomiOpen} onOpenChange={setKoyomiOpen} />
     </header>

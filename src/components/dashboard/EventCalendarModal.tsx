@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertCircle, CalendarDays, X } from "lucide-react";
 
 import { cn } from "@/src/lib/cn";
@@ -54,6 +55,13 @@ function categoryBadgeClass(category: string): string {
 function formatWeekLabel(start: string, end: string): string {
   return `${start.replace(/-/g, "/")} 〜 ${end.replace(/-/g, "/")}（UTC 週）`;
 }
+
+const MODAL_SAFE_PADDING: React.CSSProperties = {
+  paddingTop: "max(12px, env(safe-area-inset-top, 0px))",
+  paddingRight: "max(12px, env(safe-area-inset-right, 0px))",
+  paddingBottom: "max(12px, env(safe-area-inset-bottom, 0px))",
+  paddingLeft: "max(12px, env(safe-area-inset-left, 0px))",
+};
 
 export function EventCalendarModal({
   open,
@@ -159,6 +167,15 @@ export function EventCalendarModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   const { thisWeek, other } = useMemo(() => {
     const tw: MarketEventRecord[] = [];
     const ot: MarketEventRecord[] = [];
@@ -176,9 +193,12 @@ export function EventCalendarModal({
 
   if (!open) return null;
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={MODAL_SAFE_PADDING}
       role="presentation"
     >
       <button
@@ -191,16 +211,16 @@ export function EventCalendarModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="koyomi-title"
-        className="relative z-10 flex max-h-[min(82dvh,40rem)] w-[min(100%,28rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl min-h-0 sm:max-w-lg"
+        className="relative z-10 flex max-h-[min(90dvh,56rem)] w-[min(100%,90vw)] max-w-4xl min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-          <div className="min-w-0 space-y-1">
-            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Patrol · 先読み</p>
-            <h2 id="koyomi-title" className="text-base font-bold tracking-tight text-foreground sm:text-lg">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-6 sm:py-4">
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Patrol · 先読み</p>
+            <h2 id="koyomi-title" className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
               市場の暦 (Koyomi) - 潮目の先読み
             </h2>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <p className="text-xs leading-relaxed text-muted-foreground sm:text-[13px]">
               10分パトロールの最初に、今週のイベントでボラとフローを想像する。
             </p>
           </div>
@@ -214,9 +234,9 @@ export function EventCalendarModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4 [-webkit-overflow-scrolling:touch]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 text-sm sm:px-6 sm:py-5 sm:text-base [-webkit-overflow-scrolling:touch]">
           {loading ? (
-            <p className="text-sm text-muted-foreground">読み込み中…</p>
+            <p className="text-muted-foreground">読み込み中…</p>
           ) : fetchErr ? (
             <p className="text-sm text-destructive">{fetchErr}</p>
           ) : events.length === 0 ? (
@@ -265,7 +285,8 @@ export function EventCalendarModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
