@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, FileText, Layers, Menu, Radio, ScrollText, X } from "lucide-react";
+import { BarChart3, FileText, Layers, Menu, Radio, X } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Portfolio", Icon: BarChart3, active: (p: string) => p === "/" },
@@ -13,12 +13,6 @@ const NAV = [
     active: (p: string) => p === "/themes" || p.startsWith("/themes/"),
   },
   { href: "/signals", label: "Signals", Icon: Radio, active: (p: string) => p === "/signals" },
-  {
-    href: "/trade-history",
-    label: "Trade History",
-    Icon: ScrollText,
-    active: (p: string) => p === "/trade-history",
-  },
   {
     href: "/logs",
     label: "Logs",

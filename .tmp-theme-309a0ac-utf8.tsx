@@ -90,10 +90,10 @@ function fmtPct(v: number): string {
 }
 
 function pctClass(v: number): string {
-  if (!Number.isFinite(v)) return "text-muted-foreground";
+  if (!Number.isFinite(v)) return "text-slate-500";
   if (v > 0) return "text-emerald-400";
   if (v < 0) return "text-rose-400";
-  return "text-muted-foreground";
+  return "text-slate-400";
 }
 
 function fmtZsigma(v: number | null): string {
@@ -196,19 +196,19 @@ function ThemeMetaBlock({
   themeName: string;
 }) {
   return (
-    <div className="space-y-4 rounded-2xl border border-border bg-card/40 p-5 md:p-6">
+    <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/40 p-5 md:p-6">
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-1">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-1">
           Investment thesis
         </p>
         {theme?.description ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
             {theme.description}
           </p>
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500">
             テーマ「{themeName}」の解説は未登録です。
-            <span className="font-mono text-muted-foreground">investment_themes</span>{" "}
+            <span className="font-mono text-slate-600">investment_themes</span>{" "}
             に Notion から移行した{" "}
             <span className="font-mono">description</span>{" "}
             を投入すると表示されます。
@@ -217,10 +217,10 @@ function ThemeMetaBlock({
       </div>
       {theme?.goal ? (
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-1">
             Goal & milestones
           </p>
-          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+          <p className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
             {theme.goal}
           </p>
         </div>
@@ -421,7 +421,7 @@ function ChasmMeterVisual({
           className={`h-2 w-2.5 rounded-sm ${
             step <= active
               ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.45)]"
-              : "bg-muted"
+              : "bg-slate-800"
           }`}
         />
       ))}
@@ -439,7 +439,7 @@ function EcosystemAdoptionCell({ e }: { e: ThemeEcosystemWatchItem }) {
   );
   if (!st || !meta) {
     return (
-      <span className="text-xs text-muted-foreground" title={tip}>
+      <span className="text-xs text-slate-600" title={tip}>
         —
       </span>
     );
@@ -453,7 +453,7 @@ function EcosystemAdoptionCell({ e }: { e: ThemeEcosystemWatchItem }) {
         {meta.icon}
       </span>
       <ChasmMeterVisual stage={st} />
-      <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground leading-tight">
+      <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400 leading-tight">
         {meta.labelJa}
       </span>
     </div>
@@ -1261,7 +1261,7 @@ export function ThemePageClient({
     if (holder === "バークシャー") return "bg-red-100 text-red-800";
     if (holder === "エル" || holder === "ロンリード")
       return "bg-blue-100 text-blue-800";
-    return "bg-secondary text-secondary-foreground";
+    return "bg-slate-100 text-slate-800";
   }
 
   function dividendCalendar(months: number[]) {
@@ -1280,8 +1280,8 @@ export function ThemePageClient({
                 key={mm}
                 title={`${mm}月${on ? " 配当" : ""}${isThis ? "（今月）" : ""}`}
                 className={`inline-block h-1.5 w-1.5 rounded-full ${
-                  on ? "bg-emerald-400" : "bg-muted"
-                } ${isThis ? "ring-1 ring-ring" : ""}`}
+                  on ? "bg-emerald-400" : "bg-slate-800"
+                } ${isThis ? "ring-1 ring-slate-500" : ""}`}
               />
             );
           })}
@@ -1300,7 +1300,7 @@ export function ThemePageClient({
   }
 
   function defensiveZClass(z: number | null): string {
-    if (z == null || !Number.isFinite(z)) return "text-muted-foreground";
+    if (z == null || !Number.isFinite(z)) return "text-slate-500";
     const az = Math.abs(z);
     if (az <= 0.75) return "text-emerald-400"; // 平常（0近傍）
     if (az >= 2.0) return "text-rose-400"; // 石垣の揺らぎ
@@ -1310,26 +1310,26 @@ export function ThemePageClient({
   const canRenderContent = data != null;
 
   return (
-    <div className="min-h-min bg-background text-foreground pb-8 font-sans">
+    <div className="min-h-min bg-slate-950 text-slate-200 pb-8 font-sans">
       <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-8">
-        <header className="border-b border-border pb-8">
+        <header className="border-b border-slate-800 pb-8">
           <Link
             href="/"
-            className="inline-flex text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-cyan-600 dark:hover:text-cyan-400 mb-4"
+            className="inline-flex text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-cyan-400 mb-4"
           >
             ← ダッシュボード
           </Link>
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
                 <Crosshair size={14} className="text-cyan-500/90" />
                 <span>Structural theme command</span>
               </div>
-              <h1 className="text-3xl font-bold text-foreground tracking-tight">
+              <h1 className="text-3xl font-bold text-white tracking-tight">
                 {themeDisplayName}
               </h1>
-              <p className="text-[11px] text-muted-foreground mt-2">
-                <span className="font-mono text-muted-foreground/90">
+              <p className="text-[11px] text-slate-600 mt-2">
+                <span className="font-mono text-slate-500">
                   {DEFAULT_USER_ID}
                 </span>
                 ・<span className="font-mono">structure_tags[0]</span>{" "}
@@ -1338,41 +1338,41 @@ export function ThemePageClient({
             </div>
             {data?.themeSyntheticUsRatio != null && data.themeSyntheticJpRatio != null ? (
               <div
-                className="rounded-xl border border-border bg-card/60 px-4 py-3 text-right shrink-0 max-w-[16rem]"
+                className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right shrink-0 max-w-[16rem]"
                 title={data.themeSyntheticBenchmarkTooltip ?? undefined}
               >
-                <p className="text-[9px] font-bold uppercase text-muted-foreground">
+                <p className="text-[9px] font-bold uppercase text-slate-500">
                   Synthetic{" "}
-                  <span className="font-mono text-muted-foreground normal-case">
+                  <span className="font-mono text-slate-400 normal-case">
                     (US:{Math.round(data.themeSyntheticUsRatio * 100)}% JP:
                     {Math.round(data.themeSyntheticJpRatio * 100)}%)
                   </span>
                 </p>
-                <div className="mt-1 space-y-0.5 font-mono text-[11px] text-foreground leading-snug">
+                <div className="mt-1 space-y-0.5 font-mono text-[11px] text-slate-300 leading-snug">
                   {data.themeBenchmarkVooClose != null && data.themeBenchmarkVooClose > 0 ? (
                     <p>
-                      <span className="text-muted-foreground">VOO</span>{" "}
+                      <span className="text-slate-500">VOO</span>{" "}
                       {data.themeBenchmarkVooClose.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
                   ) : null}
                   {data.themeBenchmarkTopixClose != null && data.themeBenchmarkTopixClose > 0 ? (
                     <p>
-                      <span className="text-muted-foreground">1306.T</span>{" "}
+                      <span className="text-slate-500">1306.T</span>{" "}
                       {data.themeBenchmarkTopixClose.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
                   ) : null}
                   {data.themeBenchmarkVooClose == null && data.themeBenchmarkTopixClose == null ? (
-                    <p className="text-muted-foreground">参照価格未取得</p>
+                    <p className="text-slate-500">参照価格未取得</p>
                   ) : null}
                 </div>
-                <p className="text-[9px] text-muted-foreground mt-1">
+                <p className="text-[9px] text-slate-600 mt-1">
                   加重: {data.themeSyntheticBasis === "equal_count" ? "銘柄数" : "評価額"}
                 </p>
               </div>
             ) : data?.benchmarkLatestPrice != null && data.benchmarkLatestPrice > 0 ? (
-              <div className="rounded-xl border border-border bg-card/60 px-4 py-3 text-right shrink-0">
-                <p className="text-[9px] font-bold uppercase text-muted-foreground">VOO (ref)</p>
-                <p className="font-mono text-lg text-foreground">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right shrink-0">
+                <p className="text-[9px] font-bold uppercase text-slate-500">VOO (ref)</p>
+                <p className="font-mono text-lg text-slate-200">
                   {data.benchmarkLatestPrice.toLocaleString(undefined, {
                     maximumFractionDigits: 2,
                   })}
@@ -1383,10 +1383,10 @@ export function ThemePageClient({
         </header>
 
         {loading ? (
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-slate-500">
             読み込み中…
             {slowLoading ? (
-              <span className="ml-2 text-muted-foreground">
+              <span className="ml-2 text-slate-500">
                 通信に時間がかかっています...
               </span>
             ) : null}
@@ -1410,7 +1410,7 @@ export function ThemePageClient({
                 再読み込み（Retry）
               </Button>
               {canRenderContent ? (
-                <span className="text-[11px] text-muted-foreground self-center">
+                <span className="text-[11px] text-slate-500 self-center">
                   直近の表示内容を維持しています
                 </span>
               ) : null}
@@ -1421,10 +1421,10 @@ export function ThemePageClient({
         {/* Initial skeleton (prevents layout jump when data is empty / slow / offline) */}
         {loading && !canRenderContent ? (
           <div className="space-y-4" aria-busy="true">
-            <div className="h-36 rounded-2xl border border-border bg-card/40 animate-pulse" />
-            <div className="h-28 rounded-2xl border border-border bg-card/40 animate-pulse" />
-            <div className="h-72 rounded-2xl border border-border bg-card/40 animate-pulse" />
-            <div className="h-80 rounded-2xl border border-border bg-card/40 animate-pulse" />
+            <div className="h-36 rounded-2xl border border-slate-800 bg-slate-900/40 animate-pulse" />
+            <div className="h-28 rounded-2xl border border-slate-800 bg-slate-900/40 animate-pulse" />
+            <div className="h-72 rounded-2xl border border-slate-800 bg-slate-900/40 animate-pulse" />
+            <div className="h-80 rounded-2xl border border-slate-800 bg-slate-900/40 animate-pulse" />
           </div>
         ) : null}
 
@@ -1448,7 +1448,7 @@ export function ThemePageClient({
               </h2>
               <div className="flex flex-wrap items-center justify-end gap-2 mb-2">
                 <div
-                  className="inline-flex rounded-lg border border-border bg-muted/80 p-0.5"
+                  className="inline-flex rounded-lg border border-slate-700 bg-slate-950/80 p-0.5"
                   role="group"
                   aria-label="表示通貨"
                 >
@@ -1458,7 +1458,7 @@ export function ThemePageClient({
                     className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
                       viewCurrency === "JPY"
                         ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/35"
-                        : "text-muted-foreground hover:text-foreground"
+                        : "text-slate-500 hover:text-slate-200"
                     }`}
                   >
                     ¥
@@ -1469,20 +1469,20 @@ export function ThemePageClient({
                     className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
                       viewCurrency === "USD"
                         ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/35"
-                        : "text-muted-foreground hover:text-foreground"
+                        : "text-slate-500 hover:text-slate-200"
                     }`}
                   >
                     $
                   </button>
                 </div>
-                <div className="inline-flex rounded-md border border-border p-0.5 bg-muted/60">
+                <div className="inline-flex rounded-md border border-slate-700 p-0.5 bg-slate-950/60">
                   <button
                     type="button"
                     onClick={() => setAlphaDisplayMode("standard")}
                     className={`rounded px-2 py-0.5 text-[9px] font-bold uppercase ${
                       alphaDisplayMode === "standard"
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-slate-800 text-slate-100"
+                        : "text-slate-500 hover:text-slate-300"
                     }`}
                   >
                     標準α
@@ -1492,8 +1492,8 @@ export function ThemePageClient({
                     onClick={() => setAlphaDisplayMode("fxNeutral")}
                     className={`rounded px-2 py-0.5 text-[9px] font-bold uppercase ${
                       alphaDisplayMode === "fxNeutral"
-                        ? "bg-muted text-emerald-300/95"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-slate-800 text-emerald-300/95"
+                        : "text-slate-500 hover:text-slate-300"
                     }`}
                   >
                     FX中立α
@@ -1501,27 +1501,27 @@ export function ThemePageClient({
                 </div>
               </div>
               <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-                <div className="rounded-xl border border-border bg-card/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-muted-foreground flex items-center gap-1">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-500 flex items-center gap-1">
                     <TrendingUp size={12} className="opacity-70" />
                     テーマ評価額（{viewCurrency}）
                   </p>
-                  <p className="text-xl font-mono font-bold text-foreground mt-1">
+                  <p className="text-xl font-mono font-bold text-slate-100 mt-1">
                     {data.themeTotalMarketValue > 0
                       ? formatJpyValueForView(data.themeTotalMarketValue, viewCurrency, convert)
                       : "—"}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border bg-card/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-muted-foreground">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-500">
                     銘柄数
                   </p>
-                  <p className="text-xl font-mono font-bold text-foreground mt-1">
+                  <p className="text-xl font-mono font-bold text-slate-100 mt-1">
                     {stocks.length}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border bg-card/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-muted-foreground">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-500">
                     平均含み損益率
                   </p>
                   <p
@@ -1530,8 +1530,8 @@ export function ThemePageClient({
                     {fmtPct(data.themeAverageUnrealizedPnlPercent)}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border bg-card/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-muted-foreground">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-500">
                     {alphaDisplayMode === "fxNeutral" ? "平均 α（FX-neutral）" : "平均 Alpha（日次）"}
                   </p>
                   <p
@@ -1539,25 +1539,25 @@ export function ThemePageClient({
                   >
                     {fmtPct(themeAvgAlphaDisplayed)}
                   </p>
-                  <p className="text-[8px] text-muted-foreground mt-1 leading-snug">
+                  <p className="text-[8px] text-slate-500 mt-1 leading-snug">
                     {alphaDisplayMode === "fxNeutral"
                       ? "現地通貨の超過収益（名目為替レンズに依存しない）"
                       : "テーマ内銘柄の単純平均"}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border bg-card/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-muted-foreground" title="Rule of 40（売上成長率% + FCFマージン%）">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-500" title="Rule of 40（売上成長率% + FCFマージン%）">
                     平均 Rule of 40（Eco）
                   </p>
                   <p
                     className={cn(
                       "text-xl font-mono font-bold mt-1",
                       ecosystemEfficiencySummary.avgRuleOf40 == null
-                        ? "text-muted-foreground"
+                        ? "text-slate-600"
                         : ecosystemEfficiencySummary.avgRuleOf40 >= 40
                           ? "text-emerald-300"
                           : ecosystemEfficiencySummary.avgRuleOf40 >= 0
-                            ? "text-foreground"
+                            ? "text-slate-100"
                             : "text-rose-300",
                     )}
                   >
@@ -1565,20 +1565,20 @@ export function ThemePageClient({
                       ? "—"
                       : `${ecosystemEfficiencySummary.avgRuleOf40.toFixed(1)}%`}
                   </p>
-                  <p className="text-[8px] text-muted-foreground mt-1 leading-snug">
+                  <p className="text-[8px] text-slate-500 mt-1 leading-snug">
                     n={ecosystemEfficiencySummary.countRuleOf40}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border bg-card/60 px-4 py-4">
-                  <p className="text-[9px] font-bold uppercase text-muted-foreground" title="FCF Yield（%）">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-500" title="FCF Yield（%）">
                     平均 FCF Yield（Eco）
                   </p>
-                  <p className="text-xl font-mono font-bold text-foreground mt-1">
+                  <p className="text-xl font-mono font-bold text-slate-100 mt-1">
                     {ecosystemEfficiencySummary.avgFcfYield == null
                       ? "—"
                       : `${ecosystemEfficiencySummary.avgFcfYield.toFixed(1)}%`}
                   </p>
-                  <p className="text-[8px] text-muted-foreground mt-1 leading-snug">
+                  <p className="text-[8px] text-slate-500 mt-1 leading-snug">
                     n={ecosystemEfficiencySummary.countFcfYield}
                   </p>
                 </div>
@@ -1588,15 +1588,15 @@ export function ThemePageClient({
             {ecosystem.length > 0 ? (
               <section
                 aria-label="テーマ普及成熟度"
-                className="rounded-2xl border border-border bg-gradient-to-br from-card/85 to-background p-5 md:p-6"
+                className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/90 p-5 md:p-6"
               >
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-500/90 mb-2">
                   Technology adoption · テーマ成熟度
                 </p>
-                <p className="text-lg font-bold text-foreground leading-snug">
+                <p className="text-lg font-bold text-slate-100 leading-snug">
                   {themeAdoptionMaturity.headline}
                 </p>
-                <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                   {themeAdoptionMaturity.detail}
                 </p>
                 {quoripsWatch?.adoptionStage === "chasm" ? (
@@ -1604,7 +1604,7 @@ export function ThemePageClient({
                     <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-400/95 mb-1">
                       クオリプス（4894）× キャズム
                     </p>
-                    <p className="text-sm text-foreground leading-relaxed">
+                    <p className="text-sm text-slate-300 leading-relaxed">
                       再生医療（iPS
                       心筋等）は臨床・規制・製造の峡谷に位置しやすく、
                       <span className="text-cyan-300/95 font-semibold">
@@ -1614,7 +1614,7 @@ export function ThemePageClient({
                       がイベントで動きやすい。割安パトロールと併せ、冷え込み＝期待調整のサインとして読むと直感的です。
                     </p>
                     {quoripsWatch.adoptionStageRationale ? (
-                      <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed border-t border-border/80 pt-2">
+                      <p className="text-[11px] text-slate-500 mt-2 leading-relaxed border-t border-slate-800/80 pt-2">
                         {quoripsWatch.adoptionStageRationale}
                       </p>
                     ) : null}
@@ -1627,7 +1627,7 @@ export function ThemePageClient({
               <section aria-labelledby="theme-charts-heading">
                 <h2
                   id="theme-charts-heading"
-                  className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3"
+                  className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3"
                 >
                   Momentum cluster（保有銘柄 Alpha）
                 </h2>
@@ -1635,16 +1635,16 @@ export function ThemePageClient({
                   {stocks.map((s) => (
                     <div
                       key={s.id}
-                      className="rounded-xl border border-border bg-card/50 p-3 flex flex-col gap-2 min-h-[7.5rem]"
+                      className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 flex flex-col gap-2 min-h-[7.5rem]"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="font-mono font-bold text-foreground text-sm">
+                          <p className="font-mono font-bold text-slate-100 text-sm">
                             {s.ticker}
                           </p>
                           {s.name ? (
                             <p
-                              className="text-[9px] text-muted-foreground truncate"
+                              className="text-[9px] text-slate-500 truncate"
                               title={s.name}
                             >
                               {s.name}
@@ -1658,7 +1658,7 @@ export function ThemePageClient({
                                 ? "text-emerald-400"
                                 : s.alphaHistory[s.alphaHistory.length - 1]! < 0
                                   ? "text-rose-400"
-                                  : "text-muted-foreground"
+                                  : "text-slate-400"
                             }`}
                           >
                             {s.alphaHistory[s.alphaHistory.length - 1]! > 0
@@ -1667,12 +1667,12 @@ export function ThemePageClient({
                             {s.alphaHistory[s.alphaHistory.length - 1]}%
                           </span>
                         ) : (
-                          <span className="text-[10px] text-muted-foreground">—</span>
+                          <span className="text-[10px] text-slate-600">—</span>
                         )}
                       </div>
                       <div className="flex-1 flex items-center justify-center min-h-[3rem]">
                         {s.alphaHistory.length === 0 ? (
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-[10px] text-slate-600">
                             No series
                           </span>
                         ) : (
@@ -1720,7 +1720,7 @@ export function ThemePageClient({
             {theme?.id ? (
               <section
                 aria-labelledby="theme-ecosystem-add-heading"
-                className="rounded-2xl border border-border bg-card/40 p-5 md:p-6 space-y-4"
+                className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 md:p-6 space-y-4"
               >
                 <div className="flex items-start gap-2">
                   <UserPlus
@@ -1731,11 +1731,11 @@ export function ThemePageClient({
                   <div>
                     <h2
                       id="theme-ecosystem-add-heading"
-                      className="text-xs font-bold text-muted-foreground uppercase tracking-widest"
+                      className="text-xs font-bold text-slate-400 uppercase tracking-widest"
                     >
                       Ecosystem · 銘柄を追加
                     </h2>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                    <p className="text-[10px] text-slate-600 mt-0.5">
                       Ticker・追加日（観測開始）・Importance・Role
                       を登録してウォッチリストへ追加します（同一テーマ内の
                       ticker 重複は不可）
@@ -1750,7 +1750,7 @@ export function ThemePageClient({
                     <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-ticker"
-                        className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
+                        className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
                       >
                         Ticker
                       </label>
@@ -1772,7 +1772,7 @@ export function ThemePageClient({
                     <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-started-at"
-                        className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
+                        className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
                       >
                         追加日（観測開始）
                       </label>
@@ -1787,7 +1787,7 @@ export function ThemePageClient({
                     <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-importance"
-                        className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
+                        className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
                       >
                         Importance
                       </label>
@@ -1800,7 +1800,7 @@ export function ThemePageClient({
                           )
                         }
                         className={cn(
-                          "flex h-9 w-full rounded-md border border-border bg-muted/80 px-3 py-1 text-sm text-foreground shadow-sm",
+                          "flex h-9 w-full rounded-md border border-slate-700 bg-slate-950/80 px-3 py-1 text-sm text-slate-200 shadow-sm",
                           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50 focus-visible:border-cyan-500/40",
                         )}
                       >
@@ -1811,7 +1811,7 @@ export function ThemePageClient({
                     <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-role"
-                        className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
+                        className="text-[10px] font-bold uppercase tracking-wide text-slate-500"
                       >
                         Role
                       </label>
@@ -1837,19 +1837,19 @@ export function ThemePageClient({
                       </Button>
                     </div>
                   </div>
-                  <p className="text-[10px] text-muted-foreground min-h-[1.1rem]">
+                  <p className="text-[10px] text-slate-600 min-h-[1.1rem]">
                     {addTickerDuplicate ? (
                       <span className="text-rose-400">
                         この銘柄は既に登録済み
                       </span>
                     ) : addCompanyNameLoading ? (
-                      <span className="font-mono text-muted-foreground">
+                      <span className="font-mono text-slate-500">
                         Resolving name…
                       </span>
                     ) : addCompanyName ? (
-                      <span className="text-muted-foreground">{addCompanyName}</span>
+                      <span className="text-slate-400">{addCompanyName}</span>
                     ) : (
-                      <span className="font-mono text-muted-foreground">—</span>
+                      <span className="font-mono text-slate-700">—</span>
                     )}
                   </p>
                   {addTickerDuplicate ? (
@@ -1858,7 +1858,7 @@ export function ThemePageClient({
                     </p>
                   ) : null}
                   {ecosystem.length === 0 ? (
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[11px] text-slate-600">
                       まだウォッチリストに銘柄がありません。追加すると下のエコシステム表が表示されます。
                     </p>
                   ) : null}
@@ -1886,8 +1886,8 @@ export function ThemePageClient({
                     </div>
                   </div>
                 ) : null}
-                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
-                  <div className="p-5 border-b border-border flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between bg-card/50">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+                  <div className="p-5 border-b border-slate-800 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between bg-slate-900/50">
                     <div className="flex items-start gap-2 min-w-0">
                       <Layers
                         size={16}
@@ -1896,11 +1896,11 @@ export function ThemePageClient({
                       <div>
                         <h2
                           id="theme-ecosystem-heading"
-                          className="text-xs font-bold text-muted-foreground uppercase tracking-widest"
+                          className="text-xs font-bold text-slate-400 uppercase tracking-widest"
                         >
                           Ecosystem map / Watchlist
                         </h2>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                        <p className="text-[10px] text-slate-600 mt-0.5">
                           テーマ設置日起点の累積 Alpha（VOO
                           比）で観測。ポートフォリオ外の重要銘柄も含む（Notion
                           連携）
@@ -1913,7 +1913,7 @@ export function ThemePageClient({
                           <span className="sr-only">エコシステム検索</span>
                           <Search
                             size={14}
-                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none shrink-0"
+                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none shrink-0"
                             aria-hidden
                           />
                           <input
@@ -1923,12 +1923,12 @@ export function ThemePageClient({
                               setEcosystemSearchQuery(ev.target.value)
                             }
                             placeholder="銘柄・役割・ノートで検索"
-                            className="w-full rounded-lg border border-border bg-muted/80 pl-8 pr-3 py-2 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/40"
+                            className="w-full rounded-lg border border-slate-700 bg-slate-950/80 pl-8 pr-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/40"
                             autoComplete="off"
                           />
                         </label>
                         <div
-                          className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-muted/40 p-1"
+                          className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/40 p-1"
                           role="group"
                           aria-label="市場フィルター"
                         >
@@ -1939,7 +1939,7 @@ export function ThemePageClient({
                               "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-colors",
                               ecoMarketFilter === "all"
                                 ? "text-cyan-300 border-cyan-500/45 bg-cyan-500/10"
-                                : "text-muted-foreground border-transparent hover:bg-muted/70",
+                                : "text-slate-500 border-transparent hover:bg-slate-800/60",
                             )}
                           >
                             すべて
@@ -1951,7 +1951,7 @@ export function ThemePageClient({
                               "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-colors",
                               ecoMarketFilter === "jp"
                                 ? "text-emerald-300 border-emerald-500/45 bg-emerald-500/10"
-                                : "text-muted-foreground border-transparent hover:bg-muted/70",
+                                : "text-slate-500 border-transparent hover:bg-slate-800/60",
                             )}
                           >
                             日本
@@ -1963,7 +1963,7 @@ export function ThemePageClient({
                               "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-colors",
                               ecoMarketFilter === "us"
                                 ? "text-sky-300 border-sky-500/45 bg-sky-500/10"
-                                : "text-muted-foreground border-transparent hover:bg-muted/70",
+                                : "text-slate-500 border-transparent hover:bg-slate-800/60",
                             )}
                           >
                             米国
@@ -1975,14 +1975,14 @@ export function ThemePageClient({
                           className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
                             ecoShowValueCols
                               ? "text-amber-400 border-amber-500/50 bg-amber-500/10"
-                              : "text-muted-foreground border-border hover:bg-muted/70"
+                              : "text-slate-500 border-slate-700 hover:bg-slate-800/60"
                           }`}
                           title="日次 Alpha 乖離（σ）と 90 日高値比"
                         >
                           乖離・落率
                         </button>
-                        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2 py-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
                             分析
                           </span>
                           <div className="relative">
@@ -1991,7 +1991,7 @@ export function ThemePageClient({
                               onClick={() => setEcoSortModeOpen((v) => !v)}
                               className={cn(
                                 "rounded-md border px-2 py-1 text-[11px] font-bold transition-colors",
-                                "border-border bg-muted/70 text-foreground hover:bg-card/60",
+                                "border-slate-800 bg-slate-950/70 text-slate-200 hover:bg-slate-900/60",
                                 "focus:outline-none focus:ring-1 focus:ring-cyan-500/40",
                               )}
                               aria-label="Ecosystem 分析ソート"
@@ -2001,7 +2001,7 @@ export function ThemePageClient({
                             </button>
                             {ecoSortModeOpen ? (
                               <div
-                                className="absolute right-0 mt-2 w-[22rem] max-w-[86vw] rounded-xl border border-border bg-popover/95 shadow-2xl z-30 overflow-hidden"
+                                className="absolute right-0 mt-2 w-[22rem] max-w-[86vw] rounded-xl border border-slate-800 bg-slate-950/95 shadow-2xl z-30 overflow-hidden"
                                 role="listbox"
                                 aria-label="分析ソート選択肢"
                               >
@@ -2027,8 +2027,8 @@ export function ThemePageClient({
                                         setEcoSortModeOpen(false);
                                       }}
                                       className={cn(
-                                        "w-full text-left px-3 py-2.5 border-b border-border/80",
-                                        "hover:bg-card/60 transition-colors",
+                                        "w-full text-left px-3 py-2.5 border-b border-slate-800/80",
+                                        "hover:bg-slate-900/60 transition-colors",
                                         selected
                                           ? "bg-cyan-500/10"
                                           : "bg-transparent",
@@ -2042,7 +2042,7 @@ export function ThemePageClient({
                                               "text-[11px] font-bold",
                                               selected
                                                 ? "text-cyan-200"
-                                                : "text-foreground",
+                                                : "text-slate-200",
                                             )}
                                           >
                                             {ecoSortModeLabel(mode)}
@@ -2051,8 +2051,8 @@ export function ThemePageClient({
                                             className={cn(
                                               "text-[10px] leading-relaxed mt-1",
                                               hovered || selected
-                                                ? "text-muted-foreground"
-                                                : "text-muted-foreground",
+                                                ? "text-slate-400"
+                                                : "text-slate-600",
                                             )}
                                           >
                                             {ecoSortModeHelp(mode)}
@@ -2071,7 +2071,7 @@ export function ThemePageClient({
                                   <button
                                     type="button"
                                     onClick={() => setEcoSortModeOpen(false)}
-                                    className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+                                    className="text-[10px] font-bold uppercase tracking-wide text-slate-500 hover:text-slate-300 transition-colors"
                                   >
                                     閉じる
                                   </button>
@@ -2080,8 +2080,8 @@ export function ThemePageClient({
                             ) : null}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2 py-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
                             PE
                           </span>
                           <input
@@ -2089,16 +2089,16 @@ export function ThemePageClient({
                             value={ecoPeMin}
                             onChange={(e) => setEcoPeMin(e.target.value)}
                             placeholder="min"
-                            className="w-14 rounded-md border border-border bg-muted/70 px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
+                            className="w-14 rounded-md border border-slate-800 bg-slate-950/70 px-2 py-1 text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
                             aria-label="PE 最小"
                           />
-                          <span className="text-[10px] text-muted-foreground">-</span>
+                          <span className="text-[10px] text-slate-700">-</span>
                           <input
                             inputMode="decimal"
                             value={ecoPeMax}
                             onChange={(e) => setEcoPeMax(e.target.value)}
                             placeholder="max"
-                            className="w-14 rounded-md border border-border bg-muted/70 px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
+                            className="w-14 rounded-md border border-slate-800 bg-slate-950/70 px-2 py-1 text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
                             aria-label="PE 最大"
                           />
                         </div>
@@ -2109,7 +2109,7 @@ export function ThemePageClient({
                             "text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors",
                             ecoEpsPositiveOnly
                               ? "text-rose-200 border-rose-500/45 bg-rose-500/10"
-                              : "text-muted-foreground border-border hover:bg-muted/70",
+                              : "text-slate-500 border-slate-700 hover:bg-slate-800/60",
                           )}
                           title="EPS > 0（黒字）の銘柄のみ"
                         >
@@ -2121,7 +2121,7 @@ export function ThemePageClient({
                           className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
                             patrolOn
                               ? "text-cyan-400 border-cyan-500/50 bg-cyan-500/10"
-                              : "text-muted-foreground border-border hover:bg-muted/70"
+                              : "text-slate-500 border-slate-700 hover:bg-slate-800/60"
                           }`}
                           title="Alpha 乖離が大きい負け、または高値からの下落が大きい銘柄のみ"
                         >
@@ -2133,7 +2133,7 @@ export function ThemePageClient({
                           className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
                             postChasmOnly
                               ? "text-emerald-400 border-emerald-500/50 bg-emerald-500/10"
-                              : "text-muted-foreground border-border hover:bg-muted/70"
+                              : "text-slate-500 border-slate-700 hover:bg-slate-800/60"
                           }`}
                           title="アーリーマジョリティ・レイトマジョリティのみ（キャズムより先＝普及が進んだ層）"
                         >
@@ -2143,7 +2143,7 @@ export function ThemePageClient({
                           type="button"
                           onClick={handleEcosystemCsvDownload}
                           disabled={ecosystemSorted.length === 0}
-                          className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/70 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                          className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 border border-slate-700 px-3 py-2 rounded-lg hover:bg-slate-800/60 disabled:opacity-40 disabled:pointer-events-none transition-colors"
                           title="表示中の行（フィルター・並び順反映）を UTF-8 BOM 付き CSV でダウンロード"
                         >
                           <FileSpreadsheet size={14} className="shrink-0" />
@@ -2153,14 +2153,14 @@ export function ThemePageClient({
                       {isDefensiveTheme && defensiveHolders.length > 0 ? (
                         <div className="mt-3 space-y-2">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
                               HOLDER フィルター（複数選択）
                             </p>
                             <button
                               type="button"
                               onClick={() => setHolderFilter([])}
                               disabled={holderFilter.length === 0}
-                              className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-2 py-1 rounded-md hover:bg-muted/70 transition-colors disabled:opacity-40"
+                              className="text-[10px] font-bold uppercase tracking-wide text-slate-500 border border-slate-700 px-2 py-1 rounded-md hover:bg-slate-800/60 transition-colors disabled:opacity-40"
                             >
                               クリア
                             </button>
@@ -2181,7 +2181,7 @@ export function ThemePageClient({
                                     "text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-full border transition-colors",
                                     on
                                       ? "text-rose-100 border-rose-400/40 bg-rose-500/15"
-                                      : "text-muted-foreground border-border bg-card/30 hover:bg-muted/70",
+                                      : "text-slate-400 border-slate-700 bg-slate-900/30 hover:bg-slate-800/60",
                                   )}
                                 >
                                   {h}
@@ -2190,18 +2190,18 @@ export function ThemePageClient({
                             })}
                           </div>
                           {defensiveHolderStats ? (
-                            <div className="rounded-xl border border-border bg-muted/60 px-4 py-3">
-                              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
+                            <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">
                                 Slice stats
                               </p>
-                              <div className="text-[11px] font-mono text-muted-foreground flex flex-wrap gap-x-5 gap-y-1">
+                              <div className="text-[11px] font-mono text-slate-400 flex flex-wrap gap-x-5 gap-y-1">
                                 <span>
                                   件数{" "}
-                                  <span className="text-foreground font-bold tabular-nums">
+                                  <span className="text-slate-200 font-bold tabular-nums">
                                     {defensiveHolderStats.count}
                                   </span>{" "}
                                   / PF{" "}
-                                  <span className="text-foreground font-bold tabular-nums">
+                                  <span className="text-slate-200 font-bold tabular-nums">
                                     {defensiveHolderStats.inPortfolio}
                                   </span>
                                 </span>
@@ -2215,8 +2215,8 @@ export function ThemePageClient({
                                           ? "text-emerald-300"
                                           : defensiveHolderStats.avgLatestAlpha < 0
                                             ? "text-rose-300"
-                                            : "text-foreground"
-                                        : "text-muted-foreground",
+                                            : "text-slate-300"
+                                        : "text-slate-500",
                                     )}
                                   >
                                     {defensiveHolderStats.avgLatestAlpha != null
@@ -2234,8 +2234,8 @@ export function ThemePageClient({
                                           ? "text-amber-300"
                                           : defensiveHolderStats.avgDeviationZ >= 1.0
                                             ? "text-emerald-300"
-                                            : "text-foreground"
-                                        : "text-muted-foreground",
+                                            : "text-slate-300"
+                                        : "text-slate-500",
                                     )}
                                   >
                                     {defensiveHolderStats.avgDeviationZ != null
@@ -2245,7 +2245,7 @@ export function ThemePageClient({
                                 </span>
                                 <span>
                                   平均 Div{" "}
-                                  <span className="text-foreground font-bold tabular-nums">
+                                  <span className="text-slate-200 font-bold tabular-nums">
                                     {defensiveHolderStats.avgDividendYield != null
                                       ? `${defensiveHolderStats.avgDividendYield.toFixed(2)}%`
                                       : "—"}
@@ -2256,7 +2256,7 @@ export function ThemePageClient({
                           ) : null}
                         </div>
                       ) : null}
-                      <p className="text-[10px] font-mono text-muted-foreground text-right flex flex-wrap items-center justify-end gap-2">
+                      <p className="text-[10px] font-mono text-slate-600 text-right flex flex-wrap items-center justify-end gap-2">
                         {hydratingFull ? (
                           <span className="text-cyan-400/90 font-sans font-bold normal-case tracking-normal animate-pulse">
                             Alpha・Research 読込中…
@@ -2275,7 +2275,7 @@ export function ThemePageClient({
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
-                      <thead className="bg-muted text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
+                      <thead className="bg-slate-950 text-slate-500 text-[10px] uppercase font-bold tracking-[0.1em]">
                         <tr>
                           <th
                             className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyThFirst} cursor-pointer select-none`}
@@ -2371,7 +2371,7 @@ export function ThemePageClient({
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-border/50">
+                      <tbody className="divide-y divide-slate-800/50">
                         {ecosystemSorted.length === 0 &&
                         (patrolOn ||
                           postChasmOnly ||
@@ -2383,7 +2383,7 @@ export function ThemePageClient({
                           <tr>
                             <td
                               colSpan={ecosystemColSpan}
-                              className="px-6 py-8 text-center text-sm text-muted-foreground"
+                              className="px-6 py-8 text-center text-sm text-slate-500"
                             >
                               {(() => {
                                 const q =
@@ -2435,22 +2435,22 @@ export function ThemePageClient({
                           return (
                             <React.Fragment key={e.id}>
                               {showFieldHeader ? (
-                                <tr className="bg-muted/90">
+                                <tr className="bg-slate-950/90">
                                   <td
-                                    className={`px-6 py-2 min-w-[10rem] max-w-[14rem] sticky left-0 z-[19] bg-muted/90 border-r border-border/90 border-b border-border shadow-[2px_0_10px_rgba(0,0,0,0.35)] text-[10px] font-bold uppercase tracking-wider text-cyan-500/90`}
+                                    className={`px-6 py-2 min-w-[10rem] max-w-[14rem] sticky left-0 z-[19] bg-slate-950/90 border-r border-slate-800/90 border-b border-slate-800 shadow-[2px_0_10px_rgba(0,0,0,0.35)] text-[10px] font-bold uppercase tracking-wider text-cyan-500/90`}
                                   >
                                     {field}
                                   </td>
                                   <td
                                     colSpan={Math.max(1, ecosystemColSpan - 1)}
-                                    className="border-b border-border bg-muted/90 px-6 py-2"
+                                    className="border-b border-slate-800 bg-slate-950/90 px-6 py-2"
                                     aria-hidden
                                   />
                                 </tr>
                               ) : null}
                               <tr
                                 id={`eco-row-${e.id}`}
-                                className="group hover:bg-muted/45 transition-all scroll-mt-24"
+                                className="group hover:bg-slate-800/40 transition-all scroll-mt-24"
                               >
                                 <td
                                   className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyTdFirst}`}
@@ -2458,7 +2458,7 @@ export function ThemePageClient({
                                   <div className="flex flex-col gap-0.5">
                                     <div className="flex items-start justify-between gap-2">
                                       <div className="min-w-0">
-                                        <span className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono inline-flex items-center gap-1">
+                                        <span className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors font-mono inline-flex items-center gap-1">
                                           {ecoOpp ? (
                                             <span
                                               className="shrink-0 text-base leading-none"
@@ -2480,7 +2480,7 @@ export function ThemePageClient({
                                               </span>
                                             ) : null}
                                             {e.estimatedValuation ? (
-                                              <span className="text-[8px] font-bold uppercase tracking-wide text-foreground/95 border border-border/50 px-1.5 py-0.5 rounded">
+                                              <span className="text-[8px] font-bold uppercase tracking-wide text-slate-300/95 border border-slate-500/30 px-1.5 py-0.5 rounded">
                                                 {e.estimatedValuation}
                                               </span>
                                             ) : null}
@@ -2507,17 +2507,17 @@ export function ThemePageClient({
                                     </div>
                                     {e.companyName ? (
                                       <span
-                                        className="text-[10px] text-muted-foreground leading-snug line-clamp-2"
+                                        className="text-[10px] text-slate-400 leading-snug line-clamp-2"
                                         title={e.companyName}
                                       >
                                         {e.companyName}
                                       </span>
                                     ) : null}
                                     {ecoEditingId === e.id ? (
-                                      <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/40 p-2">
+                                      <div className="mt-2 space-y-2 rounded-lg border border-slate-800 bg-slate-950/40 p-2">
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                           <div className="space-y-1">
-                                            <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                                            <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
                                               Company
                                             </p>
                                             <Input
@@ -2533,7 +2533,7 @@ export function ThemePageClient({
                                             />
                                           </div>
                                           <div className="space-y-1">
-                                            <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                                            <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
                                               Role
                                             </p>
                                             <Input
@@ -2547,7 +2547,7 @@ export function ThemePageClient({
                                             />
                                           </div>
                                         </div>
-                                        <label className="flex items-center gap-2 text-[10px] text-muted-foreground select-none">
+                                        <label className="flex items-center gap-2 text-[10px] text-slate-400 select-none">
                                           <input
                                             type="checkbox"
                                             checked={ecoEditMajor}
@@ -2572,7 +2572,7 @@ export function ThemePageClient({
                                           <button
                                             type="button"
                                             onClick={cancelEditEcosystem}
-                                            className="h-8 px-3 rounded-md border border-border text-xs font-bold text-foreground hover:bg-muted/70"
+                                            className="h-8 px-3 rounded-md border border-slate-700 text-xs font-bold text-slate-300 hover:bg-slate-800/60"
                                           >
                                             Cancel
                                           </button>
@@ -2587,7 +2587,7 @@ export function ThemePageClient({
                                             );
                                           return (
                                             <span
-                                              className="text-[10px] text-muted-foreground leading-snug line-clamp-2"
+                                              className="text-[10px] text-slate-500 leading-snug line-clamp-2"
                                               title={e.observationNotes}
                                             >
                                               {e.observationNotes}
@@ -2604,24 +2604,24 @@ export function ThemePageClient({
                                         })()
                                       : null}
                                     {e.observationStartedAt ? (
-                                      <span className="text-[10px] font-mono text-muted-foreground pt-0.5">
+                                      <span className="text-[10px] font-mono text-slate-600 pt-0.5">
                                         観測開始（投入）{" "}
-                                        <span className="text-muted-foreground">
+                                        <span className="text-slate-500">
                                           {e.observationStartedAt}
                                         </span>
                                         {e.alphaObservationStartDate &&
                                         e.alphaObservationStartDate !==
                                           e.observationStartedAt ? (
-                                          <span className="block text-[9px] text-muted-foreground mt-0.5 font-normal">
+                                          <span className="block text-[9px] text-slate-600 mt-0.5 font-normal">
                                             系列起点{" "}
                                             {e.alphaObservationStartDate}
                                           </span>
                                         ) : null}
                                       </span>
                                     ) : e.alphaObservationStartDate ? (
-                                      <span className="text-[10px] font-mono text-muted-foreground pt-0.5">
+                                      <span className="text-[10px] font-mono text-slate-600 pt-0.5">
                                         観測起点{" "}
-                                        <span className="text-muted-foreground">
+                                        <span className="text-slate-500">
                                           {e.alphaObservationStartDate}
                                         </span>
                                       </span>
@@ -2643,12 +2643,12 @@ export function ThemePageClient({
                                             </span>
                                           ))
                                         ) : (
-                                          <span className="text-xs text-muted-foreground">
+                                          <span className="text-xs text-slate-600">
                                             —
                                           </span>
                                         )}
                                       </div>
-                                      <div className="mt-2 md:hidden text-[10px] text-muted-foreground">
+                                      <div className="mt-2 md:hidden text-[10px] text-slate-500">
                                         {e.countryName}
                                       </div>
                                     </td>
@@ -2658,26 +2658,26 @@ export function ThemePageClient({
                                     <td className="px-6 py-4">
                                       <div className="hidden md:block">
                                         {e.defensiveStrength ? (
-                                          <p className="text-sm font-bold text-foreground leading-snug">
+                                          <p className="text-sm font-bold text-slate-100 leading-snug">
                                             {e.defensiveStrength}
                                           </p>
                                         ) : null}
                                         {e.role ? (
                                           <p
-                                            className="text-xs text-muted-foreground leading-relaxed mt-1 line-clamp-3"
+                                            className="text-xs text-slate-400 leading-relaxed mt-1 line-clamp-3"
                                             title={e.role}
                                           >
                                             {e.role}
                                           </p>
                                         ) : (
-                                          <span className="text-xs text-muted-foreground">
+                                          <span className="text-xs text-slate-600">
                                             —
                                           </span>
                                         )}
                                       </div>
                                       <div className="md:hidden">
                                         <p
-                                          className="text-xs font-semibold text-foreground leading-snug line-clamp-2"
+                                          className="text-xs font-semibold text-slate-200 leading-snug line-clamp-2"
                                           title={e.defensiveStrength ?? e.role}
                                         >
                                           {e.defensiveStrength ?? e.role ?? "—"}
@@ -2690,12 +2690,12 @@ export function ThemePageClient({
                                     <td className="px-6 py-4">
                                       <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-2 flex-wrap">
-                                          <span className="text-[10px] font-bold text-muted-foreground border border-border bg-muted/40 px-2 py-0.5 rounded-md">
+                                          <span className="text-[10px] font-bold text-slate-400 border border-slate-700 bg-slate-950/40 px-2 py-0.5 rounded-md">
                                             {e.countryName}
                                           </span>
                                           {e.nextEarningsDate ? (
                                             <span
-                                              className="text-[10px] font-bold text-foreground border border-border bg-card/60 px-2 py-0.5 rounded-md"
+                                              className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
                                               title={`次期決算予定日: ${e.nextEarningsDate}`}
                                             >
                                               E:
@@ -2704,13 +2704,13 @@ export function ThemePageClient({
                                                 : e.nextEarningsDate}
                                             </span>
                                           ) : (
-                                            <span className="text-[10px] text-muted-foreground">
+                                            <span className="text-[10px] text-slate-500">
                                               E:—
                                             </span>
                                           )}
                                           {e.dividendYieldPercent != null ? (
                                             <span
-                                              className="text-[10px] font-bold text-foreground border border-border bg-card/60 px-2 py-0.5 rounded-md"
+                                              className="text-[10px] font-bold text-slate-200 border border-slate-700 bg-slate-900/60 px-2 py-0.5 rounded-md"
                                               title={
                                                 e.annualDividendRate != null
                                                   ? `年間配当: ${e.annualDividendRate}`
@@ -2724,7 +2724,7 @@ export function ThemePageClient({
                                               %
                                             </span>
                                           ) : (
-                                            <span className="text-[10px] text-muted-foreground">
+                                            <span className="text-[10px] text-slate-500">
                                               Div:—
                                             </span>
                                           )}
@@ -2734,13 +2734,13 @@ export function ThemePageClient({
                                     <td className="px-6 py-4">
                                       {e.role ? (
                                         <div
-                                          className="text-xs text-foreground leading-relaxed line-clamp-4"
+                                          className="text-xs text-slate-300 leading-relaxed line-clamp-4"
                                           title={e.role}
                                         >
                                           {e.role}
                                         </div>
                                       ) : (
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="text-xs text-slate-600">
                                           —
                                         </span>
                                       )}
@@ -2757,12 +2757,12 @@ export function ThemePageClient({
                                         isDefensiveTheme
                                           ? defensiveZClass(zEco)
                                           : zEco == null
-                                            ? "text-muted-foreground"
+                                            ? "text-slate-500"
                                             : zEco < -1
                                               ? "text-amber-400"
                                               : zEco > 1
                                                 ? "text-emerald-400"
-                                                : "text-foreground"
+                                                : "text-slate-200"
                                       }`}
                                     >
                                       {fmtZsigma(zEco)}
@@ -2770,10 +2770,10 @@ export function ThemePageClient({
                                     <td
                                       className={`px-6 py-4 text-right font-mono text-xs font-bold ${
                                         ddEco == null
-                                          ? "text-muted-foreground"
+                                          ? "text-slate-500"
                                           : ddEco < -10
                                             ? "text-rose-400"
-                                            : "text-foreground"
+                                            : "text-slate-200"
                                       }`}
                                     >
                                       {fmtDdCol(ddEco)}
@@ -2781,7 +2781,7 @@ export function ThemePageClient({
                                   </>
                                 ) : null}
                                 <td
-                                  className="px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap text-foreground"
+                                  className="px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap text-slate-200"
                                   title={
                                     e.trailingPe != null || e.forwardPe != null
                                       ? `PE trailing=${e.trailingPe ?? "—"} / forward=${e.forwardPe ?? "—"}`
@@ -2795,9 +2795,9 @@ export function ThemePageClient({
                                     "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap",
                                     (() => {
                                       const eps = ecoEpsOf(e);
-                                      if (eps == null) return "text-muted-foreground";
+                                      if (eps == null) return "text-slate-500";
                                       if (eps <= 0) return "text-rose-300";
-                                      return "text-foreground";
+                                      return "text-slate-200";
                                     })(),
                                   )}
                                   title={
@@ -2813,7 +2813,7 @@ export function ThemePageClient({
                                     e.latestAlpha != null &&
                                     Number.isFinite(e.latestAlpha)
                                       ? pctClass(e.latestAlpha)
-                                      : "text-muted-foreground"
+                                      : "text-slate-500"
                                   }`}
                                 >
                                   {e.latestAlpha != null &&
@@ -2829,7 +2829,7 @@ export function ThemePageClient({
                                 <td className="px-6 py-4">
                                   <div className="flex flex-col items-center gap-1">
                                     {e.isUnlisted ? (
-                                      <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
                                         Proxy Momentum
                                         {e.proxyTicker
                                           ? ` (${e.proxyTicker})`
@@ -2843,7 +2843,7 @@ export function ThemePageClient({
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                   <div className="flex flex-col items-end gap-1">
-                                    <span className="font-mono text-foreground text-xs">
+                                    <span className="font-mono text-slate-300 text-xs">
                                       {formatEcoPriceForView(e)}
                                     </span>
                                     {!e.inPortfolio ? (
@@ -2876,7 +2876,7 @@ export function ThemePageClient({
                                         <button
                                           type="button"
                                           onClick={() => beginEditEcosystem(e)}
-                                          className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-2 py-0.5 rounded-md hover:bg-muted/70"
+                                          className="text-[9px] font-bold uppercase tracking-wide text-slate-400 border border-slate-700 px-2 py-0.5 rounded-md hover:bg-slate-800/60"
                                         >
                                           Edit
                                         </button>
@@ -2915,7 +2915,7 @@ export function ThemePageClient({
             */}
 
             {stocks.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-slate-500">
                 このテーマに該当する保有がありません。
               </p>
             ) : null}

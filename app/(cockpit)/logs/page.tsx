@@ -1,5 +1,5 @@
 import { LogsPage } from "@/src/components/dashboard/LogsPage";
 
-export default function Page() {
+export default function CockpitLogsPage() {
   return <LogsPage />;
 }

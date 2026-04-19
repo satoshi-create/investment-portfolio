@@ -26,10 +26,10 @@ export function ThemesNavigationSection(props: {
 
   return (
     <section className="rounded-2xl border border-border bg-card/60 p-4 md:p-5">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <div className="h-9 w-9 rounded-xl border border-border bg-muted/40 flex items-center justify-center">
-            <Layout size={16} className="text-cyan-300" />
+            <Layout size={16} className="text-cyan-600 dark:text-cyan-300" />
           </div>
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -40,10 +40,10 @@ export function ThemesNavigationSection(props: {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap justify-start sm:justify-end">
           <Link
             href={`/themes/${encodeURIComponent(AI_UNICORNS_THEME_NAME)}`}
-            className="text-[10px] font-bold uppercase tracking-wide text-violet-300 border border-violet-500/35 bg-violet-500/5 px-3 py-2 rounded-lg hover:bg-violet-500/10 transition-all inline-flex items-center gap-2"
+            className="text-[10px] font-bold uppercase tracking-wide text-violet-700 border border-violet-500/35 bg-violet-500/10 hover:bg-violet-500/15 dark:text-violet-300 dark:bg-violet-500/5 dark:hover:bg-violet-500/10 transition-all inline-flex items-center gap-2"
             title="AIユニコーン（未上場×資本の源流）へ"
           >
             <span className="text-[12px] leading-none">AI</span>
@@ -51,7 +51,7 @@ export function ThemesNavigationSection(props: {
           </Link>
           <Link
             href="/etf-collection"
-            className="text-[10px] font-bold uppercase tracking-wide text-cyan-300 border border-cyan-500/35 bg-cyan-500/5 px-3 py-2 rounded-lg hover:bg-cyan-500/10 transition-all inline-flex items-center gap-2"
+            className="text-[10px] font-bold uppercase tracking-wide text-cyan-700 border border-cyan-500/35 bg-cyan-500/10 hover:bg-cyan-500/15 dark:text-cyan-300 dark:bg-cyan-500/5 dark:hover:bg-cyan-500/10 transition-all inline-flex items-center gap-2"
             title="Global Strata（ETF Collection）へ"
           >
             <Radar size={14} />
@@ -68,8 +68,8 @@ export function ThemesNavigationSection(props: {
           const inPortfolio = inPortfolioThemeNames.has(name);
           const badgeLabel = inPortfolio ? "In Portfolio" : "Researching";
           const badgeClass = inPortfolio
-            ? "border-emerald-400/40 text-emerald-300 bg-emerald-500/10"
-            : "border-slate-400/25 text-slate-300 bg-slate-500/10";
+            ? "border-emerald-500/35 text-emerald-700 bg-emerald-500/10 dark:text-emerald-300"
+            : "border-border text-muted-foreground bg-muted/40";
           const desc = excerpt(t.description, 110);
 
           return (

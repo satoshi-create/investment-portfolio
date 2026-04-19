@@ -1,6 +1,7 @@
 "use client";
 
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
+import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
 import { SignalsSection } from "@/src/components/dashboard/SignalsSection";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
 import { EMPTY_SUMMARY, useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
@@ -52,6 +53,8 @@ export default function CockpitPortfolioPage() {
         onTrade={(init) => openTradeForm(init)}
         onTradeNew={() => openTradeForm(null)}
       />
+
+      <HoldingsDetailTable stocks={stocks} />
     </div>
   );
 }

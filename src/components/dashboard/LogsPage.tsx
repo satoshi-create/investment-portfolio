@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 import type {
   ClosedTradeDashboardRow,
@@ -78,17 +77,9 @@ export function LogsPage() {
   }, [holdingSnapshots]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 md:p-8 font-sans">
-      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
+    <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
           <div>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-accent-cyan transition-colors mb-3"
-            >
-              <ArrowLeft size={14} />
-              ダッシュボードへ
-            </Link>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">ログ</h1>
             <p className="text-[10px] text-muted-foreground mt-1">
               Portfolio / Holding スナップショットと取引履歴（読み取り専用）。記録はダッシュボードの{" "}
@@ -112,10 +103,9 @@ export function LogsPage() {
           </div>
         </div>
 
-        <PortfolioSnapshotsTable rows={portfolioSnapshots} holdingsBySnapshotDate={holdingsBySnapshotDate} />
-        <HoldingDailySnapshotsTable snapshotDate={holdingSnapshotsDate} rows={holdingSnapshots} />
-        <ClosedTradesTable rows={closedTrades} />
-      </div>
+      <PortfolioSnapshotsTable rows={portfolioSnapshots} holdingsBySnapshotDate={holdingsBySnapshotDate} />
+      <HoldingDailySnapshotsTable snapshotDate={holdingSnapshotsDate} rows={holdingSnapshots} />
+      <ClosedTradesTable rows={closedTrades} />
     </div>
   );
 }
