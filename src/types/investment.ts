@@ -98,6 +98,12 @@ export interface Stock {
   unrealizedPnlPercent: number;
   /** 直近 2 件の終値から算出した前日比 %（算出不可は null） */
   dayChangePercent: number | null;
+  /** ライブ Alpha 用の前日終値（quote の騰落率から逆算、または alpha_history 系列）。算出不可は null */
+  previousClose: number | null;
+  /** 対応ベンチマークの当日騰落率（%）。米国→^GSPC、日本→^TPX（取得失敗時は ETF 等にフォールバックし得る） */
+  benchmarkDayChangePercent: number | null;
+  /** `benchmarkDayChangePercent` のデータ源シンボル（ツールチップ用） */
+  liveAlphaBenchmarkTicker: string | null;
   /**
    * `alpha_history` で参照した最新日次 Alpha の観測日（YYYY-MM-DD）。系列が空なら null。
    */
@@ -197,6 +203,10 @@ export type DashboardSummary = {
    * サーバーで生成し、クライアントはそのまま表示。
    */
   portfolioAvgAlphaAsOfDisplay: string | null;
+  /** 過去スナップショット（`portfolio_daily_snapshots`）から累積したアウトパフォーム（%）。未記録時は null。 */
+  cumulativeAlphaDeviationPct: number | null;
+  /** 現在値ベースの Live Alpha（全保有の時価加重平均、%）。算出不可時は null。 */
+  portfolioTotalLiveAlphaPct: number | null;
   /** VOO の参照価格（USD）。ライブ quote 優先、失敗時は日足終値。 */
   benchmarkLatestPrice: number;
   /** VOO の変化率 %（ライブ時は quote、日次時は直近2本の日足から。算出不可は null）。 */

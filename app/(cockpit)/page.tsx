@@ -41,6 +41,8 @@ export default function CockpitPortfolioPage() {
         onEarningsNoteSaved={() => void loadDashboard()}
         onTrade={(init) => openTradeForm(init)}
         onTradeNew={() => openTradeForm(null)}
+        livePricePollIntervalMs={45_000}
+        onLivePricePoll={() => void loadDashboard()}
       />
 
       <HoldingsDetailTable stocks={stocks} />

@@ -279,6 +279,38 @@ export function computeAlphaPercent(
   return roundAlphaMetric(stockReturnPercent - benchmarkReturnPercent);
 }
 
+/** Inventory「ライブ Alpha」用: 米国株は S&P 500（指数）、日本は TOPIX（指数）。 */
+export const LIVE_ALPHA_US_BENCHMARK_TICKER = "^GSPC";
+/** Yahoo で欠ける場合は `dashboard-data` 側で TOPIX ETF にフォールバックする。 */
+export const LIVE_ALPHA_JP_BENCHMARK_TICKER = "^TPX";
+
+/**
+ * 現在値と前日終値から算出した銘柄リターン（%）。
+ * `dailyReturnPercent` と同じ定義だが live / prev を明示するラッパー。
+ */
+export function computeStockDayReturnPercentLive(
+  livePrice: number | null,
+  previousClose: number | null,
+): number | null {
+  if (livePrice == null || previousClose == null || previousClose <= 0 || !Number.isFinite(livePrice)) {
+    return null;
+  }
+  return dailyReturnPercent(previousClose, livePrice);
+}
+
+/**
+ * ライブ Alpha（日次のベンチ対比超過 %）。
+ * Stock_Return − Benchmark_Return（いずれも当日 vs 前日終値）。
+ */
+export function computeLiveAlphaDayPercent(input: {
+  livePrice: number | null;
+  previousClose: number | null;
+  benchmarkDayChangePercent: number | null;
+}): number | null {
+  const sr = computeStockDayReturnPercentLive(input.livePrice, input.previousClose);
+  return computeAlphaPercent(sr, input.benchmarkDayChangePercent);
+}
+
 /** `alpha_history` 等から渡す 1 日分の超過リターン（Ticker% − Bench%）。 */
 export type DatedAlphaRow = {
   /** `recorded_at`（YYYY-MM-DD または ISO。先頭 10 文字を日付として扱う） */

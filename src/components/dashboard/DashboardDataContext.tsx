@@ -30,6 +30,7 @@ const DEFAULT_USER_ID = defaultProfileUserId();
 
 /** `/api/dashboard` のサーバー側ソフト上限（既定 45s）より長くし、先に Abort しないようにする */
 const DASHBOARD_FETCH_TIMEOUT_MS = 55_000;
+const LIVE_PULSE_POLL_MS = 45_000;
 
 export const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAverageAlpha: 0,
@@ -37,6 +38,8 @@ export const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAvgAlphaStalestLatestYmd: null,
   portfolioAvgAlphaFreshestLatestYmd: null,
   portfolioAvgAlphaAsOfDisplay: null,
+  cumulativeAlphaDeviationPct: null,
+  portfolioTotalLiveAlphaPct: null,
   benchmarkLatestPrice: 0,
   benchmarkChangePct: null,
   benchmarkPriceSource: "close",
@@ -158,6 +161,14 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     void loadDashboard();
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadDashboard();
+    }, LIVE_PULSE_POLL_MS);
+    return () => window.clearInterval(id);
   }, [loadDashboard]);
 
   useEffect(() => {

@@ -28,7 +28,10 @@ import {
   convertValueToJpy,
   CUMULATIVE_ALPHA_DISPLAY_ANCHOR_YMD,
   defaultBenchmarkTickerForTicker,
+  computeLiveAlphaDayPercent,
   dailyReturnPercent,
+  LIVE_ALPHA_JP_BENCHMARK_TICKER,
+  LIVE_ALPHA_US_BENCHMARK_TICKER,
   mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
   roundAlphaMetric,
@@ -213,6 +216,29 @@ function lastTwoClosesFromSeries(series: AlphaPoint[]): { prevClose: number; lat
   return { prevClose: found[1]!, latestClose: found[0]! };
 }
 
+/** ライブ株価と（取得できれば）当日の前日比%から前日終値を推定。 */
+function derivePreviousCloseForLiveAlpha(input: {
+  currentPrice: number | null;
+  hybridChangePct: number | null;
+  series: AlphaPoint[];
+}): number | null {
+  const { currentPrice, hybridChangePct, series } = input;
+  if (
+    currentPrice != null &&
+    hybridChangePct != null &&
+    Number.isFinite(hybridChangePct) &&
+    currentPrice > 0
+  ) {
+    const denom = 1 + hybridChangePct / 100;
+    if (Number.isFinite(denom) && Math.abs(denom) > 1e-12) {
+      const prev = currentPrice / denom;
+      if (Number.isFinite(prev) && prev > 0) return prev;
+    }
+  }
+  const two = lastTwoClosesFromSeries(series);
+  return two?.prevClose ?? null;
+}
+
 function parseAvgAcquisitionPrice(raw: unknown): number | null {
   if (raw == null) return null;
   const n = Number(raw);
@@ -351,6 +377,161 @@ type BenchmarkSnapshot = {
   priceSource: "live" | "close";
   asOf: string | null;
 };
+
+type LiveAlphaBenchmarkContext = {
+  usBenchmarkChangePct: number | null;
+  jpBenchmarkChangePct: number | null;
+  usBenchmarkTicker: string;
+  jpBenchmarkTicker: string;
+};
+
+type LiveBenchSnap = { changePct: number | null; ticker: string };
+
+async function resolveLiveAlphaUsBenchmark(): Promise<LiveBenchSnap> {
+  const t = LIVE_ALPHA_US_BENCHMARK_TICKER;
+  try {
+    const live = await fetchLiveQuoteSnapshot(t, null);
+    if (live != null && live.changePct != null && Number.isFinite(live.changePct)) {
+      return { changePct: roundAlphaMetric(live.changePct), ticker: t };
+    }
+    const snap = await fetchLatestPriceWithChangePct(t, null);
+    if (snap.changePct != null && Number.isFinite(snap.changePct) && snap.close > 0) {
+      return { changePct: snap.changePct, ticker: t };
+    }
+  } catch {
+    /* Yahoo 等の失敗は null */
+  }
+  return { changePct: null, ticker: t };
+}
+
+/** ^TPX が取得できない環境では TOPIX ETF（既定ベンチ）へフォールバック。 */
+async function resolveLiveAlphaJpBenchmark(): Promise<LiveBenchSnap> {
+  const primary = LIVE_ALPHA_JP_BENCHMARK_TICKER;
+  try {
+    const live = await fetchLiveQuoteSnapshot(primary, null);
+    if (live != null && live.changePct != null && Number.isFinite(live.changePct)) {
+      return { changePct: roundAlphaMetric(live.changePct), ticker: primary };
+    }
+    const snap = await fetchLatestPriceWithChangePct(primary, null);
+    if (snap.changePct != null && Number.isFinite(snap.changePct) && snap.close > 0) {
+      return { changePct: snap.changePct, ticker: primary };
+    }
+  } catch {
+    /* continue */
+  }
+  const fb = TOPIX_ETF_BENCHMARK_TICKER;
+  try {
+    const live = await fetchLiveQuoteSnapshot(fb, null);
+    if (live != null && live.changePct != null && Number.isFinite(live.changePct)) {
+      return { changePct: roundAlphaMetric(live.changePct), ticker: fb };
+    }
+    const snap = await fetchLatestPriceWithChangePct(fb, null);
+    if (snap.changePct != null && Number.isFinite(snap.changePct) && snap.close > 0) {
+      return { changePct: snap.changePct, ticker: fb };
+    }
+  } catch {
+    /* */
+  }
+  return { changePct: null, ticker: primary };
+}
+
+export async function resolveLiveAlphaBenchmarkContext(): Promise<LiveAlphaBenchmarkContext> {
+  const [us, jp] = await Promise.all([resolveLiveAlphaUsBenchmark(), resolveLiveAlphaJpBenchmark()]);
+  return {
+    usBenchmarkChangePct: us.changePct,
+    jpBenchmarkChangePct: jp.changePct,
+    usBenchmarkTicker: us.ticker,
+    jpBenchmarkTicker: jp.ticker,
+  };
+}
+
+type PortfolioSnapshotReturnRow = {
+  snapshotDate: string;
+  portfolioReturnVsPrevPct: number | null;
+  benchmarkReturnVsPrevPct: number | null;
+};
+
+function isSqliteMissingColumn(e: unknown, col: string): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes(col.toLowerCase());
+}
+
+async function fetchPortfolioSnapshotReturnRows(
+  db: Client,
+  userId: string,
+  cap = 420,
+): Promise<PortfolioSnapshotReturnRow[]> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT snapshot_date, portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct
+            FROM portfolio_daily_snapshots
+            WHERE user_id = ?
+            ORDER BY snapshot_date ASC
+            LIMIT ?`,
+      args: [userId, cap],
+    });
+    return (rs.rows as Record<string, unknown>[]).map((r) => ({
+      snapshotDate: String(r["snapshot_date"] ?? ""),
+      portfolioReturnVsPrevPct:
+        r["portfolio_return_vs_prev_pct"] != null && Number.isFinite(Number(r["portfolio_return_vs_prev_pct"]))
+          ? Number(r["portfolio_return_vs_prev_pct"])
+          : null,
+      benchmarkReturnVsPrevPct:
+        r["benchmark_return_vs_prev_pct"] != null && Number.isFinite(Number(r["benchmark_return_vs_prev_pct"]))
+          ? Number(r["benchmark_return_vs_prev_pct"])
+          : null,
+    }));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const lower = msg.toLowerCase();
+    if (lower.includes("no such table") && lower.includes("portfolio_daily_snapshots")) return [];
+    if (
+      isSqliteMissingColumn(e, "portfolio_return_vs_prev_pct") ||
+      isSqliteMissingColumn(e, "benchmark_return_vs_prev_pct")
+    ) {
+      return [];
+    }
+    throw e;
+  }
+}
+
+function computeCumulativeAlphaDeviationPctFromSnapshotReturns(rows: PortfolioSnapshotReturnRow[]): number | null {
+  if (rows.length < 2) return null;
+  let gPort = 1;
+  let gBench = 1;
+  let used = 0;
+  for (const r of rows) {
+    const pr = r.portfolioReturnVsPrevPct;
+    const br = r.benchmarkReturnVsPrevPct;
+    if (pr == null || br == null || !Number.isFinite(pr) || !Number.isFinite(br)) continue;
+    gPort *= 1 + pr / 100;
+    gBench *= 1 + br / 100;
+    used += 1;
+  }
+  if (used === 0) return null;
+  if (!Number.isFinite(gPort) || !Number.isFinite(gBench) || gBench <= 0) return null;
+  return roundAlphaMetric(((gPort / gBench) - 1) * 100);
+}
+
+function computePortfolioTotalLiveAlphaPctWeighted(stocks: Stock[]): number | null {
+  let num = 0;
+  let den = 0;
+  for (const s of stocks) {
+    const mv = Number.isFinite(s.marketValue) && s.marketValue > 0 ? s.marketValue : 0;
+    if (mv <= 0) continue;
+    const a = computeLiveAlphaDayPercent({
+      livePrice: s.currentPrice,
+      previousClose: s.previousClose,
+      benchmarkDayChangePercent: s.benchmarkDayChangePercent,
+    });
+    if (a == null || !Number.isFinite(a)) continue;
+    num += a * mv;
+    den += mv;
+  }
+  if (den <= 0) return null;
+  return roundAlphaMetric(num / den);
+}
 
 /** VOO: ライブ `quote` 最優先、次に日足 chart（保有銘柄のハイブリッドと同方針）。 */
 async function resolveBenchmarkSnapshot(): Promise<BenchmarkSnapshot> {
@@ -842,6 +1023,7 @@ function buildDraftsFromHoldingRows(
   fxUsdJpy: number,
   hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
   efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
+  liveAlphaCtx: LiveAlphaBenchmarkContext,
 ): StockDraft[] {
   return rows.map((row) => {
     const id = String(row.id);
@@ -883,6 +1065,15 @@ function buildDraftsFromHoldingRows(
     const sector = parseSector(row.sector);
     const instrumentKind = classifyTickerInstrument(ticker);
     const countryName = instrumentKind === "US_EQUITY" ? "米国" : "日本";
+    const previousClose = derivePreviousCloseForLiveAlpha({
+      currentPrice,
+      hybridChangePct: fromHybrid != null && fromHybrid.changePct != null ? fromHybrid.changePct : null,
+      series,
+    });
+    const benchmarkDayChangePercent =
+      instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkChangePct : liveAlphaCtx.jpBenchmarkChangePct;
+    const liveAlphaBenchmarkTicker =
+      instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkTicker : liveAlphaCtx.jpBenchmarkTicker;
     const research = researchByTicker.get(ticker.toUpperCase()) ?? null;
     const nextEarningsDate = research?.nextEarningsDate ?? null;
     const exDividendDate = research?.exDividendDate ?? null;
@@ -992,6 +1183,9 @@ function buildDraftsFromHoldingRows(
       ruleOf40,
       judgmentStatus: judgment.status,
       judgmentReason: judgment.reason,
+      previousClose,
+      benchmarkDayChangePercent,
+      liveAlphaBenchmarkTicker,
     };
   });
 }
@@ -1926,7 +2120,7 @@ export async function getThemeDetailData(
   const perf = { enabled: options?.perf === true, requestId: options?.requestId ?? null };
   const fast = options?.fast === true;
   const t0 = perf.enabled ? Date.now() : 0;
-  const [theme, benchmarkSnap, fxMaybe, h] = await Promise.all([
+  const [theme, benchmarkSnap, fxMaybe, h, liveAlphaCtx] = await Promise.all([
     (async () => {
       const t = perf.enabled ? Date.now() : 0;
       const out = await fetchInvestmentThemeRecord(db, userId, themeName);
@@ -1955,6 +2149,12 @@ export async function getThemeDetailData(
         args: [userId],
       });
       if (perf.enabled && perf.requestId) console.log(`[perf] ${perf.requestId} holdingsQuery ms=${Date.now() - t}`);
+      return out;
+    })(),
+    (async () => {
+      const t = perf.enabled ? Date.now() : 0;
+      const out = await resolveLiveAlphaBenchmarkContext();
+      if (perf.enabled && perf.requestId) console.log(`[perf] ${perf.requestId} liveAlphaBenchmarks ms=${Date.now() - t}`);
       return out;
     })(),
   ]);
@@ -2047,6 +2247,7 @@ export async function getThemeDetailData(
       fxUsdJpy,
       hybridPriceByHoldingKey,
       efficiencyByTickerUpper,
+      liveAlphaCtx,
     );
     themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
@@ -2347,6 +2548,8 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
         portfolioAvgAlphaStalestLatestYmd: null,
         portfolioAvgAlphaFreshestLatestYmd: null,
         portfolioAvgAlphaAsOfDisplay: null,
+        cumulativeAlphaDeviationPct: null,
+        portfolioTotalLiveAlphaPct: null,
         benchmarkLatestPrice: benchmarkSnap.close,
         benchmarkChangePct: benchmarkSnap.changePct,
         benchmarkPriceSource: benchmarkSnap.priceSource,
@@ -2363,14 +2566,17 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   }
 
   const tickers = [...new Set(h.rows.map((r) => String(r.ticker)))];
-  const [allThemes, alphaRows, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
-    fetchAllInvestmentThemes(db, userId),
-    fetchAlphaHistoryRowsForTickers(db, userId, tickers),
-    resolveBenchmarkSnapshot(),
-    resolveFxUsdJpyRate(),
-    fetchTotalRealizedPnlJpy(db, userId),
-    fetchGlobalMarketIndicators(),
-  ]);
+  const [allThemes, alphaRows, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators, liveAlphaCtx, snapshotReturnRows] =
+    await Promise.all([
+      fetchAllInvestmentThemes(db, userId),
+      fetchAlphaHistoryRowsForTickers(db, userId, tickers),
+      resolveBenchmarkSnapshot(),
+      resolveFxUsdJpyRate(),
+      fetchTotalRealizedPnlJpy(db, userId),
+      fetchGlobalMarketIndicators(),
+      resolveLiveAlphaBenchmarkContext(),
+      fetchPortfolioSnapshotReturnRows(db, userId),
+    ]);
 
   const byTicker = buildByTickerFromAlphaRows(alphaRows);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
@@ -2397,6 +2603,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     fxUsdJpy,
     hybridPriceByHoldingKey,
     efficiencyByTickerUpper,
+    liveAlphaCtx,
   );
 
   const totalMarketValue = drafts.reduce(
@@ -2426,12 +2633,16 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     paSummary.stalestLatestObservationYmd,
     paSummary.freshestLatestObservationYmd,
   );
+  const cumulativeAlphaDeviationPct = computeCumulativeAlphaDeviationPctFromSnapshotReturns(snapshotReturnRows);
+  const portfolioTotalLiveAlphaPct = computePortfolioTotalLiveAlphaPctWeighted(stocks);
   const summary = {
     portfolioAverageAlpha: paSummary.average,
     portfolioAverageFxNeutralAlpha: portfolioAverageFxNeutralDailyAlphaPct(stocks),
     portfolioAvgAlphaStalestLatestYmd: paSummary.stalestLatestObservationYmd,
     portfolioAvgAlphaFreshestLatestYmd: paSummary.freshestLatestObservationYmd,
     portfolioAvgAlphaAsOfDisplay,
+    cumulativeAlphaDeviationPct,
+    portfolioTotalLiveAlphaPct,
     benchmarkLatestPrice: benchmarkSnap.close,
     benchmarkChangePct: benchmarkSnap.changePct,
     benchmarkPriceSource: benchmarkSnap.priceSource,
@@ -2545,6 +2756,9 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
         row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
       expectationCategory: parseExpectationCategory(row.expectation_category),
       earningsSummaryNote: null,
+      previousClose: null,
+      benchmarkDayChangePercent: null,
+      liveAlphaBenchmarkTicker: null,
     };
   });
 }

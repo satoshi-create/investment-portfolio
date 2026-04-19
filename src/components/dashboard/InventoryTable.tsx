@@ -41,6 +41,7 @@ import {
 } from "@/src/lib/format-display-currency";
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
+import { computeLiveAlphaDayPercent } from "@/src/lib/alpha-logic";
 import {
   DEFAULT_COLUMN_ORDER,
   type InventoryColId,
@@ -84,10 +85,38 @@ function epsOf(s: Stock): number | null {
   return v != null && Number.isFinite(v) ? v : null;
 }
 
+function liveDailyAlphaPct(s: Stock): number | null {
+  return computeLiveAlphaDayPercent({
+    livePrice: s.currentPrice,
+    previousClose: s.previousClose,
+    benchmarkDayChangePercent: s.benchmarkDayChangePercent,
+  });
+}
+
+/** 対ベンチで大きく遅行（ライブ日次 Alpha が極端にマイナス） */
+function isLiveAlphaOpportunityRow(s: Stock): boolean {
+  const a = liveDailyAlphaPct(s);
+  return a != null && a <= -2;
+}
+
 function isOpportunityRow(s: Stock, themeStructuralTrendUp: boolean): boolean {
+  if (isLiveAlphaOpportunityRow(s)) return true;
   if (!themeStructuralTrendUp) return false;
   const z = deviationOf(s);
   return z != null && z <= -1.5;
+}
+
+function recordedLastAlphaPct(s: Stock): number | null {
+  if (s.alphaHistory.length === 0) return null;
+  const v = s.alphaHistory[s.alphaHistory.length - 1]!;
+  return Number.isFinite(v) ? v : null;
+}
+
+/** 並び・表示用: ライブ日次 Alpha を優先し、無ければ記録された最新日次 Alpha */
+function sortableAlphaValue(s: Stock): number | null {
+  const live = liveDailyAlphaPct(s);
+  if (live != null && Number.isFinite(live)) return live;
+  return recordedLastAlphaPct(s);
 }
 
 function ruleOf40SortValue(s: Stock): number | null {
@@ -154,6 +183,8 @@ export function InventoryTable({
   themeStructuralTrendUp = false,
   resolveEcosystemKeep,
   onToggleEcosystemKeep,
+  livePricePollIntervalMs,
+  onLivePricePoll,
 }: {
   stocks: Stock[];
   totalHoldings: number;
@@ -171,6 +202,9 @@ export function InventoryTable({
   /** テーマページ: エコシステムに同一銘柄があるときキープトグルを表示 */
   resolveEcosystemKeep?: (ticker: string) => { memberId: string; isKept: boolean } | null;
   onToggleEcosystemKeep?: (memberId: string) => void | Promise<void>;
+  /** 設定時、間隔ごとに `onLivePricePoll` で株価・ベンチを再取得（ライブ Alpha の更新用） */
+  livePricePollIntervalMs?: number;
+  onLivePricePoll?: () => void | Promise<void>;
 }) {
   const { convert, viewCurrency, alphaDisplayMode } = useCurrencyConverter();
 
@@ -244,6 +278,13 @@ export function InventoryTable({
     saveInventoryColumnOrder(columnOrder);
   }, [columnOrder]);
 
+  useEffect(() => {
+    const ms = livePricePollIntervalMs ?? 0;
+    if (ms <= 0 || !onLivePricePoll) return;
+    const id = window.setInterval(() => void onLivePricePoll(), ms);
+    return () => window.clearInterval(id);
+  }, [livePricePollIntervalMs, onLivePricePoll]);
+
   const visibleColumnIds = useMemo(
     () =>
       columnOrder.filter((id) => {
@@ -288,7 +329,6 @@ export function InventoryTable({
 
   const sortedStocks = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
-    const lastAlpha = (s: Stock) => (s.alphaHistory.length > 0 ? s.alphaHistory[s.alphaHistory.length - 1]! : null);
     const key = sortKey;
     const arr = [...filteredStocks];
     arr.sort((a, b) => {
@@ -303,8 +343,8 @@ export function InventoryTable({
       };
 
       if (key === "asset") return dir * cmpStr(a.ticker, b.ticker);
-      if (key === "alpha") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
-      if (key === "trend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
+      if (key === "alpha") return dir * cmpNum(sortableAlphaValue(a), sortableAlphaValue(b));
+      if (key === "trend") return dir * cmpNum(recordedLastAlphaPct(a), recordedLastAlphaPct(b));
       if (key === "position") return dir * cmpNum(a.marketValue, b.marketValue);
       if (key === "judgment") {
         const ja = judgmentPriorityRank(a.judgmentStatus as JudgmentStatus);
@@ -357,8 +397,10 @@ export function InventoryTable({
     let zN = 0;
     let ddSum = 0;
     let ddN = 0;
-    let alphaRowSum = 0;
-    let alphaRowN = 0;
+    let dailyAlphaRowSum = 0;
+    let dailyAlphaRowN = 0;
+    let liveAlphaRowSum = 0;
+    let liveAlphaRowN = 0;
     for (const s of rows) {
       const z = deviationOf(s);
       if (z != null) {
@@ -370,12 +412,15 @@ export function InventoryTable({
         ddSum += dd;
         ddN += 1;
       }
-      if (s.alphaHistory.length > 0) {
-        const la = s.alphaHistory[s.alphaHistory.length - 1]!;
-        if (Number.isFinite(la)) {
-          alphaRowSum += la;
-          alphaRowN += 1;
-        }
+      const da = recordedLastAlphaPct(s);
+      if (da != null && Number.isFinite(da)) {
+        dailyAlphaRowSum += da;
+        dailyAlphaRowN += 1;
+      }
+      const la = liveDailyAlphaPct(s);
+      if (la != null && Number.isFinite(la)) {
+        liveAlphaRowSum += la;
+        liveAlphaRowN += 1;
       }
     }
 
@@ -386,7 +431,8 @@ export function InventoryTable({
       if (s.weight > 0 && Number.isFinite(s.weight)) sumWt += s.weight;
     }
 
-    const avgAlphaVisible = alphaRowN > 0 ? alphaRowSum / alphaRowN : null;
+    const avgDailyAlphaVisible = dailyAlphaRowN > 0 ? dailyAlphaRowSum / dailyAlphaRowN : null;
+    const avgLiveAlphaVisible = liveAlphaRowN > 0 ? liveAlphaRowSum / liveAlphaRowN : null;
 
     let peSum = 0;
     let peN = 0;
@@ -421,7 +467,8 @@ export function InventoryTable({
       avgFcfYield,
       avgZ: zN > 0 ? zSum / zN : null,
       avgDd: ddN > 0 ? ddSum / ddN : null,
-      avgAlphaVisible,
+      avgDailyAlphaVisible,
+      avgLiveAlphaVisible,
       avgPeVisible: peN > 0 ? peSum / peN : null,
       avgEpsVisible: epsN > 0 ? epsSum / epsN : null,
       avgFiveDayAlphaDelta: trend5dN > 0 ? trend5dSum / trend5dN : null,
@@ -722,7 +769,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-6 py-4 text-right cursor-pointer select-none"
-                            title="Sort"
+                            title="対ベンチ日次超過（現在値×^GSPC / ^TPX）。データ欠損時は記録 Alpha で並び替え"
                           >
                             <button
                               type="button"
@@ -730,6 +777,9 @@ export function InventoryTable({
                               onClick={() => toggleSort("alpha")}
                             >
                               <span className="block">Alpha{sortMark("alpha")}</span>
+                              <span className="block text-[8px] font-normal normal-case tracking-normal text-muted-foreground/85">
+                                Live daily
+                              </span>
                               {alphaDisplayMode === "fxNeutral" ? (
                                 <span className="block text-[8px] font-normal normal-case tracking-normal text-muted-foreground/85">
                                   FX-neutral
@@ -833,6 +883,7 @@ export function InventoryTable({
             </thead>
           <tbody className="divide-y divide-border/60">
             {sortedStocks.map((stock) => {
+              const liveA = liveDailyAlphaPct(stock);
               const opp = isOpportunityRow(stock, themeStructuralTrendUp);
               const z = deviationOf(stock);
               const dd = drawdownOf(stock);
@@ -853,7 +904,7 @@ export function InventoryTable({
                                   {opp ? (
                                     <span
                                       className="shrink-0 text-base leading-none"
-                                      title="テーマの構造トレンドは上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"
+                                      title="テーマ構造トレンド上向きでの統計的な割安（σ）、またはライブ日次 Alpha が対ベンチで −2% 以下の乖離（要確認）"
                                       aria-label="Opportunity"
                                     >
                                       ✨
@@ -1050,22 +1101,65 @@ export function InventoryTable({
                         return (
                           <td
                             key={colId}
-                            className={`px-6 py-4 text-right font-mono font-bold ${
-                              stock.alphaHistory.length === 0
-                                ? "text-muted-foreground"
-                                : stock.alphaHistory.slice(-1)[0]! > 0
-                                  ? "text-emerald-400"
-                                  : "text-rose-400"
+                            title={
+                              `上段: 直近取引日の確定日次Alpha（dailyAlpha）\n` +
+                              `下段: 現在値に連動したLive Alpha（liveAlpha, vs ${stock.liveAlphaBenchmarkTicker ?? "Benchmark"}）`
+                            }
+                            className={`px-6 py-4 text-right font-mono ${
+                              liveA != null && liveA <= -2 ? "rounded-md ring-1 ring-cyan-400/45 bg-cyan-500/[0.06]" : ""
                             }`}
                           >
-                            {stock.alphaHistory.length === 0 ? (
-                              "—"
-                            ) : (
-                              <>
-                                {stock.alphaHistory.slice(-1)[0]! > 0 ? "+" : ""}
-                                {stock.alphaHistory.slice(-1)[0]}%
-                              </>
-                            )}
+                            <div className="flex flex-col items-end leading-tight">
+                              {(() => {
+                                const dailyAlpha = recordedLastAlphaPct(stock);
+                                const cls =
+                                  dailyAlpha == null
+                                    ? "text-muted-foreground"
+                                    : dailyAlpha > 0
+                                      ? "text-emerald-400 font-bold"
+                                      : dailyAlpha < 0
+                                        ? "text-rose-400 font-bold"
+                                        : "text-muted-foreground font-bold";
+                                return (
+                                  <span className={`tabular-nums ${cls}`} aria-label="daily alpha">
+                                    {dailyAlpha == null ? (
+                                      "—"
+                                    ) : (
+                                      <>
+                                        {dailyAlpha > 0 ? "+" : ""}
+                                        {dailyAlpha.toFixed(2)}%
+                                      </>
+                                    )}
+                                  </span>
+                                );
+                              })()}
+
+                              {(() => {
+                                const cls =
+                                  liveA == null
+                                    ? "text-muted-foreground"
+                                    : liveA > 0
+                                      ? "text-emerald-300/80"
+                                      : liveA < 0
+                                        ? "text-rose-300/80"
+                                        : "text-muted-foreground";
+                                return (
+                                  <span
+                                    className={`tabular-nums text-xs whitespace-nowrap ${cls}`}
+                                    aria-label="live alpha"
+                                  >
+                                    {liveA == null ? (
+                                      "(—)"
+                                    ) : (
+                                      <>
+                                        ({liveA > 0 ? "+" : ""}
+                                        {liveA.toFixed(2)}%)
+                                      </>
+                                    )}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                           </td>
                         );
                       case "trend":
@@ -1264,22 +1358,40 @@ export function InventoryTable({
                   case "alpha":
                     return (
                       <td key={colId} className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
-                        <div className="flex flex-col items-end gap-0.5">
+                        <div
+                          className="flex flex-col items-end gap-0.5"
+                          title={"上段: 表示行の確定日次Alpha（dailyAlpha）の単純平均\n下段: 表示行の現在連動Alpha（liveAlpha）の単純平均"}
+                        >
                           <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
-                            Alpha（表示行）
+                            Avg Alpha
                           </span>
                           <span
-                            className={`font-bold ${
-                              footerStats.avgAlphaVisible != null && footerStats.avgAlphaVisible > 0
+                            className={`font-bold tabular-nums ${
+                              footerStats.avgDailyAlphaVisible != null && footerStats.avgDailyAlphaVisible > 0
                                 ? "text-emerald-400"
-                                : footerStats.avgAlphaVisible != null && footerStats.avgAlphaVisible < 0
+                                : footerStats.avgDailyAlphaVisible != null && footerStats.avgDailyAlphaVisible < 0
                                   ? "text-rose-400"
                                   : "text-slate-400"
                             }`}
+                            aria-label="avg daily alpha"
                           >
-                            {footerStats.avgAlphaVisible != null && Number.isFinite(footerStats.avgAlphaVisible)
-                              ? `${footerStats.avgAlphaVisible > 0 ? "+" : ""}${footerStats.avgAlphaVisible.toFixed(2)}%`
+                            {footerStats.avgDailyAlphaVisible != null && Number.isFinite(footerStats.avgDailyAlphaVisible)
+                              ? `${footerStats.avgDailyAlphaVisible > 0 ? "+" : ""}${footerStats.avgDailyAlphaVisible.toFixed(2)}%`
                               : "—"}
+                          </span>
+                          <span
+                            className={`text-xs tabular-nums whitespace-nowrap ${
+                              footerStats.avgLiveAlphaVisible != null && footerStats.avgLiveAlphaVisible > 0
+                                ? "text-emerald-300/80"
+                                : footerStats.avgLiveAlphaVisible != null && footerStats.avgLiveAlphaVisible < 0
+                                  ? "text-rose-300/80"
+                                  : "text-muted-foreground"
+                            }`}
+                            aria-label="avg live alpha"
+                          >
+                            {footerStats.avgLiveAlphaVisible != null && Number.isFinite(footerStats.avgLiveAlphaVisible)
+                              ? `(${footerStats.avgLiveAlphaVisible > 0 ? "+" : ""}${footerStats.avgLiveAlphaVisible.toFixed(2)}%)`
+                              : "(—)"}
                           </span>
                         </div>
                       </td>

@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, Menu, RefreshCw, ScrollText, X, Zap } from "lucide-react";
+import { Camera, LineChart, Menu, RefreshCw, ScrollText, X, Zap } from "lucide-react";
 import { usePathname } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
+import { EventCalendarModal } from "@/src/components/dashboard/EventCalendarModal";
+import { MarketBar } from "@/src/components/dashboard/MarketBar";
 import { LiveSignalsStrip } from "@/src/components/dashboard/LiveSignalsStrip";
 import { TradeEntryForm } from "@/src/components/dashboard/TradeEntryForm";
 import { EMPTY_SUMMARY, useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
 import { Sidebar } from "@/src/components/dashboard/Sidebar";
 import { CockpitRouteFade } from "@/src/components/dashboard/CockpitRouteFade";
 import { COCKPIT_MAIN_SCROLL_CLASS } from "@/src/components/dashboard/cockpit-layout-tokens";
+import { ThemeToggle } from "@/src/components/dashboard/ThemeToggle";
+import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 
 function CockpitHydrationSkeleton() {
   return (
@@ -35,6 +39,9 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [headerCompact, setHeaderCompact] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(false);
+  const [koyomiOpen, setKoyomiOpen] = useState(false);
+  const { viewCurrency, setViewCurrency } = useCurrencyConverter();
 
   useEffect(() => {
     // Close the drawer after navigation
@@ -65,6 +72,24 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
 
   const summary = data?.summary ?? EMPTY_SUMMARY;
   const signals = data?.signals ?? [];
+
+  useEffect(() => {
+    if (!marketOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMarketOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [marketOpen]);
+
+  useEffect(() => {
+    if (!marketOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [marketOpen]);
 
   if (!clientReady) {
     return <CockpitHydrationSkeleton />;
@@ -157,10 +182,12 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
               }`}
             >
               <DashboardHeader
-                totalAlpha={summary.portfolioAverageAlpha}
+                dailyAvgAlpha={summary.portfolioAverageAlpha}
                 portfolioFxNeutralAlpha={
                   summary.portfolioAverageFxNeutralAlpha ?? summary.portfolioAverageAlpha
                 }
+                cumulativeAlphaDeviationPct={summary.cumulativeAlphaDeviationPct ?? null}
+                totalLiveAlphaPct={summary.portfolioTotalLiveAlphaPct ?? null}
                 benchmarkPrice={summary.benchmarkLatestPrice}
                 benchmarkChangePct={summary.benchmarkChangePct}
                 benchmarkPriceSource={summary.benchmarkPriceSource ?? "close"}
@@ -223,7 +250,62 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
+              <div
+                className="inline-flex rounded-lg border border-border bg-background/80 p-0.5 shadow-sm"
+                role="group"
+                aria-label="表示通貨"
+              >
+                <button
+                  type="button"
+                  onClick={() => setViewCurrency("JPY")}
+                  className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
+                    viewCurrency === "JPY"
+                      ? "bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/35"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  ¥
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewCurrency("USD")}
+                  className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
+                    viewCurrency === "USD"
+                      ? "bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/35"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  $
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setMarketOpen(true)}
+                className="w-fit shrink-0 inline-flex items-center gap-1 rounded-md border border-border bg-card/60 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:gap-1.5 md:rounded-lg md:px-3 md:py-2 md:text-[10px]"
+                aria-haspopup="dialog"
+                aria-expanded={marketOpen}
+              >
+                <LineChart className="h-3 w-3 shrink-0 text-muted-foreground md:h-3.5 md:w-3.5" aria-hidden />
+                Market glance
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setKoyomiOpen(true)}
+                className="w-fit shrink-0 inline-flex items-center gap-1 rounded-md border border-border bg-card/60 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:gap-1.5 md:rounded-lg md:px-3 md:py-2 md:text-[10px]"
+                aria-haspopup="dialog"
+                aria-expanded={koyomiOpen}
+              >
+                <span aria-hidden>📅</span>
+                イベント（暦）
+              </button>
+
+              <div className="hidden sm:flex items-center gap-2">
+                <ThemeToggle />
+              </div>
+
               <Link
                 href="/logs"
                 className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-[10px] font-bold text-muted-foreground transition-all hover:bg-muted"
@@ -290,6 +372,50 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           </div>
+
+          {marketOpen ? (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4" role="presentation">
+              <button
+                type="button"
+                className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
+                aria-label="Close market glance"
+                onClick={() => setMarketOpen(false)}
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="market-glance-title"
+                className="relative z-10 flex max-h-[min(90dvh,56rem)] w-[min(100%,90vw)] max-w-4xl min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-6 sm:py-4">
+                  <h2
+                    id="market-glance-title"
+                    className="text-sm font-bold uppercase tracking-[0.12em] text-muted-foreground sm:text-base"
+                  >
+                    Market glance
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setMarketOpen(false)}
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation"
+                    aria-label="Close"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 text-sm sm:px-6 sm:py-5 sm:text-base [-webkit-overflow-scrolling:touch]">
+                  {(summary.marketIndicators ?? []).length === 0 ? (
+                    <p className="text-muted-foreground">市場指標を取得できませんでした。</p>
+                  ) : (
+                    <MarketBar indicators={summary.marketIndicators ?? []} showTitle={false} layout="modal" />
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <EventCalendarModal open={koyomiOpen} onOpenChange={setKoyomiOpen} />
 
           <div
             className={`${COCKPIT_MAIN_SCROLL_CLASS} cockpit-main-surface`}
