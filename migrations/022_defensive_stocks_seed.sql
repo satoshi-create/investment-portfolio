@@ -263,6 +263,7 @@ WITH rows AS (
          '過信の反省点',
          '["ロンリード"]',
          '[]',0,'2026-04-13','消滅'
+
 )
 INSERT INTO theme_ecosystem_members (
   id,

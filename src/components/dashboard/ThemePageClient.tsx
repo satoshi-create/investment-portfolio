@@ -1,5 +1,19 @@
 "use client";
 
+
+// ### 追加した銘柄を backfill（通常）
+// ```bash
+// npx tsx scripts/backfill-watchlist-alpha.ts --tickers 3994,4478,4443,3923,4776,4475,4180,4488 --days 120 --delay-ms 500
+// ```
+// ### まず確認だけ（dry-run）
+// ```bash
+// npx tsx scripts/backfill-watchlist-alpha.ts --tickers 2782,3002 --cleanup --dry-run
+// ```
+// ### 重複VOO掃除も含めて実行（注意：DELETEあり）
+// ```bash
+// npx tsx scripts/backfill-watchlist-alpha.ts --tickers 2782,3002 --cleanup
+// ```
+
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
