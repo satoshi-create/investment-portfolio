@@ -13,8 +13,8 @@ type Props = {
   dailyAvgAlpha: number;
   /** Lv.1 現地通貨ベースの平均（通常 `dailyAvgAlpha` と同値） */
   portfolioFxNeutralAlpha: number;
-  /** スナップショットから累積した総アウトパフォーム（%）。未記録時は null。 */
-  cumulativeAlphaDeviationPct: number | null;
+  /** 過去スナップショットの平均日次α（期待値、%）。未記録時は null。 */
+  averageDailyAlphaPct: number | null;
   /** 現在値連動のライブα（全保有・時価加重平均、%）。算出不可時は null。 */
   totalLiveAlphaPct: number | null;
   benchmarkPrice: number;
@@ -42,7 +42,7 @@ function formatAlphaPercent(value: number): { text: string; color: string } {
 export function DashboardHeader({
   dailyAvgAlpha,
   portfolioFxNeutralAlpha,
-  cumulativeAlphaDeviationPct,
+  averageDailyAlphaPct,
   totalLiveAlphaPct,
   benchmarkPrice,
   benchmarkChangePct,
@@ -56,14 +56,14 @@ export function DashboardHeader({
   const { convert, viewCurrency } = useCurrencyConverter();
   const alphaFmt = formatAlphaPercent(dailyAvgAlpha);
   const fxNeutralAlphaFmt = formatAlphaPercent(portfolioFxNeutralAlpha);
-  const cumulativeFmt = formatAlphaPercent(
-    cumulativeAlphaDeviationPct != null && Number.isFinite(cumulativeAlphaDeviationPct)
-      ? cumulativeAlphaDeviationPct
-      : Number.NaN,
+  const avgDailyFmt = formatAlphaPercent(
+    averageDailyAlphaPct != null && Number.isFinite(averageDailyAlphaPct) ? averageDailyAlphaPct : Number.NaN,
   );
   const liveFmt = formatAlphaPercent(
     totalLiveAlphaPct != null && Number.isFinite(totalLiveAlphaPct) ? totalLiveAlphaPct : Number.NaN,
   );
+  const pulseOutperforms =
+    averageDailyAlphaPct != null && Number.isFinite(averageDailyAlphaPct) && dailyAvgAlpha > averageDailyAlphaPct;
   const liveSubColor =
     totalLiveAlphaPct == null || !Number.isFinite(totalLiveAlphaPct)
       ? "text-muted-foreground"
@@ -72,14 +72,6 @@ export function DashboardHeader({
         : totalLiveAlphaPct < 0
           ? "text-rose-300/80"
           : "text-muted-foreground";
-  const vooDiffPct =
-    totalLiveAlphaPct != null &&
-    benchmarkChangePct != null &&
-    Number.isFinite(totalLiveAlphaPct) &&
-    Number.isFinite(benchmarkChangePct)
-      ? totalLiveAlphaPct - benchmarkChangePct
-      : null;
-  const vooDiffFmt = formatAlphaPercent(vooDiffPct != null ? vooDiffPct : Number.NaN);
   const benchText =
     benchmarkPrice > 0 && Number.isFinite(benchmarkPrice)
       ? formatLocalPriceForView(benchmarkPrice, "USD", viewCurrency, convert)
@@ -89,13 +81,8 @@ export function DashboardHeader({
       ? `${benchmarkChangePct > 0 ? "+" : ""}${benchmarkChangePct.toFixed(2)}%`
       : null;
 
-  const benchSubLabel = (() => {
-    if (benchChangeText) {
-      const basis = benchmarkPriceSource === "live" ? "Live (Yahoo quote)" : "Latest close (1D)";
-      return `${basis} · ${benchChangeText}`;
-    }
-    return benchmarkPriceSource === "live" ? "Live quote (USD, Yahoo)" : "Latest close (USD, Yahoo)";
-  })();
+  // VOOの当日%は数値のみ表示（データ源ラベルはUIに出さない）
+  const benchSubLabel = benchChangeText ?? "—";
 
   const benchAsOfTitle =
     benchmarkAsOf != null && benchmarkAsOf.length > 0
@@ -135,16 +122,27 @@ export function DashboardHeader({
           <div className="flex items-end gap-5">
             <div className="flex flex-col items-end font-mono leading-none">
               <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                Total α
+                Avg Daily α
               </span>
-              <span className={`text-3xl font-bold tabular-nums ${cumulativeFmt.color}`}>{cumulativeFmt.text}</span>
+              <span className={`text-3xl font-bold tabular-nums ${avgDailyFmt.color}`}>{avgDailyFmt.text}</span>
             </div>
 
             <div className="flex flex-col items-end font-mono leading-tight">
               <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                 Pulse
               </span>
-              <span className={`font-bold tabular-nums ${alphaFmt.color}`}>{alphaFmt.text}</span>
+              <span
+                className={`font-bold tabular-nums ${alphaFmt.color} ${
+                  pulseOutperforms ? "drop-shadow-[0_0_10px_rgba(34,211,238,0.20)]" : ""
+                }`}
+                title={
+                  pulseOutperforms
+                    ? "今日のαが平均日次α（期待値）を上回っています"
+                    : "今日のα（実績）"
+                }
+              >
+                {alphaFmt.text}
+              </span>
               <span className={`text-xs tabular-nums whitespace-nowrap ${liveSubColor}`}>({liveFmt.text})</span>
             </div>
 
@@ -154,12 +152,6 @@ export function DashboardHeader({
               </span>
               <span className="font-bold tabular-nums text-foreground/80">{benchText}</span>
               <span className="text-xs tabular-nums text-muted-foreground whitespace-nowrap">{benchSubLabel}</span>
-              <span
-                className={`text-xs font-semibold tabular-nums whitespace-nowrap ${vooDiffFmt.color}`}
-                title="目安: Live α（Pulse 下段）− VOO 当日%"
-              >
-                Δ {vooDiffFmt.text}
-              </span>
             </div>
           </div>
 

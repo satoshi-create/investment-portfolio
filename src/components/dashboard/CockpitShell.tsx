@@ -186,7 +186,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
                 portfolioFxNeutralAlpha={
                   summary.portfolioAverageFxNeutralAlpha ?? summary.portfolioAverageAlpha
                 }
-                cumulativeAlphaDeviationPct={summary.cumulativeAlphaDeviationPct ?? null}
+                averageDailyAlphaPct={summary.averageDailyAlphaPct ?? null}
                 totalLiveAlphaPct={summary.portfolioTotalLiveAlphaPct ?? null}
                 benchmarkPrice={summary.benchmarkLatestPrice}
                 benchmarkChangePct={summary.benchmarkChangePct}

@@ -449,6 +449,7 @@ type PortfolioSnapshotReturnRow = {
   snapshotDate: string;
   portfolioReturnVsPrevPct: number | null;
   benchmarkReturnVsPrevPct: number | null;
+  alphaVsPrevPct: number | null;
 };
 
 function isSqliteMissingColumn(e: unknown, col: string): boolean {
@@ -463,14 +464,27 @@ async function fetchPortfolioSnapshotReturnRows(
   cap = 420,
 ): Promise<PortfolioSnapshotReturnRow[]> {
   try {
-    const rs = await db.execute({
-      sql: `SELECT snapshot_date, portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct
-            FROM portfolio_daily_snapshots
-            WHERE user_id = ?
-            ORDER BY snapshot_date ASC
-            LIMIT ?`,
-      args: [userId, cap],
-    });
+    let rs;
+    try {
+      rs = await db.execute({
+        sql: `SELECT snapshot_date, portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
+              FROM portfolio_daily_snapshots
+              WHERE user_id = ?
+              ORDER BY snapshot_date ASC
+              LIMIT ?`,
+        args: [userId, cap],
+      });
+    } catch (eAlpha) {
+      if (!isSqliteMissingColumn(eAlpha, "alpha_vs_prev_pct")) throw eAlpha;
+      rs = await db.execute({
+        sql: `SELECT snapshot_date, portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct
+              FROM portfolio_daily_snapshots
+              WHERE user_id = ?
+              ORDER BY snapshot_date ASC
+              LIMIT ?`,
+        args: [userId, cap],
+      });
+    }
     return (rs.rows as Record<string, unknown>[]).map((r) => ({
       snapshotDate: String(r["snapshot_date"] ?? ""),
       portfolioReturnVsPrevPct:
@@ -480,6 +494,10 @@ async function fetchPortfolioSnapshotReturnRows(
       benchmarkReturnVsPrevPct:
         r["benchmark_return_vs_prev_pct"] != null && Number.isFinite(Number(r["benchmark_return_vs_prev_pct"]))
           ? Number(r["benchmark_return_vs_prev_pct"])
+          : null,
+      alphaVsPrevPct:
+        r["alpha_vs_prev_pct"] != null && Number.isFinite(Number(r["alpha_vs_prev_pct"]))
+          ? Number(r["alpha_vs_prev_pct"])
           : null,
     }));
   } catch (e) {
@@ -496,22 +514,25 @@ async function fetchPortfolioSnapshotReturnRows(
   }
 }
 
-function computeCumulativeAlphaDeviationPctFromSnapshotReturns(rows: PortfolioSnapshotReturnRow[]): number | null {
+function computeAverageDailyAlphaPctFromSnapshots(rows: PortfolioSnapshotReturnRow[]): number | null {
   if (rows.length < 2) return null;
-  let gPort = 1;
-  let gBench = 1;
-  let used = 0;
+  let sum = 0;
+  let n = 0;
   for (const r of rows) {
+    const direct = r.alphaVsPrevPct;
+    if (direct != null && Number.isFinite(direct)) {
+      sum += direct;
+      n += 1;
+      continue;
+    }
     const pr = r.portfolioReturnVsPrevPct;
     const br = r.benchmarkReturnVsPrevPct;
     if (pr == null || br == null || !Number.isFinite(pr) || !Number.isFinite(br)) continue;
-    gPort *= 1 + pr / 100;
-    gBench *= 1 + br / 100;
-    used += 1;
+    sum += pr - br;
+    n += 1;
   }
-  if (used === 0) return null;
-  if (!Number.isFinite(gPort) || !Number.isFinite(gBench) || gBench <= 0) return null;
-  return roundAlphaMetric(((gPort / gBench) - 1) * 100);
+  if (n === 0) return null;
+  return roundAlphaMetric(sum / n);
 }
 
 function computePortfolioTotalLiveAlphaPctWeighted(stocks: Stock[]): number | null {
@@ -2548,7 +2569,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
         portfolioAvgAlphaStalestLatestYmd: null,
         portfolioAvgAlphaFreshestLatestYmd: null,
         portfolioAvgAlphaAsOfDisplay: null,
-        cumulativeAlphaDeviationPct: null,
+        averageDailyAlphaPct: null,
         portfolioTotalLiveAlphaPct: null,
         benchmarkLatestPrice: benchmarkSnap.close,
         benchmarkChangePct: benchmarkSnap.changePct,
@@ -2633,7 +2654,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     paSummary.stalestLatestObservationYmd,
     paSummary.freshestLatestObservationYmd,
   );
-  const cumulativeAlphaDeviationPct = computeCumulativeAlphaDeviationPctFromSnapshotReturns(snapshotReturnRows);
+  const averageDailyAlphaPct = computeAverageDailyAlphaPctFromSnapshots(snapshotReturnRows);
   const portfolioTotalLiveAlphaPct = computePortfolioTotalLiveAlphaPctWeighted(stocks);
   const summary = {
     portfolioAverageAlpha: paSummary.average,
@@ -2641,7 +2662,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     portfolioAvgAlphaStalestLatestYmd: paSummary.stalestLatestObservationYmd,
     portfolioAvgAlphaFreshestLatestYmd: paSummary.freshestLatestObservationYmd,
     portfolioAvgAlphaAsOfDisplay,
-    cumulativeAlphaDeviationPct,
+    averageDailyAlphaPct,
     portfolioTotalLiveAlphaPct,
     benchmarkLatestPrice: benchmarkSnap.close,
     benchmarkChangePct: benchmarkSnap.changePct,

@@ -203,8 +203,8 @@ export type DashboardSummary = {
    * サーバーで生成し、クライアントはそのまま表示。
    */
   portfolioAvgAlphaAsOfDisplay: string | null;
-  /** 過去スナップショット（`portfolio_daily_snapshots`）から累積したアウトパフォーム（%）。未記録時は null。 */
-  cumulativeAlphaDeviationPct: number | null;
+  /** 過去スナップショットの「日次α（%）」の算術平均（期待値）。未記録時は null。 */
+  averageDailyAlphaPct: number | null;
   /** 現在値ベースの Live Alpha（全保有の時価加重平均、%）。算出不可時は null。 */
   portfolioTotalLiveAlphaPct: number | null;
   /** VOO の参照価格（USD）。ライブ quote 優先、失敗時は日足終値。 */

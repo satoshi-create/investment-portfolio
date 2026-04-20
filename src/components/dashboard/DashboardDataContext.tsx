@@ -38,7 +38,7 @@ export const EMPTY_SUMMARY: DashboardSummary = {
   portfolioAvgAlphaStalestLatestYmd: null,
   portfolioAvgAlphaFreshestLatestYmd: null,
   portfolioAvgAlphaAsOfDisplay: null,
-  cumulativeAlphaDeviationPct: null,
+  averageDailyAlphaPct: null,
   portfolioTotalLiveAlphaPct: null,
   benchmarkLatestPrice: 0,
   benchmarkChangePct: null,
