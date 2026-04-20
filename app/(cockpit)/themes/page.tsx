@@ -8,7 +8,7 @@ export default function CockpitThemesHubPage() {
   const allThemes = data?.allThemes ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem]">
+    <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[104rem]">
       <ThemesNavigationSection
         themes={allThemes}
         inPortfolioThemeNames={portfolioThemeSet}

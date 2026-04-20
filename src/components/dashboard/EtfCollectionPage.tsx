@@ -188,7 +188,7 @@ export function EtfCollectionPage() {
 
   return (
     <div className="min-h-min bg-background text-foreground pb-8 font-sans">
-      <div className="mx-auto w-full max-w-6xl px-4 md:px-6 lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6 lg:max-w-7xl 2xl:max-w-[104rem] space-y-6">
         <header className="border-b border-border pb-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">

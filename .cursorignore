@@ -1,0 +1,41 @@
+# --- 追加推奨項目 ---
+
+# Vercel / Deployment
+.vercel/
+.turbo/
+
+# TypeScript / Build Infos
+*.tsbuildinfo
+dist/
+
+# Supabase / Local Dev
+# (ローカル開発時のDBダンプや一時ファイルが肥大化しやすいため)
+supabase/.temp/
+supabase/storage/
+# もし過去の大量のマイグレーションファイルを見せる必要がないなら:
+# supabase/migrations/ 
+
+# Testing / Coverage
+coverage/
+.nyc_output/
+*.lcov
+__tests__/__snapshots__/
+e2e/test-results/
+
+# Linters / IDE Caches
+.eslintcache
+.prettiercache
+.stylelintcache
+.history/
+.vscode/
+
+# Documentation (AIに読ませる必要がない大規模ドキュメントがあれば)
+# README.md 以外で、過去の仕様書やメモなど
+memo/
+archive/
+old_versions/
+
+# Database / Local Stores
+*.db
+*.sqlite
+.storage/

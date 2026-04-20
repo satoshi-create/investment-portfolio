@@ -1254,7 +1254,6 @@ export function ThemePageClient({
   const ecosystemColSpan = useMemo(() => {
     const base =
       1 /* Asset */ +
-      1 /* キャズム */ +
       3 /* Rule of 40 + FCF Yield + 判定 */ +
       2 /* PE + EPS */ +
       3 /* Cumα + Trend + Last */;
@@ -1355,7 +1354,7 @@ export function ThemePageClient({
 
   return (
     <div className="min-h-min bg-background text-foreground pb-8 font-sans">
-      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-8">
+      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[104rem] space-y-8">
         <header className="border-b border-border pb-8">
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
@@ -2352,12 +2351,6 @@ export function ThemePageClient({
                             </>
                           )}
                           <th
-                            className="px-6 py-4 text-left whitespace-nowrap"
-                            title="ロジャーズの普及曲線（5 段階）。ホバーで根拠"
-                          >
-                            キャズム
-                          </th>
-                          <th
                             className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
                             onClick={() => toggleEcoSort("ruleOf40")}
                             title="Rule of 40（売上成長率% + FCFマージン%）"
@@ -2809,9 +2802,6 @@ export function ThemePageClient({
                                     </td>
                                   </>
                                 )}
-                                <td className="px-6 py-4 align-top">
-                                  <EcosystemAdoptionCell e={e} />
-                                </td>
                                 <td className="px-6 py-4 text-right font-mono text-xs">
                                   {(() => {
                                     const t = ecoRuleOf40Tone(e.ruleOf40);

@@ -1311,7 +1311,7 @@ export function ThemePageClient({
 
   return (
     <div className="min-h-min bg-background text-foreground pb-8 font-sans">
-      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-8">
+      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[104rem] space-y-8">
         <header className="border-b border-border pb-8">
           <Link
             href="/"
@@ -2310,12 +2310,6 @@ export function ThemePageClient({
                               </th>
                             </>
                           )}
-                          <th
-                            className="px-6 py-4 text-left whitespace-nowrap"
-                            title="ロジャーズの普及曲線（5 段階）。ホバーで根拠"
-                          >
-                            キャズム
-                          </th>
                           {ecoShowValueCols ? (
                             <>
                               <th
@@ -2747,9 +2741,6 @@ export function ThemePageClient({
                                     </td>
                                   </>
                                 )}
-                                <td className="px-6 py-4 align-top">
-                                  <EcosystemAdoptionCell e={e} />
-                                </td>
                                 {ecoShowValueCols ? (
                                   <>
                                     <td

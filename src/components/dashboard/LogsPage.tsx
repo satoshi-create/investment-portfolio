@@ -77,7 +77,7 @@ export function LogsPage() {
   }, [holdingSnapshots]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[90rem] space-y-6">
+    <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[104rem] space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">ログ</h1>

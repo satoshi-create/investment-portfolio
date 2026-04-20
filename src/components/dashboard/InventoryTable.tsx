@@ -628,7 +628,7 @@ export function InventoryTable({
 
       <div className="relative w-full max-w-full overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleInventoryColumnDragEnd}>
-          <table className="w-full min-w-[920px] text-left text-xs lg:text-sm">
+          <table className="w-full min-w-[1040px] text-left text-xs lg:text-sm">
             <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
               <tr>
                 <SortableContext items={visibleColumnIds} strategy={horizontalListSortingStrategy}>
@@ -642,7 +642,7 @@ export function InventoryTable({
                             key={colId}
                             id={colId}
                             align="left"
-                            className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyFirst} cursor-pointer select-none`}
+                            className={`px-6 py-4 min-w-[12rem] max-w-[14rem] ${stickyFirst} cursor-pointer select-none`}
                             title="Sort"
                           >
                             <button
@@ -897,10 +897,10 @@ export function InventoryTable({
                     switch (colId) {
                       case "asset":
                         return (
-                          <td key={colId} className={`px-6 py-4 min-w-[10rem] max-w-[11rem] ${stickyFirst}`}>
+                          <td key={colId} className={`px-6 py-4 min-w-[12rem] max-w-[14rem] ${stickyFirst}`}>
                             <div className="flex flex-col gap-0.5">
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-1 min-w-0">
+                              <div className="flex flex-row flex-nowrap items-start justify-between gap-2 whitespace-nowrap">
+                                <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-1 min-w-0 whitespace-nowrap">
                                   {opp ? (
                                     <span
                                       className="shrink-0 text-base leading-none"
@@ -910,7 +910,7 @@ export function InventoryTable({
                                       ✨
                                     </span>
                                   ) : null}
-                                  <span className="truncate">{stock.ticker}</span>
+                                  <span className="truncate whitespace-nowrap">{stock.ticker}</span>
                                   {stock.expectationCategory ? (
                                     <span
                                       className={`shrink-0 text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(stock.expectationCategory)}`}
@@ -1272,7 +1272,7 @@ export function InventoryTable({
                     return (
                       <td
                         key={colId}
-                        className={`px-6 py-3 text-xs font-bold text-foreground/90 min-w-[10rem] max-w-[11rem] ${stickyFoot}`}
+                            className={`px-6 py-3 text-xs font-bold text-foreground/90 min-w-[12rem] max-w-[14rem] ${stickyFoot}`}
                       >
                         Total: {sortedStocks.length}
                         {sortedStocks.length === 1 ? " item" : " items"}

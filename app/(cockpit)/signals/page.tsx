@@ -8,7 +8,7 @@ export default function CockpitSignalsPage() {
   const signals = data?.signals ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 lg:max-w-7xl 2xl:max-w-[90rem]">
+    <div className="mx-auto w-full max-w-6xl space-y-6 lg:max-w-7xl 2xl:max-w-[104rem]">
       <SignalsSection
         signals={signals}
         userId={userId}
