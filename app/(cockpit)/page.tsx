@@ -18,7 +18,7 @@ export default function CockpitPortfolioPage() {
   const totalMarketValue = data?.totalMarketValue ?? 0;
   const stocks = data?.stocks ?? [];
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 lg:max-w-7xl 2xl:max-w-[104rem]">
+    <div className="mx-auto w-full max-w-6xl space-y-6 lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem]">
       <StrategySection
         structureBySector={structureBySector}
         satelliteStockCount={satelliteStockCount}

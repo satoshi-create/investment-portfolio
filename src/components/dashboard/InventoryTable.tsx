@@ -792,7 +792,7 @@ export function InventoryTable({
         )}
       >
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleInventoryColumnDragEnd}>
-          <table className="w-full min-w-[1040px] text-left text-xs lg:text-sm">
+          <table className="w-full min-w-[1200px] text-left text-xs lg:text-sm">
             <thead className="sticky top-0 z-30 bg-background/85 text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em] backdrop-blur-md supports-[backdrop-filter]:bg-background/75 border-b border-border shadow-sm">
               <tr>
                 <SortableContext items={visibleColumnIds} strategy={horizontalListSortingStrategy}>
@@ -910,7 +910,7 @@ export function InventoryTable({
                             key={colId}
                             id={colId}
                             align="left"
-                            className="px-6 py-4 text-left cursor-pointer select-none"
+                            className="px-6 py-4 text-left cursor-pointer select-none min-w-[18rem]"
                             title="Sort"
                           >
                             <button
@@ -1316,7 +1316,7 @@ export function InventoryTable({
                         );
                       case "research":
                         return (
-                          <td key={colId} className="px-6 py-4">
+                          <td key={colId} className="px-6 py-4 min-w-[18rem]">
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
@@ -1678,7 +1678,7 @@ export function InventoryTable({
                       </td>
                     );
                   case "research":
-                    return <td key={colId} className="px-6 py-3" />;
+                    return <td key={colId} className="px-6 py-3 min-w-[18rem]" />;
                   case "ruleOf40":
                     return (
                       <td key={colId} className="px-6 py-3 text-right align-top">

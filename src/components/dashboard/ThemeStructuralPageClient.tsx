@@ -1632,7 +1632,7 @@ export function ThemePageClient({
 
   return (
     <div className="min-h-min bg-background text-foreground pb-8 font-sans">
-      <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[104rem] space-y-8">
+      <div className="mx-auto w-full max-w-6xl lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem] space-y-8">
         <header className="border-b border-border pb-8">
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
