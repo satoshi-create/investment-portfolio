@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDown,
   Crosshair,
   FileSpreadsheet,
   Layers,
@@ -86,6 +87,7 @@ import {
   TradeEntryForm,
   type TradeEntryInitial,
 } from "@/src/components/dashboard/TradeEntryForm";
+import { EarningsNoteMarkdownPreview } from "@/src/components/dashboard/EarningsNoteMarkdownPreview";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
@@ -678,6 +680,12 @@ export function ThemePageClient({
   const [ecoMemoTarget, setEcoMemoTarget] = useState<ThemeEcosystemWatchItem | null>(null);
   const [ecoMemoDraft, setEcoMemoDraft] = useState("");
   const [ecoMemoSaving, setEcoMemoSaving] = useState(false);
+  const [ecoMemoModalTab, setEcoMemoModalTab] = useState<"edit" | "preview">("edit");
+  /** Asset 列のカテゴリ（`field`）による複数選択フィルター */
+  const [ecoFieldFilter, setEcoFieldFilter] = useState<string[]>([]);
+
+  /** `refetchThemeDetailQuiet` 並列時、古いレスポンスが `setData` しないよう世代管理 */
+  const themeDetailQuietFetchGen = useRef(0);
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -747,10 +755,11 @@ export function ThemePageClient({
     [themeQueryName],
   );
 
+  /** メモ保存・エコ編集後など: データのみ置き換え（`hydratingFull` は立てない。UI に「読み込み中」系を出さない） */
   const refetchThemeDetailQuiet = useCallback(
     async (signal: AbortSignal) => {
+      const gen = ++themeDetailQuietFetchGen.current;
       const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeQueryName)}`;
-      setHydratingFull(true);
       try {
         const resFull = await fetchWithTimeout(baseUrl, { cache: "no-store", signal }, { timeoutMs: 55_000 });
         const jsonFull = (await resFull.json()) as ThemeDetailJson;
@@ -762,7 +771,10 @@ export function ThemePageClient({
           return;
         }
         const { userId: __u, error: __e, ...restFull } = jsonFull;
-        setData(normalizeThemeDetailResponse(restFull));
+        setData((prev) => {
+          if (gen !== themeDetailQuietFetchGen.current) return prev;
+          return normalizeThemeDetailResponse(restFull);
+        });
       } catch (e) {
         if (signal.aborted || (e instanceof Error && e.name === "AbortError"))
           return;
@@ -773,8 +785,6 @@ export function ThemePageClient({
               ? e.message
               : "再読み込みに失敗しました",
         );
-      } finally {
-        if (!signal.aborted) setHydratingFull(false);
       }
     },
     [themeQueryName],
@@ -978,6 +988,19 @@ export function ThemePageClient({
       return true;
     },
     [holderFilterSet, isDefensiveTheme],
+  );
+
+  const ecoFieldLabels = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of ecosystem) {
+      s.add(fieldLabelOf(e));
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [ecosystem]);
+
+  const ecoFieldFilterSet = useMemo(
+    () => new Set(ecoFieldFilter.map((x) => x.trim()).filter(Boolean)),
+    [ecoFieldFilter],
   );
 
   const defensiveHolderStats = useMemo(() => {
@@ -1269,7 +1292,10 @@ export function ThemePageClient({
   );
 
   useEffect(() => {
-    if (ecoMemoTarget) setEcoMemoDraft(ecoMemoTarget.memo ?? "");
+    if (ecoMemoTarget) {
+      setEcoMemoDraft(ecoMemoTarget.memo ?? "");
+      setEcoMemoModalTab("edit");
+    }
   }, [ecoMemoTarget]);
 
   const saveEcoMemberMemo = useCallback(
@@ -1298,8 +1324,21 @@ export function ThemePageClient({
           toast.error(json.error ?? "保存に失敗しました");
           return;
         }
+        const memberId = ecoMemoTarget.id;
+        const nextMemo: string | null =
+          ecoMemoDraft.trim().length > 0 ? ecoMemoDraft.trim() : null;
+        setData((cur) => {
+          if (!cur) return cur;
+          return {
+            ...cur,
+            ecosystem: cur.ecosystem.map((e) =>
+              e.id === memberId ? { ...e, memo: nextMemo } : e,
+            ),
+          };
+        });
         toast.success("メモを保存しました");
         setEcoMemoTarget(null);
+        setEcoMemoSaving(false);
         await refetchThemeDetailQuiet(ac.signal);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
@@ -1343,6 +1382,9 @@ export function ThemePageClient({
     if (isDefensiveTheme && holderFilterSet.size > 0) {
       out = out.filter((e) => ecosystemMatchesHolderFilter(e));
     }
+    if (ecoFieldFilterSet.size > 0) {
+      out = out.filter((e) => ecoFieldFilterSet.has(fieldLabelOf(e)));
+    }
     const peMin = ecoPeMin.trim().length > 0 ? Number(ecoPeMin) : null;
     const peMax = ecoPeMax.trim().length > 0 ? Number(ecoPeMax) : null;
     const hasPeMin = peMin != null && Number.isFinite(peMin);
@@ -1377,6 +1419,7 @@ export function ThemePageClient({
     holderFilterSet,
     isDefensiveTheme,
     ecosystemMatchesHolderFilter,
+    ecoFieldFilterSet,
     ecoPeMin,
     ecoPeMax,
     ecoEpsPositiveOnly,
@@ -2012,7 +2055,7 @@ export function ThemePageClient({
                 userId={DEFAULT_USER_ID}
                 onEarningsNoteSaved={() => {
                   const ac = new AbortController();
-                  void load(ac.signal);
+                  void refetchThemeDetailQuiet(ac.signal);
                 }}
                 onTrade={(init) =>
                   openTradeForm({ ...init, themeId: theme?.id ?? init.themeId })
@@ -2287,6 +2330,74 @@ export function ThemePageClient({
                             米国
                           </button>
                         </div>
+                        {ecoFieldLabels.length > 0 ? (
+                          <details className="group relative shrink-0">
+                            <summary
+                              className={cn(
+                                "list-none cursor-pointer inline-flex items-center gap-1 rounded-lg border px-2.5 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors [&::-webkit-details-marker]:hidden",
+                                ecoFieldFilter.length > 0
+                                  ? "border-cyan-500/45 bg-cyan-500/10 text-cyan-200"
+                                  : "border-border bg-muted/40 text-muted-foreground hover:bg-muted/70",
+                              )}
+                              title="Asset 列のカテゴリ（field）で絞り込み"
+                            >
+                              <span>カテゴリ</span>
+                              {ecoFieldFilter.length > 0 ? (
+                                <span className="min-w-[1.25rem] tabular-nums text-cyan-100/95">
+                                  {ecoFieldFilter.length}
+                                </span>
+                              ) : null}
+                              <ChevronDown
+                                className="h-3.5 w-3.5 shrink-0 opacity-70 transition-transform group-open:rotate-180"
+                                aria-hidden
+                              />
+                            </summary>
+                            <div
+                              className="absolute right-0 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] max-h-[min(50vh,18rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover/95 p-2 shadow-2xl backdrop-blur-sm"
+                              onClick={(ev) => ev.stopPropagation()}
+                            >
+                              <div className="mb-2 flex items-center justify-between gap-2 border-b border-border/80 px-1 pb-2">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                                  複数選択
+                                </span>
+                                <button
+                                  type="button"
+                                  className="text-[10px] font-bold text-muted-foreground hover:text-foreground disabled:opacity-40"
+                                  disabled={ecoFieldFilter.length === 0}
+                                  onClick={() => setEcoFieldFilter([])}
+                                >
+                                  クリア
+                                </button>
+                              </div>
+                              <ul className="space-y-0.5">
+                                {ecoFieldLabels.map((fl) => {
+                                  const on = ecoFieldFilterSet.has(fl);
+                                  return (
+                                    <li key={fl}>
+                                      <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[11px] hover:bg-muted/60">
+                                        <input
+                                          type="checkbox"
+                                          className="rounded border-border shrink-0"
+                                          checked={on}
+                                          onChange={() =>
+                                            setEcoFieldFilter((cur) =>
+                                              cur.includes(fl)
+                                                ? cur.filter((x) => x !== fl)
+                                                : [...cur, fl],
+                                            )
+                                          }
+                                        />
+                                        <span className="min-w-0 truncate font-medium text-foreground">
+                                          {fl}
+                                        </span>
+                                      </label>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          </details>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setEcoBookmarksOnly((v) => !v)}
@@ -2607,7 +2718,8 @@ export function ThemePageClient({
                           postChasmOnly ||
                           ecoBookmarksOnly ||
                           ecosystemSearchQuery.trim().length > 0 ||
-                          ecoMarketFilter !== "all"
+                          ecoMarketFilter !== "all" ||
+                          ecoFieldFilter.length > 0
                             ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
                             : `計 ${ecosystem.length} 銘柄`}
                         </span>
@@ -2641,6 +2753,7 @@ export function ThemePageClient({
                           ecoBookmarksOnly ||
                           ecosystemSearchQuery.trim().length > 0 ||
                           ecoMarketFilter !== "all" ||
+                          ecoFieldFilterSet.size > 0 ||
                           ecoPeMin.trim().length > 0 ||
                           ecoPeMax.trim().length > 0 ||
                           ecoEpsPositiveOnly) ? (
@@ -2657,7 +2770,20 @@ export function ThemePageClient({
                                   !patrolOn &&
                                   !postChasmOnly &&
                                   !q;
+                                const fieldOnly =
+                                  ecoFieldFilterSet.size > 0 &&
+                                  !patrolOn &&
+                                  !postChasmOnly &&
+                                  !ecoBookmarksOnly &&
+                                  !q &&
+                                  ecoMarketFilter === "all" &&
+                                  ecoPeMin.trim().length === 0 &&
+                                  ecoPeMax.trim().length === 0 &&
+                                  !ecoEpsPositiveOnly;
                                 if (q) return "該当する構造が見つかりません";
+                                if (fieldOnly) {
+                                  return "選択した Asset カテゴリに該当する銘柄がありません。";
+                                }
                                 if (marketOnly && ecoMarketFilter === "jp") {
                                   return "日本市場に該当する銘柄がありません。";
                                 }
@@ -2788,7 +2914,7 @@ export function ThemePageClient({
 
         {ecoMemoTarget ? (
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-3"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
             role="presentation"
           >
             <button
@@ -2800,42 +2926,93 @@ export function ThemePageClient({
             <div
               role="dialog"
               aria-modal="true"
-              className="relative z-10 w-[min(100%,24rem)] rounded-2xl border border-border bg-card shadow-2xl p-4 sm:p-5"
+              className="relative z-10 flex max-h-[min(90dvh,44rem)] w-[min(100%,28rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
               onClick={(ev) => ev.stopPropagation()}
             >
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Ecosystem memo
-              </p>
-              <p className="text-sm font-bold text-foreground mt-1 font-mono">{ecoMemoTarget.ticker}</p>
-              <label htmlFor="eco-memo-ta" className="sr-only">
-                メモ
-              </label>
-              <textarea
-                id="eco-memo-ta"
-                value={ecoMemoDraft}
-                onChange={(ev) => setEcoMemoDraft(ev.target.value)}
-                disabled={ecoMemoSaving}
-                rows={6}
-                className="mt-3 w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 disabled:opacity-50"
-                placeholder="theme_ecosystem_members.memo（短文。空にして保存でクリア）"
-              />
-              <div className="mt-3 flex justify-end gap-2">
+              <div className="border-b border-border px-4 py-3 sm:px-5 sm:py-4 shrink-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Ecosystem memo
+                </p>
+                <p className="text-sm font-bold text-foreground mt-1 font-mono">{ecoMemoTarget.ticker}</p>
+              </div>
+              <div
+                className="inline-flex gap-0 border-b border-border px-3 sm:px-4 pt-2 shrink-0"
+                role="tablist"
+                aria-label="メモの表示"
+              >
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={ecoMemoModalTab === "edit"}
                   disabled={ecoMemoSaving}
-                  onClick={() => setEcoMemoTarget(null)}
-                  className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/60"
+                  onClick={() => setEcoMemoModalTab("edit")}
+                  className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
+                    ecoMemoModalTab === "edit"
+                      ? "bg-background text-foreground border border-b-0 border-border -mb-px"
+                      : "text-muted-foreground hover:text-foreground/90"
+                  }`}
                 >
-                  キャンセル
+                  編集
                 </button>
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={ecoMemoModalTab === "preview"}
                   disabled={ecoMemoSaving}
-                  onClick={() => void saveEcoMemberMemo()}
-                  className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-3 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
+                  onClick={() => setEcoMemoModalTab("preview")}
+                  className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
+                    ecoMemoModalTab === "preview"
+                      ? "bg-background text-foreground border border-b-0 border-border -mb-px"
+                      : "text-muted-foreground hover:text-foreground/90"
+                  }`}
                 >
-                  {ecoMemoSaving ? "保存中…" : "保存"}
+                  プレビュー
                 </button>
+              </div>
+              <div className="min-h-0 flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4 bg-background">
+                {ecoMemoModalTab === "edit" ? (
+                  <>
+                    <label htmlFor="eco-memo-ta" className="sr-only">
+                      メモ
+                    </label>
+                    <textarea
+                      id="eco-memo-ta"
+                      value={ecoMemoDraft}
+                      onChange={(ev) => setEcoMemoDraft(ev.target.value)}
+                      disabled={ecoMemoSaving}
+                      rows={8}
+                      className="min-h-[10rem] w-full resize-y rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 disabled:opacity-50"
+                      placeholder="Markdown 可（見出し・リスト・表など）。空にして保存でクリア（theme_ecosystem_members.memo）"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[10px] text-muted-foreground -mt-1 mb-1">
+                      入力中の内容を Markdown として表示します（未保存の編集も反映）。
+                    </p>
+                    <div className="min-h-[10rem] max-h-[min(48vh,22rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
+                      <EarningsNoteMarkdownPreview markdown={ecoMemoDraft} />
+                    </div>
+                  </>
+                )}
+                <div className="mt-auto flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={ecoMemoSaving}
+                    onClick={() => setEcoMemoTarget(null)}
+                    className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/60"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    disabled={ecoMemoSaving}
+                    onClick={() => void saveEcoMemberMemo()}
+                    className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-3 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
+                  >
+                    {ecoMemoSaving ? "保存中…" : "保存"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

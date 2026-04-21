@@ -14,7 +14,7 @@
 // npx tsx scripts/backfill-watchlist-alpha.ts --tickers 2782,3002 --cleanup
 // ```
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Crosshair,
@@ -636,6 +636,8 @@ export function ThemePageClient({
   >([]);
   const [ecoTableCompact, setEcoTableCompact] = useState(false);
 
+  const themeDetailQuietFetchGen = useRef(0);
+
   const load = useCallback(
     async (signal: AbortSignal) => {
       setLoading(true);
@@ -706,8 +708,8 @@ export function ThemePageClient({
 
   const refetchThemeDetailQuiet = useCallback(
     async (signal: AbortSignal) => {
+      const gen = ++themeDetailQuietFetchGen.current;
       const baseUrl = `/api/theme-detail?userId=${encodeURIComponent(DEFAULT_USER_ID)}&theme=${encodeURIComponent(themeQueryName)}`;
-      setHydratingFull(true);
       try {
         const resFull = await fetchWithTimeout(baseUrl, { cache: "no-store", signal }, { timeoutMs: 55_000 });
         const jsonFull = (await resFull.json()) as ThemeDetailJson;
@@ -719,7 +721,10 @@ export function ThemePageClient({
           return;
         }
         const { userId: __u, error: __e, ...restFull } = jsonFull;
-        setData(normalizeThemeDetailResponse(restFull));
+        setData((prev) => {
+          if (gen !== themeDetailQuietFetchGen.current) return prev;
+          return normalizeThemeDetailResponse(restFull);
+        });
       } catch (e) {
         if (signal.aborted || (e instanceof Error && e.name === "AbortError"))
           return;
@@ -730,8 +735,6 @@ export function ThemePageClient({
               ? e.message
               : "再読み込みに失敗しました",
         );
-      } finally {
-        if (!signal.aborted) setHydratingFull(false);
       }
     },
     [themeQueryName],
@@ -1940,7 +1943,7 @@ export function ThemePageClient({
                 userId={DEFAULT_USER_ID}
                 onEarningsNoteSaved={() => {
                   const ac = new AbortController();
-                  void load(ac.signal);
+                  void refetchThemeDetailQuiet(ac.signal);
                 }}
                 onTrade={(init) =>
                   openTradeForm({ ...init, themeId: theme?.id ?? init.themeId })
