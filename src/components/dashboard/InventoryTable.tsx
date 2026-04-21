@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
+import React, { useCallback, useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import { FileSpreadsheet, GripVertical, MessageSquare, NotebookPen, Search, Star, X } from "lucide-react";
 import {
@@ -48,12 +48,21 @@ import {
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
 import { computeLiveAlphaDayPercent } from "@/src/lib/alpha-logic";
+import { cn } from "@/src/lib/cn";
 import {
   DEFAULT_COLUMN_ORDER,
   type InventoryColId,
   loadInventoryColumnOrder,
   saveInventoryColumnOrder,
 } from "@/src/lib/inventory-column-order";
+import {
+  applyInventoryUserHidden,
+  loadInventoryHiddenColumns,
+  loadInventoryTableCompact,
+  saveInventoryHiddenColumns,
+  saveInventoryTableCompact,
+} from "@/src/lib/inventory-column-visibility";
+import { InventoryTableColumnToolbar } from "@/src/components/dashboard/InventoryTableColumnToolbar";
 
 type SortKey =
   | "asset"
@@ -309,6 +318,8 @@ export function InventoryTable({
   const [structureFilter, setStructureFilter] = useState("");
   const [expectationFilter, setExpectationFilter] = useState<"" | "__unset__" | ExpectationCategory>("");
   const [columnOrder, setColumnOrder] = useState<InventoryColId[]>(DEFAULT_COLUMN_ORDER);
+  const [inventoryHiddenColumnIds, setInventoryHiddenColumnIds] = useState<InventoryColId[]>([]);
+  const [inventoryTableCompact, setInventoryTableCompact] = useState(false);
   const [bookmarksOnly, setBookmarksOnly] = useState(false);
   const [memoModalStock, setMemoModalStock] = useState<Stock | null>(null);
   const [memoDraft, setMemoDraft] = useState("");
@@ -335,11 +346,19 @@ export function InventoryTable({
 
   useEffect(() => {
     setColumnOrder(loadInventoryColumnOrder());
+    setInventoryHiddenColumnIds(loadInventoryHiddenColumns());
+    setInventoryTableCompact(loadInventoryTableCompact());
   }, []);
 
-  useEffect(() => {
-    saveInventoryColumnOrder(columnOrder);
-  }, [columnOrder]);
+  const persistInventoryHiddenColumnIds = useCallback((next: InventoryColId[]) => {
+    setInventoryHiddenColumnIds(next);
+    saveInventoryHiddenColumns(next);
+  }, []);
+
+  const persistInventoryTableCompact = useCallback((next: boolean) => {
+    setInventoryTableCompact(next);
+    saveInventoryTableCompact(next);
+  }, []);
 
   useEffect(() => {
     const ms = livePricePollIntervalMs ?? 0;
@@ -348,13 +367,18 @@ export function InventoryTable({
     return () => window.clearInterval(id);
   }, [livePricePollIntervalMs, onLivePricePoll]);
 
-  const visibleColumnIds = useMemo(
+  const inventoryBaseVisibleColumnIds = useMemo(
     () =>
       columnOrder.filter((id) => {
         if (id === "deviation" || id === "drawdown") return showValueCols;
         return true;
       }),
     [columnOrder, showValueCols],
+  );
+
+  const visibleColumnIds = useMemo(
+    () => applyInventoryUserHidden(inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds),
+    [inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds],
   );
 
   const sensors = useSensors(
@@ -369,7 +393,9 @@ export function InventoryTable({
       const oldIndex = items.indexOf(active.id as InventoryColId);
       const newIndex = items.indexOf(over.id as InventoryColId);
       if (oldIndex < 0 || newIndex < 0) return items;
-      return arrayMove(items, oldIndex, newIndex);
+      const next = arrayMove(items, oldIndex, newIndex);
+      saveInventoryColumnOrder(next);
+      return next;
     });
   }
 
@@ -698,6 +724,13 @@ export function InventoryTable({
           >
             乖離・落率
           </button>
+          <InventoryTableColumnToolbar
+            baseVisibleColumnIds={inventoryBaseVisibleColumnIds}
+            hiddenColumnIds={inventoryHiddenColumnIds}
+            setHiddenColumnIds={persistInventoryHiddenColumnIds}
+            compactTable={inventoryTableCompact}
+            setCompactTable={persistInventoryTableCompact}
+          />
           <button
             type="button"
             onClick={handleCsvDownload}
@@ -743,7 +776,13 @@ export function InventoryTable({
         </div>
       </div>
 
-      <div className="relative w-full max-w-full overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
+      <div
+        className={cn(
+          "relative w-full max-w-full overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]",
+          inventoryTableCompact &&
+            "[&_thead_th]:!px-2.5 [&_thead_th]:!py-2 [&_thead_th]:!text-[9px] [&_thead_th]:!tracking-[0.08em] [&_tbody_td]:!px-2.5 [&_tbody_td]:!py-1.5 [&_tbody_td]:!text-[11px] [&_tfoot_td]:!px-2.5 [&_tfoot_td]:!py-2 [&_tfoot_td]:!text-[10px]",
+        )}
+      >
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleInventoryColumnDragEnd}>
           <table className="w-full min-w-[1040px] text-left text-xs lg:text-sm">
             <thead className="sticky top-0 z-30 bg-background/85 text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em] backdrop-blur-md supports-[backdrop-filter]:bg-background/75 border-b border-border shadow-sm">
@@ -1100,7 +1139,14 @@ export function InventoryTable({
                     switch (colId) {
                       case "asset":
                         return (
-                          <td key={colId} className={`px-6 py-4 min-w-0 max-w-[14rem] ${stickyFirst}`}>
+                          <td
+                            key={colId}
+                            className={cn(
+                              "px-6 py-4 min-w-0",
+                              inventoryTableCompact ? "max-w-[12rem]" : "max-w-[14rem]",
+                              stickyFirst,
+                            )}
+                          >
                             <div className="flex min-w-0 flex-col gap-1">
                               <div className="flex min-w-0 items-center gap-1.5">
                                 <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -1158,7 +1204,10 @@ export function InventoryTable({
                               ) : null}
                               {stock.name ? (
                                 <span
-                                  className="text-[10px] text-muted-foreground leading-snug line-clamp-2"
+                                  className={cn(
+                                    "text-[10px] text-muted-foreground leading-snug",
+                                    inventoryTableCompact ? "line-clamp-1" : "line-clamp-2",
+                                  )}
                                   title={stock.name}
                                 >
                                   {stock.name}

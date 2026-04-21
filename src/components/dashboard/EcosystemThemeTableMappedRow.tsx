@@ -117,6 +117,8 @@ export type EcosystemThemeTableMappedRowProps = {
   showEcoMemoButton?: boolean;
   /** Theme ページでは決算列が無く Research 列に E: を含める */
   ecoResearchIncludeEarnings?: boolean;
+  /** ツールバーのコンパクト行: 長文列の clamp を強める */
+  compactRows?: boolean;
   formatEcoPriceForView: (e: ThemeEcosystemWatchItem) => string;
   onOpenTrade: (initial: TradeEntryInitial) => void;
   beginEditEcosystem: (e: ThemeEcosystemWatchItem) => void;
@@ -157,6 +159,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
     ecoEditSaving,
     showEcoMemoButton = false,
     ecoResearchIncludeEarnings = false,
+    compactRows = false,
     formatEcoPriceForView,
     onOpenTrade,
     beginEditEcosystem,
@@ -178,7 +181,14 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
         switch (colId) {
           case "asset":
             return (
-              <td key={colId} className={`px-6 py-3 align-top min-w-0 max-w-[18rem] ${stickyFirst}`}>
+              <td
+                key={colId}
+                className={cn(
+                  "px-6 py-3 align-top min-w-0",
+                  compactRows ? "max-w-[15rem]" : "max-w-[18rem]",
+                  stickyFirst,
+                )}
+              >
                 <div className="flex min-w-0 flex-col gap-1.5">
                   <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                     <button
@@ -338,7 +348,10 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         const geo = extractGeopoliticalPotential(e.observationNotes);
                         return (
                           <span
-                            className="text-[10px] text-muted-foreground leading-snug line-clamp-2"
+                            className={cn(
+                              "text-[10px] text-muted-foreground leading-snug",
+                              compactRows ? "line-clamp-1" : "line-clamp-2",
+                            )}
                             title={e.observationNotes}
                           >
                             {e.observationNotes}
@@ -489,10 +502,24 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td key={colId} className={`min-w-[10rem] px-6 py-3 align-top ${stickyFirst}`}>
                 <div className="hidden md:block">
                   {e.defensiveStrength ? (
-                    <p className="text-sm font-bold leading-snug text-foreground">{e.defensiveStrength}</p>
+                    <p
+                      className={cn(
+                        "font-bold leading-snug text-foreground",
+                        compactRows ? "text-xs line-clamp-2" : "text-sm",
+                      )}
+                      title={e.defensiveStrength}
+                    >
+                      {e.defensiveStrength}
+                    </p>
                   ) : null}
                   {e.role ? (
-                    <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted-foreground" title={e.role}>
+                    <p
+                      className={cn(
+                        "mt-1 text-xs leading-relaxed text-muted-foreground",
+                        compactRows ? "line-clamp-2" : "line-clamp-3",
+                      )}
+                      title={e.role}
+                    >
                       {e.role}
                     </p>
                   ) : (
@@ -544,7 +571,13 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td key={colId} className={`min-w-[10rem] px-6 py-3 align-top ${stickyFirst}`}>
                 {e.role ? (
-                  <div className="line-clamp-4 text-xs leading-relaxed text-foreground" title={e.role}>
+                  <div
+                    className={cn(
+                      "text-xs leading-relaxed text-foreground",
+                      compactRows ? "line-clamp-2" : "line-clamp-4",
+                    )}
+                    title={e.role}
+                  >
                     {e.role}
                   </div>
                 ) : (

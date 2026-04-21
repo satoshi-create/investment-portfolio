@@ -112,6 +112,14 @@ import {
   visibleEcoColumnsThemePage,
   type EcosystemWatchlistColId,
 } from "@/src/lib/ecosystem-watchlist-column-order";
+import {
+  applyEcosystemWatchlistUserHidden,
+  loadEcosystemWatchlistHiddenColumns,
+  loadEcosystemWatchlistTableCompact,
+  saveEcosystemWatchlistHiddenColumns,
+  saveEcosystemWatchlistTableCompact,
+} from "@/src/lib/ecosystem-watchlist-column-visibility";
+import { EcosystemWatchlistColumnToolbar } from "@/src/components/dashboard/EcosystemWatchlistColumnToolbar";
 import { EcosystemThemeTableMappedRow } from "@/src/components/dashboard/EcosystemThemeTableMappedRow";
 import {
   StructuralEcosystemThead,
@@ -615,6 +623,10 @@ export function ThemePageClient({
   const [ecoColumnOrder, setEcoColumnOrder] = useState<EcosystemWatchlistColId[]>(
     DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER,
   );
+  const [ecoHiddenColumnIds, setEcoHiddenColumnIds] = useState<
+    EcosystemWatchlistColId[]
+  >([]);
+  const [ecoTableCompact, setEcoTableCompact] = useState(false);
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -1396,15 +1408,28 @@ export function ThemePageClient({
 
   useEffect(() => {
     setEcoColumnOrder(loadEcosystemWatchlistColumnOrder());
+    setEcoHiddenColumnIds(loadEcosystemWatchlistHiddenColumns());
+    setEcoTableCompact(loadEcosystemWatchlistTableCompact());
   }, []);
 
-  useEffect(() => {
-    saveEcosystemWatchlistColumnOrder(ecoColumnOrder);
-  }, [ecoColumnOrder]);
+  const persistEcoHiddenColumnIds = useCallback((next: EcosystemWatchlistColId[]) => {
+    setEcoHiddenColumnIds(next);
+    saveEcosystemWatchlistHiddenColumns(next);
+  }, []);
 
-  const ecoVisibleColumnIds = useMemo(
+  const persistEcoTableCompact = useCallback((next: boolean) => {
+    setEcoTableCompact(next);
+    saveEcosystemWatchlistTableCompact(next);
+  }, []);
+
+  const ecoBaseVisibleColumnIds = useMemo(
     () => visibleEcoColumnsThemePage(ecoColumnOrder, { isDefensiveTheme, ecoShowValueCols }),
     [ecoColumnOrder, isDefensiveTheme, ecoShowValueCols],
+  );
+
+  const ecoVisibleColumnIds = useMemo(
+    () => applyEcosystemWatchlistUserHidden(ecoBaseVisibleColumnIds, ecoHiddenColumnIds),
+    [ecoBaseVisibleColumnIds, ecoHiddenColumnIds],
   );
 
   const ecosystemColSpan = ecoVisibleColumnIds.length;
@@ -1421,7 +1446,9 @@ export function ThemePageClient({
       const oldIndex = items.indexOf(active.id as EcosystemWatchlistColId);
       const newIndex = items.indexOf(over.id as EcosystemWatchlistColId);
       if (oldIndex < 0 || newIndex < 0) return items;
-      return arrayMove(items, oldIndex, newIndex);
+      const next = arrayMove(items, oldIndex, newIndex);
+      saveEcosystemWatchlistColumnOrder(next);
+      return next;
     });
   }
 
@@ -2359,6 +2386,14 @@ export function ThemePageClient({
                         >
                           キャズム超え
                         </button>
+                        <EcosystemWatchlistColumnToolbar
+                          baseVisibleColumnIds={ecoBaseVisibleColumnIds}
+                          hiddenColumnIds={ecoHiddenColumnIds}
+                          setHiddenColumnIds={persistEcoHiddenColumnIds}
+                          compactTable={ecoTableCompact}
+                          setCompactTable={persistEcoTableCompact}
+                          isDefensiveTheme={isDefensiveTheme}
+                        />
                         <button
                           type="button"
                           onClick={handleEcosystemCsvDownload}
@@ -2494,7 +2529,13 @@ export function ThemePageClient({
                       </p>
                     </div>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div
+                    className={cn(
+                      "overflow-x-auto relative",
+                      ecoTableCompact &&
+                        "[&_thead_th]:!px-2.5 [&_thead_th]:!py-2 [&_thead_th]:!text-[9px] [&_thead_th]:!tracking-[0.08em] [&_tbody_td]:!px-2.5 [&_tbody_td]:!py-1.5 [&_tbody_td]:!text-[11px]",
+                    )}
+                  >
                     <DndContext
                       sensors={ecoColumnSensors}
                       collisionDetection={closestCenter}
@@ -2592,6 +2633,7 @@ export function ThemePageClient({
                               >
                                 <EcosystemThemeTableMappedRow
                                   visibleColumnIds={ecoVisibleColumnIds}
+                                  compactRows={ecoTableCompact}
                                   e={e}
                                   ecoOpp={ecoOpp}
                                   zEco={zEco}
