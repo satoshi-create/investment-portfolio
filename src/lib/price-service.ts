@@ -319,6 +319,233 @@ export async function fetchEquityResearchSnapshots(
   }
   return out;
 }
+
+/** Yahoo quoteSummary 由来の時価総額・初回取引日（上場日の近似）。 */
+export type YahooInstrumentMetadata = {
+  marketCap: number | null;
+  /** YYYY-MM-DD（UTC 暦日） */
+  listingDate: string | null;
+  /**
+   * 長期日足チャートの最古バーにおける調整後終値優先（なければ終値）。未取得は null。
+   * `fetchYahooInstrumentMetadata` の `fetchListingPrice` が true のときのみ埋まる。
+   */
+  listingPrice: number | null;
+};
+
+/** `fetchYahooInstrumentMetadata` のオプション。 */
+export type FetchYahooInstrumentMetadataOptions = {
+  /**
+   * true のときのみ `yahooFinance.chart`（1970-01-01 〜 現在）で最古日の終値を取得。
+   * 未設定の `listing_price` 補完向け（毎回のチャート負荷を避ける）。
+   */
+  fetchListingPrice?: boolean;
+};
+
+const CHART_LISTING_PRICE_START = new Date(Date.UTC(1970, 0, 1));
+
+function parseYahooMarketCapField(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === "object" && raw !== null && "raw" in (raw as object)) {
+    const n = Number((raw as { raw?: unknown }).raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
+/**
+ * 時価総額・上場日（初回取引日）を Yahoo から取得。失敗時は null 多めで返す。
+ * Server Actions / Route / `dashboard-data` のみから呼ぶこと。
+ */
+export async function fetchYahooInstrumentMetadata(
+  ticker: string,
+  providerSymbol?: string | null,
+  options?: FetchYahooInstrumentMetadataOptions,
+): Promise<YahooInstrumentMetadata> {
+  const t = ticker.trim();
+  if (t.length === 0) return { marketCap: null, listingDate: null, listingPrice: null };
+  const sym = toYahooFinanceSymbol(t, providerSymbol ?? null);
+  if (!sym) return { marketCap: null, listingDate: null, listingPrice: null };
+
+  let marketCap: number | null = null;
+  let listingDate: string | null = null;
+  let listingPrice: number | null = null;
+
+  try {
+    const qs = await yahooFinance.quoteSummary(sym, {
+      modules: ["price", "defaultKeyStatistics", "summaryProfile"],
+    });
+    const q = qs as Record<string, unknown>;
+    const priceMod = q.price as Record<string, unknown> | undefined;
+    const dks = q.defaultKeyStatistics as Record<string, unknown> | undefined;
+    const prof = q.summaryProfile as Record<string, unknown> | undefined;
+
+    marketCap =
+      parseYahooMarketCapField(priceMod?.marketCap) ??
+      parseYahooMarketCapField(dks?.marketCap);
+
+    const epochUtc = prof?.firstTradeDateEpochUtc ?? priceMod?.firstTradeDateMilliseconds;
+    listingDate = ymdFromYahooDateLike(epochUtc);
+    if (listingDate == null && priceMod?.firstTradeDateMilliseconds != null) {
+      listingDate = ymdFromYahooDateLike(priceMod.firstTradeDateMilliseconds);
+    }
+  } catch (e) {
+    logSkip(sym, "quoteSummary instrument metadata", e);
+  }
+
+  if (listingDate == null) {
+    listingDate = await fetchEarliestChartTradeDateYmd(sym, t);
+  }
+
+  if (options?.fetchListingPrice === true) {
+    listingPrice = await fetchOldestDailyListingPriceFromChart(sym, t);
+  }
+
+  return { marketCap, listingDate, listingPrice };
+}
+
+type ChartArrayQuote = {
+  date?: unknown;
+  close?: number | null;
+  adjclose?: number | null;
+};
+
+function pickCloseOrAdjClose(q: ChartArrayQuote): number | null {
+  const adj = q.adjclose != null ? Number(q.adjclose) : NaN;
+  const cl = q.close != null ? Number(q.close) : NaN;
+  if (Number.isFinite(adj) && adj > 0) return adj;
+  if (Number.isFinite(cl) && cl > 0) return cl;
+  return null;
+}
+
+/**
+ * 1970-01-01 からの日足で最古の取引日の終値（adj 優先）。JP 銘柄は `.T` フォールバックを試行。
+ */
+async function fetchOldestDailyListingPriceFromChart(yahooSymbol: string, ticker: string): Promise<number | null> {
+  let lastErr: unknown;
+  for (const sym of yahooSymbolFallbacks(yahooSymbol, ticker)) {
+    try {
+      const result = (await yahooFinance.chart(
+        sym,
+        {
+          period1: CHART_LISTING_PRICE_START,
+          period2: new Date(),
+          interval: "1d",
+          return: "array",
+        },
+        { validateResult: false },
+      )) as { quotes?: ChartArrayQuote[] };
+
+      const quotes = result.quotes ?? [];
+      let bestYmd: string | null = null;
+      let bestPrice: number | null = null;
+      for (const q of quotes) {
+        const ymd = chartBarDateYmd(q as { date: unknown });
+        if (ymd == null) continue;
+        const price = pickCloseOrAdjClose(q as ChartArrayQuote);
+        if (price == null) continue;
+        if (bestYmd == null || ymd.localeCompare(bestYmd) < 0) {
+          bestYmd = ymd;
+          bestPrice = price;
+        }
+      }
+      if (bestPrice != null) return bestPrice;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr !== undefined) logSkip(yahooSymbol, "oldest chart bar for listing price", lastErr);
+  return null;
+}
+
+type SortedDailyBar = { ymd: string; adj: number | null; cl: number | null };
+
+function collectSortedDailyBarsFromChartQuotes(quotes: ChartArrayQuote[]): SortedDailyBar[] {
+  const out: SortedDailyBar[] = [];
+  for (const q of quotes) {
+    const ymd = chartBarDateYmd(q as { date: unknown });
+    if (ymd == null) continue;
+    const adjRaw = q.adjclose != null ? Number(q.adjclose) : NaN;
+    const clRaw = q.close != null ? Number(q.close) : NaN;
+    const adj = Number.isFinite(adjRaw) && adjRaw > 0 ? adjRaw : null;
+    const cl = Number.isFinite(clRaw) && clRaw > 0 ? clRaw : null;
+    if (adj == null && cl == null) continue;
+    out.push({ ymd, adj, cl });
+  }
+  out.sort((a, b) => a.ymd.localeCompare(b.ymd));
+  return out;
+}
+
+/**
+ * 日足系列の **最古日と最新日** で、同一基準（両方 adj 可能なら adj、それ以外は両方 close）の
+ * トータルリターン (%) = (末日 / 初日 − 1) × 100。分子・分母の混在を避ける。
+ */
+function totalReturnPercentFromSortedDailyBars(bars: SortedDailyBar[]): number | null {
+  if (bars.length < 2) return null;
+  const first = bars[0]!;
+  const last = bars[bars.length - 1]!;
+  if (first.adj != null && last.adj != null) {
+    return roundAlphaMetric((last.adj / first.adj - 1) * 100);
+  }
+  if (first.cl != null && last.cl != null) {
+    return roundAlphaMetric((last.cl / first.cl - 1) * 100);
+  }
+  return null;
+}
+
+/**
+ * Yahoo 日足（1970-01-01 〜 現在）の **データ上の最初の取引日から最新バーまで** の変化率（%）。
+ * 調整後終値が初日・末日ともにあればそれを使用し、なければ名目終値のみでペアを揃える。
+ * 表示「上場来%」向け（IPO 初値とは限らない）。失敗時は null。
+ */
+export async function fetchChartTotalReturnPercentSinceFirstDailyBar(
+  ticker: string,
+  providerSymbol?: string | null,
+): Promise<number | null> {
+  const t = ticker.trim();
+  if (t.length === 0) return null;
+  const sym = toYahooFinanceSymbol(t, providerSymbol ?? null);
+  if (!sym) return null;
+  let lastErr: unknown;
+  for (const cand of yahooSymbolFallbacks(sym, t)) {
+    try {
+      const result = (await yahooFinance.chart(
+        cand,
+        {
+          period1: CHART_LISTING_PRICE_START,
+          period2: new Date(),
+          interval: "1d",
+          return: "array",
+        },
+        { validateResult: false },
+      )) as { quotes?: ChartArrayQuote[] };
+      const bars = collectSortedDailyBarsFromChartQuotes(result.quotes ?? []);
+      const pct = totalReturnPercentFromSortedDailyBars(bars);
+      if (pct != null) return pct;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr !== undefined) logSkip(sym, "chart total return since first daily bar", lastErr);
+  return null;
+}
+
+/** 長期チャートの最古バー日付 ≒ 上場日以降の最初の取引日（フォールバック）。 */
+async function fetchEarliestChartTradeDateYmd(yahooSymbol: string, ticker: string): Promise<string | null> {
+  try {
+    const bars = await fetchChartClosesWithFallbacks(yahooSymbol, ticker, 365 * 40);
+    if (bars.length === 0) return null;
+    let min = bars[0]!.date;
+    for (const b of bars) {
+      if (b.date.localeCompare(min) < 0) min = b.date;
+    }
+    return min.length >= 10 ? min.slice(0, 10) : null;
+  } catch (e) {
+    logSkip(yahooSymbol, "earliest chart bar for listing date", e);
+    return null;
+  }
+}
+
 async function fetchChartCloses(yahooSymbol: string, calendarDays: number): Promise<PriceBar[]> {
   const days = Math.max(1, Math.floor(Number.isFinite(calendarDays) ? calendarDays : 1));
   const { period1, period2 } = periodRangeForCalendarDays(days);

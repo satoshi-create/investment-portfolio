@@ -21,6 +21,39 @@ export interface Holding {
   id: string;
   ticker: string;
   providerSymbol?: string | null;
+  /** DB `holdings.listing_date` — 上場日・初回取引日（YYYY-MM-DD）。未設定は null */
+  listingDate?: string | null;
+  /** DB `holdings.market_cap`（現地通貨ベース・任意スケール）。未設定は null */
+  marketCap?: number | null;
+  /** DB `holdings.listing_price`（上場時 / 公募価格・現地通貨）。未設定は null。`instrument-metadata-sync` が Yahoo 日足最古バーで補完し得る */
+  listingPrice?: number | null;
+  /** DB `holdings.next_earnings_date` — 調査スナップより優先して決算日表示に使う（YYYY-MM-DD）。未設定は null */
+  nextEarningsDate?: string | null;
+  /** DB `holdings.memo`（自由記述）。未設定は null */
+  memo?: string | null;
+  /** DB `holdings.is_bookmarked`。未読込時は省略可 */
+  isBookmarked?: boolean;
+}
+
+/**
+ * Semantic KPI tone for signed metrics — maps to Tailwind `@theme inline` tokens in `app/globals.css`.
+ * Use `INVESTMENT_METRIC_TONE_TEXT_CLASS[tone]` for `className`.
+ */
+export const INVESTMENT_METRIC_TONE_TEXT_CLASS = {
+  positive: "text-accent-emerald",
+  negative: "text-accent-rose",
+  neutral: "text-muted-foreground",
+  caution: "text-accent-amber",
+} as const;
+
+export type InvestmentMetricTone = keyof typeof INVESTMENT_METRIC_TONE_TEXT_CLASS;
+
+/** Maps signed % KPIs (e.g. performance since IPO) to a semantic tone for themed text colors. */
+export function investmentMetricToneForSignedPercent(value: number | null | undefined): InvestmentMetricTone {
+  if (value == null || !Number.isFinite(value)) return "neutral";
+  if (value > 0) return "positive";
+  if (value < 0) return "negative";
+  return "neutral";
 }
 
 export type HoldingCategory = "Core" | "Satellite";
@@ -138,6 +171,22 @@ export interface Stock {
   expectationCategory: ExpectationCategory | null;
   /** `holdings.earnings_summary_note`（決算要約メモ）。未設定は null */
   earningsSummaryNote: string | null;
+
+  /** DB `holdings.listing_date`（上場日・YYYY-MM-DD）。未設定は null */
+  listingDate: string | null;
+  /** DB `holdings.market_cap`。未設定は null */
+  marketCap: number | null;
+  /** DB `holdings.listing_price`（上場価格・現地通貨）。未設定は null。`prefetchHoldingsInstrumentMetadata` が Yahoo 日足最古バーで補完し得る */
+  listingPrice: number | null;
+  /** DB `holdings.memo`。未設定は null */
+  memo: string | null;
+  /** DB `holdings.is_bookmarked` */
+  isBookmarked: boolean;
+  /**
+   * 上場来騰落率（表示用）。可能なら Yahoo 日足の **最古日〜最新日** を同一基準（adj または close のペア）で
+   * (末日/初日 − 1)×100。チャート取得不能時は (現在価格 / listing_price − 1)×100 にフォールバック。
+   */
+  performanceSinceFoundation: number | null;
 
   /**
    * Efficiency metrics (theme ecosystem enriched).
@@ -324,8 +373,13 @@ export type ThemeEcosystemWatchItem = {
   forwardEps: number | null;
   /** `theme_ecosystem_members.observation_started_at`（銘柄投入日・累積 Alpha の第一優先起点）。未設定時は null */
   observationStartedAt: string | null;
-  /** テーマ `created_at` 起点の累積 Alpha %（日次超過の合計）。`alpha_history` 優先、不足時は Yahoo 日次から算出 */
+  /** 観測起点からの累積 Alpha %（累積系列）。スパークライン・最新累積値用。日次は `alphaDailyHistory`。 */
   alphaHistory: number[];
+  /**
+   * 日次 Alpha % の時系列（保有 `Stock.alphaHistory` と同義）。`TrendMiniChart`（5D）用。
+   * `alphaHistory` は累積なので別配列。
+   */
+  alphaDailyHistory: number[];
   currentPrice: number | null;
   /** `alphaHistory` の最終点（累積 Alpha %） */
   latestAlpha: number | null;
@@ -365,7 +419,25 @@ export type ThemeEcosystemWatchItem = {
   /** `computeInvestmentJudgment` — サーバーが必ず付与（テーマ詳細 API） */
   judgmentStatus: JudgmentStatus;
   judgmentReason: string;
+
+  /** DB `theme_ecosystem_members.listing_date`（上場日・YYYY-MM-DD）。未設定は null */
+  listingDate: string | null;
+  /** DB `theme_ecosystem_members.market_cap`。未設定は null */
+  marketCap: number | null;
+  /** DB `theme_ecosystem_members.listing_price`。未設定は null。`prefetchThemeEcosystemInstrumentMetadata` が Yahoo 日足最古バーで補完し得る */
+  listingPrice: number | null;
+  /** DB `theme_ecosystem_members.memo`（`observation_notes` とは別）。未設定は null */
+  memo: string | null;
+  /** DB `theme_ecosystem_members.is_bookmarked`（`is_kept` とは別フラグ） */
+  isBookmarked: boolean;
+  /**
+   * 上場来騰落率。可能なら日足初日〜末日の同一基準リターン、それ以外は `listing_price` と表示価格の比。
+   */
+  performanceSinceFoundation: number | null;
 };
+
+/** Alias: テーマエコシステムの 1 行（`ThemeEcosystemWatchItem` と同一）。 */
+export type ThemeMember = ThemeEcosystemWatchItem;
 
 /**
  * Unlisted unicorn holding schema (seed / import-friendly, snake_case).

@@ -34,6 +34,14 @@ export type UpdateEcosystemMemberInput = {
   role?: string | null;
   isMajorPlayer?: boolean;
   companyName?: string | null;
+  /** DB `memo`（短文）。空文字は NULL */
+  memo?: string | null;
+  /** DB `listing_date`（上場日・YYYY-MM-DD）。undefined=変更なし null=クリア */
+  listingDate?: string | null;
+  /** DB `market_cap`。undefined=変更なし null=クリア */
+  marketCap?: number | null;
+  /** DB `listing_price`（創業来％算出用）。undefined=変更なし null=クリア */
+  listingPrice?: number | null;
 };
 
 /**
@@ -124,6 +132,33 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
         ? String(input.companyName).trim()
         : null;
   const nextMajor = input.isMajorPlayer === undefined ? undefined : input.isMajorPlayer === true ? 1 : 0;
+  const nextMemo =
+    input.memo === undefined
+      ? undefined
+      : input.memo != null && String(input.memo).trim().length > 0
+        ? String(input.memo).trim()
+        : null;
+
+  const nextListingDate =
+    input.listingDate === undefined
+      ? undefined
+      : input.listingDate != null && String(input.listingDate).trim().length >= 10
+        ? String(input.listingDate).trim().slice(0, 10)
+        : null;
+
+  const nextMarketCap =
+    input.marketCap === undefined
+      ? undefined
+      : input.marketCap != null && Number.isFinite(input.marketCap)
+        ? input.marketCap
+        : null;
+
+  const nextListingPrice =
+    input.listingPrice === undefined
+      ? undefined
+      : input.listingPrice != null && Number.isFinite(input.listingPrice)
+        ? input.listingPrice
+        : null;
 
   // Only update the fields that were provided.
   const sets: string[] = [];
@@ -139,6 +174,22 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
   if (nextMajor !== undefined) {
     sets.push(`is_major_player = ?`);
     args.push(nextMajor);
+  }
+  if (nextMemo !== undefined) {
+    sets.push(`memo = ?`);
+    args.push(nextMemo);
+  }
+  if (nextListingDate !== undefined) {
+    sets.push(`listing_date = ?`);
+    args.push(nextListingDate);
+  }
+  if (nextMarketCap !== undefined) {
+    sets.push(`market_cap = ?`);
+    args.push(nextMarketCap);
+  }
+  if (nextListingPrice !== undefined) {
+    sets.push(`listing_price = ?`);
+    args.push(nextListingPrice);
   }
   if (sets.length === 0) return;
 

@@ -256,6 +256,7 @@ export function themeEcosystemWatchlistToCsvRows(
     drawdownFromHigh90dPct: e.drawdownFromHigh90dPct,
     latestCumulativeAlphaPct: e.latestAlpha,
     alphaHistorySeries: e.alphaHistory.length > 0 ? JSON.stringify(e.alphaHistory) : "",
+    alphaDailyHistorySeries: e.alphaDailyHistory.length > 0 ? JSON.stringify(e.alphaDailyHistory) : "",
     currentPrice: e.currentPrice,
   }));
 }
@@ -293,5 +294,6 @@ export const THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "drawdownFromHigh90dPct", header: "90日高値比（%）" },
   { key: "latestCumulativeAlphaPct", header: "累積Alpha（%）" },
   { key: "alphaHistorySeries", header: "累積Alpha系列（JSON）" },
+  { key: "alphaDailyHistorySeries", header: "日次Alpha系列（JSON）" },
   { key: "currentPrice", header: "現在値（建て通貨）" },
 ];

@@ -1,10 +1,11 @@
 "use client";
 
 import React from "react";
-import { Bookmark } from "lucide-react";
+import { Star } from "lucide-react";
 
 import { cn } from "@/src/lib/cn";
 
+/** キープ状態は ☆ の充填で表現（短冊型 Bookmark アイコンは不使用）。 */
 export function EcosystemKeepButton({
   isKept,
   disabled,
@@ -36,7 +37,11 @@ export function EcosystemKeepButton({
         disabled && "opacity-50 pointer-events-none",
       )}
     >
-      <Bookmark className={size === "sm" ? "h-4 w-4" : "h-3.5 w-3.5"} fill={isKept ? "currentColor" : "none"} />
+      <Star
+        className={size === "sm" ? "h-4 w-4" : "h-3.5 w-3.5"}
+        fill={isKept ? "currentColor" : "none"}
+        strokeWidth={isKept ? 0 : 2}
+      />
     </button>
   );
 }

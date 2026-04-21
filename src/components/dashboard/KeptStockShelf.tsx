@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Bookmark } from "lucide-react";
+import { Star } from "lucide-react";
 
 import type { ThemeEcosystemWatchItem } from "@/src/types/investment";
 import { cn } from "@/src/lib/cn";
@@ -12,27 +12,27 @@ export function KeptStockShelf(props: {
   items: ThemeEcosystemWatchItem[];
 }) {
   const { themeName, items } = props;
-  const kept = items.filter((e) => e.isKept);
-  if (kept.length === 0) return null;
+  const bookmarked = items.filter((e) => e.isBookmarked);
+  if (bookmarked.length === 0) return null;
 
   return (
     <section
-      aria-labelledby="kept-stock-shelf-heading"
+      aria-labelledby="ecosystem-bookmarked-shelf-heading"
       className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-4 md:p-5"
     >
       <div className="flex items-start gap-3">
         <div className="h-9 w-9 rounded-xl border border-amber-500/35 bg-amber-500/10 flex items-center justify-center shrink-0">
-          <Bookmark size={18} className="text-amber-300" fill="currentColor" />
+          <Star size={18} className="text-amber-300" fill="currentColor" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 id="kept-stock-shelf-heading" className="text-xs font-bold uppercase tracking-wider text-amber-200/90">
-            キープした投資候補
+          <h2 id="ecosystem-bookmarked-shelf-heading" className="text-xs font-bold uppercase tracking-wider text-amber-200/90">
+            ブックマークした投資候補
           </h2>
           <p className="text-[11px] text-slate-500 mt-0.5">
             テーマ「{themeName}」でブックマークした銘柄。タイミング到来時にすぐ辿れます。
           </p>
           <ul className="mt-3 flex flex-wrap gap-2">
-            {kept.map((e) => {
+            {bookmarked.map((e) => {
               const label = e.companyName.trim().length > 0 ? e.companyName : e.ticker;
               const displayTicker =
                 e.isUnlisted && e.proxyTicker ? `${e.ticker} → ${e.proxyTicker}` : e.ticker;

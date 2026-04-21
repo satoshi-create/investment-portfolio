@@ -77,7 +77,15 @@ import {
   type HybridHoldingPriceSnapshot,
   fetchUsdJpyRate,
   holdingLivePriceKey,
+  fetchChartTotalReturnPercentSinceFirstDailyBar,
 } from "@/src/lib/price-service";
+import {
+  prefetchHoldingsInstrumentMetadata,
+  prefetchThemeEcosystemInstrumentMetadata,
+} from "@/src/lib/instrument-metadata-sync";
+
+export { syncStockMetadata } from "@/src/lib/instrument-metadata-sync";
+export type { SyncStockMetadataResult } from "@/src/lib/instrument-metadata-sync";
 
 const TARGET_CORE_PERCENT = 90;
 
@@ -666,6 +674,15 @@ type HoldingQueryRow = {
   valuation_factor: unknown;
   expectation_category?: unknown;
   earnings_summary_note?: unknown;
+  listing_date?: unknown;
+  /** 旧マイグレーションのみ */
+  founded_date?: unknown;
+  market_cap?: unknown;
+  listing_price?: unknown;
+  next_earnings_date?: unknown;
+  memo?: unknown;
+  is_bookmarked?: unknown;
+  instrument_meta_synced_at?: unknown;
 };
 
 function parseEarningsSummaryNote(raw: unknown): string | null {
@@ -673,6 +690,66 @@ function parseEarningsSummaryNote(raw: unknown): string | null {
   const s = String(raw);
   if (s.trim().length === 0) return null;
   return s;
+}
+
+function parseOptionalIsoDatePrefix(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return s.length >= 10 ? s.slice(0, 10) : null;
+}
+
+function parseOptionalFiniteNumberMeta(raw: unknown): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseBookmarkFlag(raw: unknown): boolean {
+  return raw != null && String(raw).trim() !== "" ? Number(raw) === 1 : false;
+}
+
+/** Calendar-day gap (UTC midnight) until `nextYmd` (YYYY-MM-DD). */
+function computeUtcCalendarDaysUntil(nextYmd: string | null): number | null {
+  if (nextYmd == null || nextYmd.length < 10) return null;
+  const d = new Date(`${nextYmd}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function computePerformanceSinceFoundationPercent(
+  currentPrice: number | null,
+  listingPrice: number | null,
+): number | null {
+  if (currentPrice == null || listingPrice == null) return null;
+  const lp = Number(listingPrice);
+  const cp = Number(currentPrice);
+  if (!Number.isFinite(lp) || !Number.isFinite(cp) || lp <= 0) return null;
+  return roundAlphaMetric((cp / lp - 1) * 100);
+}
+
+async function fetchHoldingsRowsWithInvestmentMeta(db: Client, userId: string) {
+  const extended = `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note,
+          listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at`;
+  try {
+    return await db.execute({
+      sql: `${extended}
+          FROM holdings
+          WHERE user_id = ? AND quantity > 0
+          ORDER BY ticker`,
+      args: [userId],
+    });
+  } catch (e) {
+    if (!holdingsMissingInvestmentMeta(e)) throw e;
+    return await db.execute({
+      sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note
+            FROM holdings
+            WHERE user_id = ? AND quantity > 0
+            ORDER BY ticker`,
+      args: [userId],
+    });
+  }
 }
 
 type StockDraft = Omit<Stock, "weight"> & { structureTagsJson: string };
@@ -838,6 +915,18 @@ function ecosystemMissingEfficiencyColumns(e: unknown): boolean {
   );
 }
 
+function holdingsMissingInvestmentMeta(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("listing_date");
+}
+
+function ecosystemMissingInvestmentMetaColumns(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("listing_date");
+}
+
 async function fetchEcosystemEfficiencyByTickerUpper(
   db: Client,
   tickers: string[],
@@ -881,12 +970,22 @@ async function fetchEcosystemEfficiencyByTickerUpper(
       }
     } catch (eTickerTable) {
       // Fallback for older DBs: use theme_ecosystem_members columns when available.
-      rs = await db.execute({
-        sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
+      try {
+        rs = await db.execute({
+          sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
+              , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
+              WHERE ticker IN (${ph})`,
+          args: unique,
+        });
+      } catch (eEco) {
+        if (!ecosystemMissingInvestmentMetaColumns(eEco)) throw eEco;
+        rs = await db.execute({
+          sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
               FROM theme_ecosystem_members
               WHERE ticker IN (${ph})`,
-        args: unique,
-      });
+          args: unique,
+        });
+      }
     }
     for (const row of rs.rows as unknown as EcosystemEfficiencyRow[]) {
       const tk = String(row.ticker ?? "").trim();
@@ -1025,6 +1124,37 @@ function buildByTickerDatedAlphaRows(rows: Iterable<Record<string, unknown>>): M
   return out;
 }
 
+/** 保有ごとに、日足の初日〜末日（adj または close のペア）に基づく長期変化率を事前取得。`fast` では空。 */
+async function prefetchChartListedTotalReturnByHoldingKey(
+  rows: HoldingQueryRow[],
+  options?: { fast?: boolean },
+): Promise<Map<string, number | null>> {
+  const map = new Map<string, number | null>();
+  if (options?.fast === true || rows.length === 0) return map;
+  const seen = new Set<string>();
+  const jobs: { key: string; ticker: string; provider: string | null }[] = [];
+  for (const row of rows) {
+    const ticker = String(row.ticker ?? "").trim();
+    if (!ticker) continue;
+    const provider =
+      row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null;
+    const key = holdingLivePriceKey(ticker, provider);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    jobs.push({ key, ticker, provider });
+  }
+  const settled = await Promise.allSettled(
+    jobs.map(({ key, ticker, provider }) =>
+      fetchChartTotalReturnPercentSinceFirstDailyBar(ticker, provider).then((pct) => ({ key, pct })),
+    ),
+  );
+  for (const r of settled) {
+    if (r.status !== "fulfilled") continue;
+    map.set(r.value.key, r.value.pct);
+  }
+  return map;
+}
+
 function buildDraftsFromHoldingRows(
   rows: HoldingQueryRow[],
   byTicker: Map<string, AlphaPoint[]>,
@@ -1045,6 +1175,7 @@ function buildDraftsFromHoldingRows(
   hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
   efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
   liveAlphaCtx: LiveAlphaBenchmarkContext,
+  chartListedReturnPctByHoldingKey: Map<string, number | null>,
 ): StockDraft[] {
   return rows.map((row) => {
     const id = String(row.id);
@@ -1095,8 +1226,15 @@ function buildDraftsFromHoldingRows(
       instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkChangePct : liveAlphaCtx.jpBenchmarkChangePct;
     const liveAlphaBenchmarkTicker =
       instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkTicker : liveAlphaCtx.jpBenchmarkTicker;
+    const listingDate = parseOptionalIsoDatePrefix(row.listing_date ?? row.founded_date);
+    const marketCap = parseOptionalFiniteNumberMeta(row.market_cap);
+    const listingPriceDb = parseOptionalFiniteNumberMeta(row.listing_price);
+    const memoDb = row.memo != null && String(row.memo).trim().length > 0 ? String(row.memo) : null;
+    const isBookmarked = parseBookmarkFlag(row.is_bookmarked);
+    const dbNextEarnings = parseOptionalIsoDatePrefix(row.next_earnings_date);
+
     const research = researchByTicker.get(ticker.toUpperCase()) ?? null;
-    const nextEarningsDate = research?.nextEarningsDate ?? null;
+    const nextEarningsDate = dbNextEarnings ?? research?.nextEarningsDate ?? null;
     const exDividendDate = research?.exDividendDate ?? null;
     const annualDividendRate = research?.annualDividendRate ?? null;
     const dividendYieldPercent = research?.dividendYieldPercent ?? null;
@@ -1104,13 +1242,7 @@ function buildDraftsFromHoldingRows(
     const forwardPe = research?.forwardPe ?? null;
     const trailingEps = research?.trailingEps ?? null;
     const forwardEps = research?.forwardEps ?? null;
-    const daysToEarnings = nextEarningsDate != null ? (() => {
-      const d = new Date(`${nextEarningsDate}T00:00:00.000Z`);
-      if (Number.isNaN(d.getTime())) return null;
-      const now = new Date();
-      const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
-    })() : null;
+    const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
     const daysToExDividend = exDividendDate != null ? (() => {
       const d = new Date(`${exDividendDate}T00:00:00.000Z`);
       if (Number.isNaN(d.getTime())) return null;
@@ -1158,6 +1290,12 @@ function buildDraftsFromHoldingRows(
       revenueGrowth: Number.isFinite(revenueGrowth) ? revenueGrowth : null,
     });
 
+    const chartListedPct = chartListedReturnPctByHoldingKey.get(liveKey) ?? null;
+    const performanceSinceFoundation =
+      chartListedPct != null && Number.isFinite(chartListedPct)
+        ? chartListedPct
+        : computePerformanceSinceFoundationPercent(currentPrice, listingPriceDb);
+
     return {
       id,
       ticker,
@@ -1166,6 +1304,12 @@ function buildDraftsFromHoldingRows(
       lastUpdatedAt,
       accountType,
       countryName,
+      listingDate,
+      marketCap,
+      listingPrice: listingPriceDb,
+      memo: memoDb,
+      isBookmarked,
+      performanceSinceFoundation,
       nextEarningsDate,
       daysToEarnings,
       exDividendDate,
@@ -1247,13 +1391,25 @@ async function fetchEcosystemSparklineRowsByThemeIds(
   if (themeIds.length === 0) return out;
   try {
     const ph = themeIds.map(() => "?").join(",");
-    const rs = await db.execute({
-      sql: `SELECT theme_id, ticker, is_unlisted, proxy_ticker, is_major_player
+    let rs;
+    try {
+      rs = await db.execute({
+        sql: `SELECT theme_id, ticker, is_unlisted, proxy_ticker, is_major_player
+            , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
+            WHERE theme_id IN (${ph})
+            ORDER BY theme_id ASC, field ASC, ticker ASC`,
+        args: themeIds,
+      });
+    } catch (eSpark) {
+      if (!ecosystemMissingInvestmentMetaColumns(eSpark)) throw eSpark;
+      rs = await db.execute({
+        sql: `SELECT theme_id, ticker, is_unlisted, proxy_ticker, is_major_player
             FROM theme_ecosystem_members
             WHERE theme_id IN (${ph})
             ORDER BY theme_id ASC, field ASC, ticker ASC`,
-      args: themeIds,
-    });
+        args: themeIds,
+      });
+    }
     for (const row of rs.rows as Record<string, unknown>[]) {
       const tid = String(row["theme_id"] ?? "");
       if (tid.length === 0) continue;
@@ -1484,6 +1640,14 @@ async function enrichEcosystemMemberRow(
       ? String(row["defensive_strength"]).trim()
       : null;
 
+  const listingDateEco = parseOptionalIsoDatePrefix(row["listing_date"] ?? row["founded_date"]);
+  const marketCapEco = parseOptionalFiniteNumberMeta(row["market_cap"]);
+  const listingPriceEco = parseOptionalFiniteNumberMeta(row["listing_price"]);
+  const memoEco =
+    row["memo"] != null && String(row["memo"]).trim().length > 0 ? String(row["memo"]).trim() : null;
+  const isBookmarkedEco = parseBookmarkFlag(row["is_bookmarked"]);
+  const dbNextEarningsEco = parseOptionalIsoDatePrefix(row["next_earnings_date"]);
+
   const effectiveTicker = isUnlisted ? (proxyTicker ?? "") : ticker;
   const companyName = row["company_name"] != null ? String(row["company_name"]) : ticker;
   const field = row["field"] != null ? String(row["field"]) : "";
@@ -1499,7 +1663,7 @@ async function enrichEcosystemMemberRow(
   const countryName = instrumentKind === "US_EQUITY" ? "米国" : "日本";
   const researchKey = effectiveTicker.length > 0 ? effectiveTicker.toUpperCase() : ticker.toUpperCase();
   const research = researchByTicker.get(researchKey) ?? null;
-  const nextEarningsDate = research?.nextEarningsDate ?? null;
+  const nextEarningsDate = dbNextEarningsEco ?? research?.nextEarningsDate ?? null;
   const exDividendDate = research?.exDividendDate ?? null;
   const annualDividendRate = research?.annualDividendRate ?? null;
   const dividendYieldPercent = research?.dividendYieldPercent ?? null;
@@ -1507,16 +1671,7 @@ async function enrichEcosystemMemberRow(
   const forwardPe = research?.forwardPe ?? null;
   const trailingEps = research?.trailingEps ?? null;
   const forwardEps = research?.forwardEps ?? null;
-  const daysToEarnings =
-    nextEarningsDate != null
-      ? (() => {
-          const d = new Date(`${nextEarningsDate}T00:00:00.000Z`);
-          if (Number.isNaN(d.getTime())) return null;
-          const now = new Date();
-          const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-          return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
-        })()
-      : null;
+  const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
   const daysToExDividend =
     exDividendDate != null
       ? (() => {
@@ -1694,6 +1849,17 @@ async function enrichEcosystemMemberRow(
     revenueGrowth: Number.isFinite(revenueGrowth) ? revenueGrowth : null,
   });
 
+  let performanceSinceFoundation: number | null = null;
+  if (!fast && !isUnlisted && effectiveTicker.length > 0) {
+    const chartPct = await fetchChartTotalReturnPercentSinceFirstDailyBar(effectiveTicker, null);
+    if (chartPct != null && Number.isFinite(chartPct)) {
+      performanceSinceFoundation = chartPct;
+    }
+  }
+  if (performanceSinceFoundation == null) {
+    performanceSinceFoundation = computePerformanceSinceFoundationPercent(displayPrice, listingPriceEco);
+  }
+
   return {
     id,
     themeId,
@@ -1712,6 +1878,12 @@ async function enrichEcosystemMemberRow(
     inPortfolio,
     countryName,
     instrumentKind,
+    listingDate: listingDateEco,
+    marketCap: marketCapEco,
+    listingPrice: listingPriceEco,
+    memo: memoEco,
+    isBookmarked: isBookmarkedEco,
+    performanceSinceFoundation,
     nextEarningsDate,
     daysToEarnings,
     exDividendDate,
@@ -1724,6 +1896,7 @@ async function enrichEcosystemMemberRow(
     forwardEps,
     observationStartedAt,
     alphaHistory,
+    alphaDailyHistory: dailyAlphas,
     currentPrice: displayPrice,
     latestAlpha,
     alphaObservationStartDate,
@@ -1796,7 +1969,7 @@ async function fetchEnrichedThemeEcosystem(
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength, is_kept,
                          revenue_growth, fcf_margin, fcf, fcf_yield
-                  FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -1810,7 +1983,7 @@ async function fetchEnrichedThemeEcosystem(
                          company_name, field, role, is_major_player, observation_started_at,
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength, is_kept
-                  FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -1833,7 +2006,7 @@ async function fetchEnrichedThemeEcosystem(
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength,
                          revenue_growth, fcf_margin, fcf, fcf_yield
-                  FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -1850,7 +2023,7 @@ async function fetchEnrichedThemeEcosystem(
                          company_name, field, role, is_major_player, observation_started_at,
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength
-                  FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -1875,7 +2048,7 @@ async function fetchEnrichedThemeEcosystem(
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength,
                          revenue_growth, fcf_margin, fcf, fcf_yield
-                  FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -1892,7 +2065,7 @@ async function fetchEnrichedThemeEcosystem(
                          company_name, field, role, is_major_player, observation_started_at,
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength
-                  FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -1917,7 +2090,7 @@ async function fetchEnrichedThemeEcosystem(
                            adoption_stage, adoption_stage_rationale,
                            holder_tags, dividend_months, defensive_strength,
                            revenue_growth, fcf_margin, fcf, fcf_yield
-                    FROM theme_ecosystem_members
+                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                     WHERE theme_id = ?
                     ORDER BY field ASC, ticker ASC`,
               args: [themeId],
@@ -1934,7 +2107,7 @@ async function fetchEnrichedThemeEcosystem(
                            company_name, field, role, is_major_player, observation_started_at,
                            adoption_stage, adoption_stage_rationale,
                            holder_tags, dividend_months, defensive_strength
-                    FROM theme_ecosystem_members
+                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                     WHERE theme_id = ?
                     ORDER BY field ASC, ticker ASC`,
               args: [themeId],
@@ -1956,7 +2129,7 @@ async function fetchEnrichedThemeEcosystem(
                            last_round_valuation, private_credit_backing, observation_notes,
                            company_name, field, role, is_major_player, observation_started_at,
                            revenue_growth, fcf_margin, fcf, fcf_yield
-                    FROM theme_ecosystem_members
+                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                     WHERE theme_id = ?
                     ORDER BY field ASC, ticker ASC`,
               args: [themeId],
@@ -1976,7 +2149,7 @@ async function fetchEnrichedThemeEcosystem(
               sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
                            last_round_valuation, private_credit_backing, observation_notes,
                            company_name, field, role, is_major_player, observation_started_at
-                    FROM theme_ecosystem_members
+                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                     WHERE theme_id = ?
                     ORDER BY field ASC, ticker ASC`,
               args: [themeId],
@@ -2003,7 +2176,7 @@ async function fetchEnrichedThemeEcosystem(
                          last_round_valuation, private_credit_backing, observation_notes,
                          company_name, field, role, is_major_player, observation_started_at,
                          revenue_growth, fcf_margin, fcf, fcf_yield
-                FROM theme_ecosystem_members
+                , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                 WHERE theme_id = ?
                 ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2023,7 +2196,7 @@ async function fetchEnrichedThemeEcosystem(
             sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
                          last_round_valuation, private_credit_backing, observation_notes,
                          company_name, field, role, is_major_player, observation_started_at
-                FROM theme_ecosystem_members
+                , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at FROM theme_ecosystem_members
                 WHERE theme_id = ?
                 ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2046,6 +2219,7 @@ async function fetchEnrichedThemeEcosystem(
         throw e;
       }
     }
+    await prefetchThemeEcosystemInstrumentMetadata(db, userId, themeId, rows, options);
     const tResearch0 = perf?.enabled ? Date.now() : 0;
     const researchTargets = rows
       .map((r) => {
@@ -2162,13 +2336,7 @@ export async function getThemeDetailData(
     })(),
     (async () => {
       const t = perf.enabled ? Date.now() : 0;
-      const out = await db.execute({
-        sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note
-              FROM holdings
-              WHERE user_id = ? AND quantity > 0
-              ORDER BY ticker`,
-        args: [userId],
-      });
+      const out = await fetchHoldingsRowsWithInvestmentMeta(db, userId);
       if (perf.enabled && perf.requestId) console.log(`[perf] ${perf.requestId} holdingsQuery ms=${Date.now() - t}`);
       return out;
     })(),
@@ -2216,6 +2384,8 @@ export async function getThemeDetailData(
     })(),
   ]);
 
+  await prefetchHoldingsInstrumentMetadata(db, userId, matching as unknown as Record<string, unknown>[], { fast });
+
   let ecosystem: ThemeEcosystemWatchItem[] = [];
   if (theme?.id != null) {
     ecosystem = await fetchEnrichedThemeEcosystem(
@@ -2261,6 +2431,7 @@ export async function getThemeDetailData(
 
     const byTicker = buildByTickerFromAlphaRows(rows);
     const byTickerDated = buildByTickerDatedAlphaRows(rows);
+    const chartListedReturnPctByHoldingKey = await prefetchChartListedTotalReturnByHoldingKey(matching, { fast });
     const drafts = buildDraftsFromHoldingRows(
       matching,
       byTicker,
@@ -2269,6 +2440,7 @@ export async function getThemeDetailData(
       hybridPriceByHoldingKey,
       efficiencyByTickerUpper,
       liveAlphaCtx,
+      chartListedReturnPctByHoldingKey,
     );
     themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
@@ -2526,13 +2698,7 @@ export async function getThemeDetailData(
  * 数量 0 の銘柄（売却済み）は一覧・集計から除外する。
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
-  const h = await db.execute({
-    sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note
-          FROM holdings
-          WHERE user_id = ? AND quantity > 0
-          ORDER BY ticker`,
-    args: [userId],
-  });
+  const h = await fetchHoldingsRowsWithInvestmentMeta(db, userId);
 
   if (h.rows.length === 0) {
     const [allThemes, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
@@ -2617,6 +2783,12 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       })),
     ),
   ]);
+  await prefetchHoldingsInstrumentMetadata(db, userId, holdingRowsForDash as unknown as Record<string, unknown>[], {
+    fast: false,
+  });
+  const chartListedReturnPctByHoldingKey = await prefetchChartListedTotalReturnByHoldingKey(holdingRowsForDash, {
+    fast: false,
+  });
   const drafts = buildDraftsFromHoldingRows(
     holdingRowsForDash,
     byTicker,
@@ -2625,6 +2797,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     hybridPriceByHoldingKey,
     efficiencyByTickerUpper,
     liveAlphaCtx,
+    chartListedReturnPctByHoldingKey,
   );
 
   const totalMarketValue = drafts.reduce(
@@ -2777,6 +2950,12 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
         row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
       expectationCategory: parseExpectationCategory(row.expectation_category),
       earningsSummaryNote: null,
+      listingDate: null,
+      marketCap: null,
+      listingPrice: null,
+      memo: null,
+      isBookmarked: false,
+      performanceSinceFoundation: null,
       previousClose: null,
       benchmarkDayChangePercent: null,
       liveAlphaBenchmarkTicker: null,

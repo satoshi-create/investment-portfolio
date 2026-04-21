@@ -21,18 +21,36 @@ import {
   FileSpreadsheet,
   Layers,
   Search,
+  Star,
   TrendingUp,
   UserPlus,
 } from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  horizontalListSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
 import { toast } from "sonner";
 
-import { toggleThemeEcosystemMemberKept } from "@/app/actions/theme-ecosystem";
+import { toggleThemeEcosystemMemberBookmark, toggleThemeEcosystemMemberKept } from "@/app/actions/theme-ecosystem";
 import type {
   InvestmentThemeRecord,
   ThemeDetailData,
   ThemeEcosystemWatchItem,
   TickerInstrumentKind,
 } from "@/src/types/investment";
+import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
+import { ecoFcfYieldSortValue, ecoRuleOf40SortValue } from "@/src/components/dashboard/eco-efficiency-display";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
 import {
   ADOPTION_STAGE_META,
@@ -48,6 +66,7 @@ import {
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
 } from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
+import { parseAlphaDailyHistoryJson } from "@/src/lib/eco-trend-daily";
 import { cn } from "@/src/lib/cn";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
@@ -86,6 +105,18 @@ import {
   SEMICONDUCTOR_SUPPLY_CHAIN_THEME_NAME,
   type SemiconductorSupplyChainCatalogRow,
 } from "@/src/lib/semiconductor-supply-chain-catalog";
+import {
+  DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER,
+  loadEcosystemWatchlistColumnOrder,
+  saveEcosystemWatchlistColumnOrder,
+  visibleEcoColumnsThemePage,
+  type EcosystemWatchlistColId,
+} from "@/src/lib/ecosystem-watchlist-column-order";
+import { EcosystemThemeTableMappedRow } from "@/src/components/dashboard/EcosystemThemeTableMappedRow";
+import {
+  StructuralEcosystemThead,
+  type StructuralEcoSortKey,
+} from "@/src/components/dashboard/StructuralEcosystemThead";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
@@ -123,6 +154,19 @@ function ecoPeOf(e: ThemeEcosystemWatchItem): number | null {
 function ecoEpsOf(e: ThemeEcosystemWatchItem): number | null {
   const v = e.trailingEps ?? e.forwardEps ?? null;
   return v != null && Number.isFinite(v) ? v : null;
+}
+
+function ecoListingYmdKey(e: ThemeEcosystemWatchItem): string | null {
+  const d = e.listingDate;
+  if (d == null || String(d).trim().length < 10) return null;
+  const ymd = String(d).trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+}
+
+function ecoEarningsSortValue(e: ThemeEcosystemWatchItem): number | null {
+  const d = e.daysToEarnings;
+  if (d == null || !Number.isFinite(d) || d < 0) return null;
+  return d;
 }
 
 function fmtPe(v: number | null): string {
@@ -350,6 +394,21 @@ function normalizeThemeDetailResponse(
             typeof (item as Record<string, unknown>).isKept === "boolean"
               ? ((item as Record<string, unknown>).isKept as boolean)
               : Number((item as Record<string, unknown>).is_kept) === 1,
+          alphaDailyHistory: parseAlphaDailyHistoryJson(
+            (item as Record<string, unknown>).alphaDailyHistory ??
+              (item as Record<string, unknown>).alpha_daily_history,
+          ),
+          listingDate: (() => {
+            const lit =
+              (item as Record<string, unknown>).listingDate ??
+              (item as Record<string, unknown>).listing_date;
+            if (typeof lit === "string" && lit.trim().length >= 10) return lit.trim().slice(0, 10);
+            const leg =
+              (item as Record<string, unknown>).foundedDate ??
+              (item as Record<string, unknown>).founded_date;
+            if (typeof leg === "string" && leg.trim().length >= 10) return leg.trim().slice(0, 10);
+            return null;
+          })(),
           };
         })
       : [],
@@ -513,17 +572,7 @@ export function ThemePageClient({
   const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(
     null,
   );
-  const [ecoSortKey, setEcoSortKey] = useState<
-    | "asset"
-    | "research"
-    | "pe"
-    | "eps"
-    | "alpha"
-    | "trend"
-    | "last"
-    | "deviation"
-    | "drawdown"
-  >("alpha");
+  const [ecoSortKey, setEcoSortKey] = useState<StructuralEcoSortKey>("alpha");
   const [ecoSortDir, setEcoSortDir] = useState<"asc" | "desc">("desc");
   const [ecoSortMode, setEcoSortMode] = useState<
     "column" | "dip_rank" | "deep_value_rank"
@@ -558,7 +607,14 @@ export function ThemePageClient({
   const [ecoEditCompanyName, setEcoEditCompanyName] = useState("");
   const [ecoEditRole, setEcoEditRole] = useState("");
   const [ecoEditMajor, setEcoEditMajor] = useState(false);
+  const [ecoEditListingDate, setEcoEditListingDate] = useState("");
+  const [ecoEditMarketCap, setEcoEditMarketCap] = useState("");
+  const [ecoEditListingPrice, setEcoEditListingPrice] = useState("");
   const [ecoEditSaving, setEcoEditSaving] = useState(false);
+  const [ecoBookmarksOnly, setEcoBookmarksOnly] = useState(false);
+  const [ecoColumnOrder, setEcoColumnOrder] = useState<EcosystemWatchlistColId[]>(
+    DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER,
+  );
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -743,6 +799,51 @@ export function ThemePageClient({
             ...cur,
             ecosystem: cur.ecosystem.map((x) =>
               x.id === memberId ? { ...x, isKept: res.isKept! } : x,
+            ),
+          };
+        });
+      }
+    },
+    [ecosystem, themeQueryName],
+  );
+
+  const handleToggleEcosystemBookmark = useCallback(
+    async (memberId: string) => {
+      const prevEntry = ecosystem.find((x) => x.id === memberId);
+      if (!prevEntry) return;
+      const optimistic = !prevEntry.isBookmarked;
+      setData((cur) => {
+        if (!cur) return cur;
+        return {
+          ...cur,
+          ecosystem: cur.ecosystem.map((x) =>
+            x.id === memberId ? { ...x, isBookmarked: optimistic } : x,
+          ),
+        };
+      });
+      const res = await toggleThemeEcosystemMemberBookmark(memberId, {
+        themeSlugForRevalidate: themeQueryName,
+      });
+      if (!res.ok) {
+        toast.error(res.message ?? "ブックマーク更新に失敗しました");
+        setData((cur) => {
+          if (!cur) return cur;
+          return {
+            ...cur,
+            ecosystem: cur.ecosystem.map((x) =>
+              x.id === memberId ? { ...x, isBookmarked: prevEntry.isBookmarked } : x,
+            ),
+          };
+        });
+        return;
+      }
+      if (res.isBookmarked !== undefined) {
+        setData((cur) => {
+          if (!cur) return cur;
+          return {
+            ...cur,
+            ecosystem: cur.ecosystem.map((x) =>
+              x.id === memberId ? { ...x, isBookmarked: res.isBookmarked! } : x,
             ),
           };
         });
@@ -966,6 +1067,11 @@ export function ThemePageClient({
     setEcoEditCompanyName((e.companyName ?? "").trim());
     setEcoEditRole((e.role ?? "").trim());
     setEcoEditMajor(e.isMajorPlayer === true);
+    setEcoEditListingDate(
+      typeof e.listingDate === "string" && e.listingDate.trim().length >= 10 ? e.listingDate.trim().slice(0, 10) : "",
+    );
+    setEcoEditMarketCap(e.marketCap != null && Number.isFinite(e.marketCap) ? String(e.marketCap) : "");
+    setEcoEditListingPrice(e.listingPrice != null && Number.isFinite(e.listingPrice) ? String(e.listingPrice) : "");
   }, []);
 
   const cancelEditEcosystem = useCallback(() => {
@@ -973,12 +1079,44 @@ export function ThemePageClient({
     setEcoEditCompanyName("");
     setEcoEditRole("");
     setEcoEditMajor(false);
+    setEcoEditListingDate("");
+    setEcoEditMarketCap("");
+    setEcoEditListingPrice("");
     setEcoEditSaving(false);
   }, []);
 
   const saveEditEcosystem = useCallback(
     async (memberId: string) => {
       if (!theme?.id || ecoEditSaving) return;
+      const fd = ecoEditListingDate.trim();
+      if (fd.length > 0 && !/^\d{4}-\d{2}-\d{2}$/.test(fd)) {
+        toast.error("初回取引日は YYYY-MM-DD で入力してください（空でクリア）");
+        return;
+      }
+      const mcRaw = ecoEditMarketCap.trim().replace(/,/g, "");
+      let marketCapPayload: number | null;
+      if (mcRaw === "") {
+        marketCapPayload = null;
+      } else {
+        const n = Number(mcRaw);
+        if (!Number.isFinite(n)) {
+          toast.error("時価総額は数値で入力してください（空でクリア）");
+          return;
+        }
+        marketCapPayload = n;
+      }
+      const lpRaw = ecoEditListingPrice.trim().replace(/,/g, "");
+      let listingPricePayload: number | null;
+      if (lpRaw === "") {
+        listingPricePayload = null;
+      } else {
+        const n = Number(lpRaw);
+        if (!Number.isFinite(n)) {
+          toast.error("listing_price（フォールバック用）は数値で入力してください（空でクリア）");
+          return;
+        }
+        listingPricePayload = n;
+      }
       setEcoEditSaving(true);
       const ac = new AbortController();
       try {
@@ -992,6 +1130,9 @@ export function ThemePageClient({
             companyName: ecoEditCompanyName.trim() || null,
             role: ecoEditRole.trim() || null,
             isMajorPlayer: ecoEditMajor,
+            listingDate: fd === "" ? null : fd,
+            marketCap: marketCapPayload,
+            listingPrice: listingPricePayload,
           }),
         });
         let json: { error?: string } = {};
@@ -1017,7 +1158,10 @@ export function ThemePageClient({
     [
       cancelEditEcosystem,
       ecoEditCompanyName,
+      ecoEditListingDate,
+      ecoEditListingPrice,
       ecoEditMajor,
+      ecoEditMarketCap,
       ecoEditRole,
       ecoEditSaving,
       refetchThemeDetailQuiet,
@@ -1067,6 +1211,9 @@ export function ThemePageClient({
 
   const ecosystemFiltered = useMemo(() => {
     let out = ecosystem;
+    if (ecoBookmarksOnly) {
+      out = out.filter((e) => e.isBookmarked === true);
+    }
     if (postChasmOnly) {
       out = out.filter((e) => isPostChasmStage(e.adoptionStage));
     }
@@ -1116,6 +1263,7 @@ export function ThemePageClient({
     return out;
   }, [
     ecosystem,
+    ecoBookmarksOnly,
     patrolOn,
     postChasmOnly,
     ecosystemSearchQuery,
@@ -1201,37 +1349,81 @@ export function ThemePageClient({
       }
 
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
+      if (ecoSortKey === "earnings") return dir * cmpNum(ecoEarningsSortValue(a), ecoEarningsSortValue(b));
+      if (ecoSortKey === "listing")
+        return dir * cmpStr(ecoListingYmdKey(a) ?? "\uFFFF", ecoListingYmdKey(b) ?? "\uFFFF");
+      if (ecoSortKey === "mktCap") return dir * cmpNum(a.marketCap, b.marketCap);
+      if (ecoSortKey === "perfListed")
+        return dir * cmpNum(a.performanceSinceFoundation, b.performanceSinceFoundation);
+      if (ecoSortKey === "judgment") {
+        const ja = judgmentPriorityRank(a.judgmentStatus as JudgmentStatus);
+        const jb = judgmentPriorityRank(b.judgmentStatus as JudgmentStatus);
+        if (ja !== jb) return dir * (ja - jb);
+        return dir * cmpStr(a.ticker, b.ticker);
+      }
+      if (ecoSortKey === "ruleOf40")
+        return dir * cmpNum(ecoRuleOf40SortValue(a), ecoRuleOf40SortValue(b));
+      if (ecoSortKey === "fcfYield")
+        return dir * cmpNum(ecoFcfYieldSortValue(a), ecoFcfYieldSortValue(b));
       if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
       if (ecoSortKey === "eps") return dir * cmpNum(ecoEpsOf(a), ecoEpsOf(b));
       if (ecoSortKey === "alpha")
         return dir * cmpNum(a.latestAlpha, b.latestAlpha);
-      if (ecoSortKey === "trend")
+      if (ecoSortKey === "trend5d")
         return dir * cmpNum(lastAlpha(a), lastAlpha(b));
-      if (ecoSortKey === "last")
+      if (ecoSortKey === "cumTrend")
+        return dir * cmpNum(lastAlpha(a), lastAlpha(b));
+      if (ecoSortKey === "price")
         return dir * cmpNum(a.currentPrice, b.currentPrice);
       if (ecoSortKey === "deviation") return dir * cmpNum(devZ(a), devZ(b));
       if (ecoSortKey === "drawdown") return dir * cmpNum(ddOf(a), ddOf(b));
-      // research
-      const earnCmp = cmpNum(
-        a.daysToEarnings != null && a.daysToEarnings >= 0
-          ? a.daysToEarnings
-          : null,
-        b.daysToEarnings != null && b.daysToEarnings >= 0
-          ? b.daysToEarnings
-          : null,
-      );
-      if (earnCmp !== 0) return dir * earnCmp;
-      return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+      if (ecoSortKey === "research") {
+        const earnCmp = cmpNum(
+          a.daysToEarnings != null && a.daysToEarnings >= 0
+            ? a.daysToEarnings
+            : null,
+          b.daysToEarnings != null && b.daysToEarnings >= 0
+            ? b.daysToEarnings
+            : null,
+        );
+        if (earnCmp !== 0) return dir * earnCmp;
+        return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+      }
+      return 0;
     });
     return arr;
   }, [ecosystemFiltered, ecoSortDir, ecoSortKey, ecoSortMode]);
 
-  const ecosystemColSpan = useMemo(() => {
-    const base = 1 /* Asset */ + 1 /* キャズム */ + 2 /* PE + EPS */ + 3 /* Cumα + Trend + Last */;
-    const mid = isDefensiveTheme ? 3 : 2; // defensive: Holder/Dividend/Def role, else: Research/役割
-    const value = ecoShowValueCols ? 2 : 0;
-    return base + mid + value;
-  }, [ecoShowValueCols, isDefensiveTheme]);
+  useEffect(() => {
+    setEcoColumnOrder(loadEcosystemWatchlistColumnOrder());
+  }, []);
+
+  useEffect(() => {
+    saveEcosystemWatchlistColumnOrder(ecoColumnOrder);
+  }, [ecoColumnOrder]);
+
+  const ecoVisibleColumnIds = useMemo(
+    () => visibleEcoColumnsThemePage(ecoColumnOrder, { isDefensiveTheme, ecoShowValueCols }),
+    [ecoColumnOrder, isDefensiveTheme, ecoShowValueCols],
+  );
+
+  const ecosystemColSpan = ecoVisibleColumnIds.length;
+
+  const ecoColumnSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleEcoColumnDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setEcoColumnOrder((items) => {
+      const oldIndex = items.indexOf(active.id as EcosystemWatchlistColId);
+      const newIndex = items.indexOf(over.id as EcosystemWatchlistColId);
+      if (oldIndex < 0 || newIndex < 0) return items;
+      return arrayMove(items, oldIndex, newIndex);
+    });
+  }
 
   function ecoSortModeLabel(mode: "column" | "dip_rank" | "deep_value_rank"): string {
     if (mode === "column") return "通常: 列で並べ替え";
@@ -1249,7 +1441,7 @@ export function ThemePageClient({
     return "深掘り（Deep）探索。Z（短期の温度差）が強くマイナス＝直近だけ相対的に冷えた銘柄を上位へ（構造毀損の断定ではない）。落率と CUM・A（構造の年輪）を併読して、調査優先度を作ります。";
   }
 
-  function toggleEcoSort(next: typeof ecoSortKey) {
+  function toggleEcoSort(next: StructuralEcoSortKey) {
     if (next === ecoSortKey)
       setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -1258,7 +1450,7 @@ export function ThemePageClient({
     }
   }
 
-  function ecoSortMark(k: typeof ecoSortKey) {
+  function ecoSortMark(k: StructuralEcoSortKey) {
     if (k !== ecoSortKey) return "";
     return ecoSortDir === "asc" ? " ▲" : " ▼";
   }
@@ -1985,6 +2177,20 @@ export function ThemePageClient({
                         </div>
                         <button
                           type="button"
+                          onClick={() => setEcoBookmarksOnly((v) => !v)}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors",
+                            ecoBookmarksOnly
+                              ? "border-accent-amber/50 bg-accent-amber/10 text-accent-amber"
+                              : "border-border text-muted-foreground hover:bg-muted/70",
+                          )}
+                          title="ブックマーク済みのウォッチ銘柄のみ"
+                        >
+                          <Star className={`h-3.5 w-3.5 ${ecoBookmarksOnly ? "fill-accent-amber text-accent-amber" : ""}`} />
+                          ブックマークのみ
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setEcoShowValueCols((v) => !v)}
                           className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
                             ecoShowValueCols
@@ -2277,8 +2483,9 @@ export function ThemePageClient({
                           </span>
                         ) : null}
                         <span>
-                          {patrolOn ||
+                          {                          patrolOn ||
                           postChasmOnly ||
+                          ecoBookmarksOnly ||
                           ecosystemSearchQuery.trim().length > 0 ||
                           ecoMarketFilter !== "all"
                             ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
@@ -2288,101 +2495,24 @@ export function ThemePageClient({
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-muted text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
-                        <tr>
-                          <th
-                            className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyThFirst} cursor-pointer select-none`}
-                            onClick={() => toggleEcoSort("asset")}
-                            title="Sort"
-                          >
-                            Asset{ecoSortMark("asset")}
-                          </th>
-                          {isDefensiveTheme ? (
-                            <>
-                              <th className="px-6 py-4 text-left whitespace-nowrap">
-                                Holder
-                              </th>
-                              <th className="px-6 py-4 text-left whitespace-nowrap">
-                                Dividend
-                              </th>
-                              <th className="px-6 py-4 text-left whitespace-nowrap">
-                                Defensive role
-                              </th>
-                            </>
-                          ) : (
-                            <>
-                              <th
-                                className="px-6 py-4 text-left cursor-pointer select-none"
-                                onClick={() => toggleEcoSort("research")}
-                                title="Sort"
-                              >
-                                Research{ecoSortMark("research")}
-                              </th>
-                              <th className="px-6 py-4 text-left whitespace-nowrap">
-                                江戸的役割
-                              </th>
-                            </>
-                          )}
-                          {ecoShowValueCols ? (
-                            <>
-                              <th
-                                className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                                onClick={() => toggleEcoSort("deviation")}
-                                title="日次 Alpha 乖離（σ）"
-                              >
-                                乖離{ecoSortMark("deviation")}
-                              </th>
-                              <th
-                                className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                                onClick={() => toggleEcoSort("drawdown")}
-                                title="90 日高値比"
-                              >
-                                落率{ecoSortMark("drawdown")}
-                              </th>
-                            </>
-                          ) : null}
-                          <th
-                            className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            onClick={() => toggleEcoSort("pe")}
-                            title="Sort"
-                          >
-                            PE{ecoSortMark("pe")}
-                          </th>
-                          <th
-                            className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            onClick={() => toggleEcoSort("eps")}
-                            title="Sort"
-                          >
-                            EPS{ecoSortMark("eps")}
-                          </th>
-                          <th
-                            className="px-6 py-4 text-right cursor-pointer select-none"
-                            onClick={() => toggleEcoSort("alpha")}
-                            title="Sort"
-                          >
-                            Cum. α{ecoSortMark("alpha")}
-                          </th>
-                          <th
-                            className="px-6 py-4 text-center cursor-pointer select-none"
-                            onClick={() => toggleEcoSort("trend")}
-                            title="Sort"
-                          >
-                            Cumulative trend{ecoSortMark("trend")}
-                          </th>
-                          <th
-                            className="px-6 py-4 text-right cursor-pointer select-none"
-                            onClick={() => toggleEcoSort("last")}
-                            title="Sort"
-                          >
-                            Last{ecoSortMark("last")}
-                          </th>
-                        </tr>
-                      </thead>
+                    <DndContext
+                      sensors={ecoColumnSensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleEcoColumnDragEnd}
+                    >
+                      <table className="w-full text-left text-sm">
+                        <SortableContext items={ecoVisibleColumnIds} strategy={horizontalListSortingStrategy}>
+                          <StructuralEcosystemThead
+                            ecoVisibleColumnIds={ecoVisibleColumnIds}
+                            toggleEcoSort={toggleEcoSort}
+                            ecoSortMark={ecoSortMark}
+                          />
+                        </SortableContext>
                       <tbody className="divide-y divide-border/50">
                         {ecosystemSorted.length === 0 &&
                         (patrolOn ||
                           postChasmOnly ||
+                          ecoBookmarksOnly ||
                           ecosystemSearchQuery.trim().length > 0 ||
                           ecoMarketFilter !== "all" ||
                           ecoPeMin.trim().length > 0 ||
@@ -2460,450 +2590,50 @@ export function ThemePageClient({
                                 id={`eco-row-${e.id}`}
                                 className="group hover:bg-muted/45 transition-all scroll-mt-24"
                               >
-                                <td
-                                  className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${stickyTdFirst}`}
-                                >
-                                  <div className="flex flex-col gap-0.5">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="min-w-0">
-                                        <span className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono inline-flex items-center gap-1">
-                                          {ecoOpp ? (
-                                            <span
-                                              className="shrink-0 text-base leading-none"
-                                              title="テーマの加重累積 Alpha は上向きだが、日次 Alpha は統計的に冷え込み（割安候補）"
-                                              aria-label="Opportunity"
-                                            >
-                                              ✨
-                                            </span>
-                                          ) : null}
-                                          <span className="break-all">
-                                            {e.ticker}
-                                          </span>
-                                        </span>
-                                        {e.isUnlisted ? (
-                                          <div className="mt-1 flex flex-wrap items-center gap-1">
-                                            {e.estimatedIpoDate ? (
-                                              <span className="text-[8px] font-bold uppercase tracking-wide text-fuchsia-300/95 border border-fuchsia-500/30 px-1.5 py-0.5 rounded">
-                                                IPO {e.estimatedIpoDate}
-                                              </span>
-                                            ) : null}
-                                            {e.estimatedValuation ? (
-                                              <span className="text-[8px] font-bold uppercase tracking-wide text-foreground/95 border border-border/50 px-1.5 py-0.5 rounded">
-                                                {e.estimatedValuation}
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                      <div className="flex flex-wrap gap-1 justify-end items-start shrink-0">
-                                        <EcosystemKeepButton
-                                          size="xs"
-                                          isKept={e.isKept}
-                                          onClick={() => void handleToggleEcosystemKeep(e.id)}
-                                        />
-                                        {e.isMajorPlayer ? (
-                                          <span className="text-[8px] font-bold uppercase tracking-wide text-amber-400/95 border border-amber-500/35 px-1.5 py-0.5 rounded">
-                                            Major
-                                          </span>
-                                        ) : null}
-                                        {e.inPortfolio ? (
-                                          <span className="text-[8px] font-bold uppercase tracking-wide text-emerald-400/95 border border-emerald-500/35 px-1.5 py-0.5 rounded">
-                                            In portfolio
-                                          </span>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                    {e.companyName ? (
-                                      <span
-                                        className="text-[10px] text-muted-foreground leading-snug line-clamp-2"
-                                        title={e.companyName}
-                                      >
-                                        {e.companyName}
-                                      </span>
-                                    ) : null}
-                                    {ecoEditingId === e.id ? (
-                                      <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/40 p-2">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                          <div className="space-y-1">
-                                            <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
-                                              Company
-                                            </p>
-                                            <Input
-                                              value={ecoEditCompanyName}
-                                              onChange={(ev) =>
-                                                setEcoEditCompanyName(
-                                                  ev.target.value,
-                                                )
-                                              }
-                                              placeholder="企業名（任意）"
-                                              className="h-8 text-xs"
-                                              autoComplete="off"
-                                            />
-                                          </div>
-                                          <div className="space-y-1">
-                                            <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
-                                              Role
-                                            </p>
-                                            <Input
-                                              value={ecoEditRole}
-                                              onChange={(ev) =>
-                                                setEcoEditRole(ev.target.value)
-                                              }
-                                              placeholder="役割（任意）"
-                                              className="h-8 text-xs"
-                                              autoComplete="off"
-                                            />
-                                          </div>
-                                        </div>
-                                        <label className="flex items-center gap-2 text-[10px] text-muted-foreground select-none">
-                                          <input
-                                            type="checkbox"
-                                            checked={ecoEditMajor}
-                                            onChange={(ev) =>
-                                              setEcoEditMajor(ev.target.checked)
-                                            }
-                                            className="accent-amber-500"
-                                          />
-                                          Major
-                                        </label>
-                                        <div className="flex items-center gap-2">
-                                          <Button
-                                            type="button"
-                                            onClick={() =>
-                                              void saveEditEcosystem(e.id)
-                                            }
-                                            disabled={ecoEditSaving}
-                                            className="h-8 px-3 text-xs"
-                                          >
-                                            {ecoEditSaving ? "保存中…" : "保存"}
-                                          </Button>
-                                          <button
-                                            type="button"
-                                            onClick={cancelEditEcosystem}
-                                            className="h-8 px-3 rounded-md border border-border text-xs font-bold text-foreground hover:bg-muted/70"
-                                          >
-                                            Cancel
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : null}
-                                    {e.observationNotes
-                                      ? (() => {
-                                          const geo =
-                                            extractGeopoliticalPotential(
-                                              e.observationNotes,
-                                            );
-                                          return (
-                                            <span
-                                              className="text-[10px] text-muted-foreground leading-snug line-clamp-2"
-                                              title={e.observationNotes}
-                                            >
-                                              {e.observationNotes}
-                                              {geo ? (
-                                                <span
-                                                  className="ml-2 inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-300/90"
-                                                  title={`地政学ポテンシャル: ${geo}`}
-                                                >
-                                                  Geo
-                                                </span>
-                                              ) : null}
-                                            </span>
-                                          );
-                                        })()
-                                      : null}
-                                    {e.observationStartedAt ? (
-                                      <span className="text-[10px] font-mono text-muted-foreground pt-0.5">
-                                        観測開始（投入）{" "}
-                                        <span className="text-muted-foreground">
-                                          {e.observationStartedAt}
-                                        </span>
-                                        {e.alphaObservationStartDate &&
-                                        e.alphaObservationStartDate !==
-                                          e.observationStartedAt ? (
-                                          <span className="block text-[9px] text-muted-foreground mt-0.5 font-normal">
-                                            系列起点{" "}
-                                            {e.alphaObservationStartDate}
-                                          </span>
-                                        ) : null}
-                                      </span>
-                                    ) : e.alphaObservationStartDate ? (
-                                      <span className="text-[10px] font-mono text-muted-foreground pt-0.5">
-                                        観測起点{" "}
-                                        <span className="text-muted-foreground">
-                                          {e.alphaObservationStartDate}
-                                        </span>
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </td>
-                                {isDefensiveTheme ? (
-                                  <>
-                                    <td className="px-6 py-4">
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {e.holderTags.length > 0 ? (
-                                          e.holderTags.map((h) => (
-                                            <span
-                                              key={h}
-                                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${holderBadgeClass(h)}`}
-                                              title={h}
-                                            >
-                                              {h}
-                                            </span>
-                                          ))
-                                        ) : (
-                                          <span className="text-xs text-muted-foreground">
-                                            —
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="mt-2 md:hidden text-[10px] text-muted-foreground">
-                                        {e.countryName}
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      {dividendCalendar(e.dividendMonths)}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      <div className="hidden md:block">
-                                        {e.defensiveStrength ? (
-                                          <p className="text-sm font-bold text-foreground leading-snug">
-                                            {e.defensiveStrength}
-                                          </p>
-                                        ) : null}
-                                        {e.role ? (
-                                          <p
-                                            className="text-xs text-muted-foreground leading-relaxed mt-1 line-clamp-3"
-                                            title={e.role}
-                                          >
-                                            {e.role}
-                                          </p>
-                                        ) : (
-                                          <span className="text-xs text-muted-foreground">
-                                            —
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="md:hidden">
-                                        <p
-                                          className="text-xs font-semibold text-foreground leading-snug line-clamp-2"
-                                          title={e.defensiveStrength ?? e.role}
-                                        >
-                                          {e.defensiveStrength ?? e.role ?? "—"}
-                                        </p>
-                                      </div>
-                                    </td>
-                                  </>
-                                ) : (
-                                  <>
-                                    <td className="px-6 py-4">
-                                      <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          <span className="text-[10px] font-bold text-muted-foreground border border-border bg-muted/40 px-2 py-0.5 rounded-md">
-                                            {e.countryName}
-                                          </span>
-                                          {e.nextEarningsDate ? (
-                                            <span
-                                              className="text-[10px] font-bold text-foreground border border-border bg-card/60 px-2 py-0.5 rounded-md"
-                                              title={`次期決算予定日: ${e.nextEarningsDate}`}
-                                            >
-                                              E:
-                                              {e.daysToEarnings != null
-                                                ? `D${e.daysToEarnings}`
-                                                : e.nextEarningsDate}
-                                            </span>
-                                          ) : (
-                                            <span className="text-[10px] text-muted-foreground">
-                                              E:—
-                                            </span>
-                                          )}
-                                          {e.dividendYieldPercent != null ? (
-                                            <span
-                                              className="text-[10px] font-bold text-foreground border border-border bg-card/60 px-2 py-0.5 rounded-md"
-                                              title={
-                                                e.annualDividendRate != null
-                                                  ? `年間配当: ${e.annualDividendRate}`
-                                                  : "年間配当: —"
-                                              }
-                                            >
-                                              Div:
-                                              {e.dividendYieldPercent.toFixed(
-                                                2,
-                                              )}
-                                              %
-                                            </span>
-                                          ) : (
-                                            <span className="text-[10px] text-muted-foreground">
-                                              Div:—
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      {e.role ? (
-                                        <div
-                                          className="text-xs text-foreground leading-relaxed line-clamp-4"
-                                          title={e.role}
-                                        >
-                                          {e.role}
-                                        </div>
-                                      ) : (
-                                        <span className="text-xs text-muted-foreground">
-                                          —
-                                        </span>
-                                      )}
-                                    </td>
-                                  </>
-                                )}
-                                {ecoShowValueCols ? (
-                                  <>
-                                    <td
-                                      className={`px-6 py-4 text-right font-mono text-xs font-bold ${
-                                        isDefensiveTheme
-                                          ? defensiveZClass(zEco)
-                                          : zEco == null
-                                            ? "text-muted-foreground"
-                                            : zEco < -1
-                                              ? "text-amber-400"
-                                              : zEco > 1
-                                                ? "text-emerald-400"
-                                                : "text-foreground"
-                                      }`}
-                                    >
-                                      {fmtZsigma(zEco)}
-                                    </td>
-                                    <td
-                                      className={`px-6 py-4 text-right font-mono text-xs font-bold ${
-                                        ddEco == null
-                                          ? "text-muted-foreground"
-                                          : ddEco < -10
-                                            ? "text-rose-400"
-                                            : "text-foreground"
-                                      }`}
-                                    >
-                                      {fmtDdCol(ddEco)}
-                                    </td>
-                                  </>
-                                ) : null}
-                                <td
-                                  className="px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap text-foreground"
-                                  title={
-                                    e.trailingPe != null || e.forwardPe != null
-                                      ? `PE trailing=${e.trailingPe ?? "—"} / forward=${e.forwardPe ?? "—"}`
-                                      : "PE: 未取得"
-                                  }
-                                >
-                                  {fmtPe(ecoPeOf(e))}
-                                </td>
-                                <td
-                                  className={cn(
-                                    "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap",
-                                    (() => {
-                                      const eps = ecoEpsOf(e);
-                                      if (eps == null) return "text-muted-foreground";
-                                      if (eps <= 0) return "text-rose-300";
-                                      return "text-foreground";
-                                    })(),
-                                  )}
-                                  title={
-                                    e.trailingEps != null || e.forwardEps != null
-                                      ? `EPS trailing=${e.trailingEps ?? "—"} / forward=${e.forwardEps ?? "—"}`
-                                      : "EPS: 未取得"
-                                  }
-                                >
-                                  {fmtEps(ecoEpsOf(e))}
-                                </td>
-                                <td
-                                  className={`px-6 py-4 text-right font-mono font-bold ${
-                                    e.latestAlpha != null &&
-                                    Number.isFinite(e.latestAlpha)
-                                      ? pctClass(e.latestAlpha)
-                                      : "text-muted-foreground"
-                                  }`}
-                                >
-                                  {e.latestAlpha != null &&
-                                  Number.isFinite(e.latestAlpha) ? (
-                                    <>
-                                      {e.latestAlpha > 0 ? "+" : ""}
-                                      {e.latestAlpha.toFixed(2)}%
-                                    </>
-                                  ) : (
-                                    "—"
-                                  )}
-                                </td>
-                                <td className="px-6 py-4">
-                                  <div className="flex flex-col items-center gap-1">
-                                    {e.isUnlisted ? (
-                                      <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
-                                        Proxy Momentum
-                                        {e.proxyTicker
-                                          ? ` (${e.proxyTicker})`
-                                          : ""}
-                                      </span>
-                                    ) : null}
-                                    <EcosystemCumulativeSparkline
-                                      history={e.alphaHistory}
-                                    />
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                  <div className="flex flex-col items-end gap-1">
-                                    <span className="font-mono text-foreground text-xs">
-                                      {formatEcoPriceForView(e)}
-                                    </span>
-                                    {!e.inPortfolio ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          openTradeForm({
-                                            ticker:
-                                              e.isUnlisted && e.proxyTicker
-                                                ? e.proxyTicker
-                                                : e.ticker,
-                                            name: e.companyName || undefined,
-                                            theme: themeLabel,
-                                            themeId: theme?.id,
-                                            quantityDefault: 1,
-                                            ...(e.currentPrice != null &&
-                                            Number.isFinite(e.currentPrice) &&
-                                            e.currentPrice > 0
-                                              ? { unitPrice: e.currentPrice }
-                                              : {}),
-                                          })
-                                        }
-                                        className="text-[9px] font-bold uppercase tracking-wide text-cyan-400 border border-cyan-500/40 px-2 py-0.5 rounded-md hover:bg-cyan-500/10"
-                                      >
-                                        Trade
-                                      </button>
-                                    ) : null}
-                                    <div className="flex items-center gap-1">
-                                      {ecoEditingId !== e.id ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => beginEditEcosystem(e)}
-                                          className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-2 py-0.5 rounded-md hover:bg-muted/70"
-                                        >
-                                          Edit
-                                        </button>
-                                      ) : null}
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void deleteEcoMember(e.id, e.ticker)
-                                        }
-                                        className="text-[9px] font-bold uppercase tracking-wide text-rose-400 border border-rose-500/40 px-2 py-0.5 rounded-md hover:bg-rose-500/10"
-                                      >
-                                        Delete
-                                      </button>
-                                    </div>
-                                  </div>
-                                </td>
+                                <EcosystemThemeTableMappedRow
+                                  visibleColumnIds={ecoVisibleColumnIds}
+                                  e={e}
+                                  ecoOpp={ecoOpp}
+                                  zEco={zEco}
+                                  ddEco={ddEco}
+                                  isDefensiveTheme={isDefensiveTheme}
+                                  themeLabel={themeLabel}
+                                  theme={theme}
+                                  ecoEditingId={ecoEditingId}
+                                  ecoEditCompanyName={ecoEditCompanyName}
+                                  setEcoEditCompanyName={setEcoEditCompanyName}
+                                  ecoEditRole={ecoEditRole}
+                                  setEcoEditRole={setEcoEditRole}
+                                  ecoEditMajor={ecoEditMajor}
+                                  setEcoEditMajor={setEcoEditMajor}
+                                  ecoEditListingDate={ecoEditListingDate}
+                                  setEcoEditListingDate={setEcoEditListingDate}
+                                  ecoEditMarketCap={ecoEditMarketCap}
+                                  setEcoEditMarketCap={setEcoEditMarketCap}
+                                  ecoEditListingPrice={ecoEditListingPrice}
+                                  setEcoEditListingPrice={setEcoEditListingPrice}
+                                  ecoEditSaving={ecoEditSaving}
+                                  ecoResearchIncludeEarnings
+                                  formatEcoPriceForView={formatEcoPriceForView}
+                                  onOpenTrade={(init) => openTradeForm(init)}
+                                  beginEditEcosystem={beginEditEcosystem}
+                                  deleteEcoMember={deleteEcoMember}
+                                  handleToggleEcosystemKeep={handleToggleEcosystemKeep}
+                                  handleToggleEcosystemBookmark={handleToggleEcosystemBookmark}
+                                  saveEditEcosystem={saveEditEcosystem}
+                                  cancelEditEcosystem={cancelEditEcosystem}
+                                  holderBadgeClass={holderBadgeClass}
+                                  dividendCalendar={dividendCalendar}
+                                  defensiveZClass={defensiveZClass}
+                                />
                               </tr>
                             </React.Fragment>
                           );
                         })}
+
                       </tbody>
                     </table>
+                    </DndContext>
                   </div>
                 </div>
               </section>

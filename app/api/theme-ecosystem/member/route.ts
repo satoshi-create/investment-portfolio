@@ -33,9 +33,15 @@ type Body = {
   role?: string | null;
   isMajorPlayer?: boolean;
   companyName?: string | null;
+  /** DB `memo`（短文）。空で NULL */
+  memo?: string | null;
   /** 銘柄投入日（観測開始）YYYY-MM-DD */
   observationStartedAt?: string | null;
   memberId?: string;
+  /** DB `listing_date`（上場日・YYYY-MM-DD） */
+  listingDate?: string | null;
+  marketCap?: number | null;
+  listingPrice?: number | null;
 };
 
 export async function POST(request: Request) {
@@ -132,6 +138,54 @@ export async function PATCH(request: Request) {
         : typeof body.companyName === "string"
           ? body.companyName
           : null;
+  const memo =
+    body.memo === undefined
+      ? undefined
+      : body.memo == null
+        ? null
+        : typeof body.memo === "string"
+          ? body.memo
+          : null;
+
+  let listingDatePatch: string | null | undefined = undefined;
+  if (body.listingDate !== undefined) {
+    if (body.listingDate === null) {
+      listingDatePatch = null;
+    } else if (typeof body.listingDate === "string") {
+      const parsed = parseOptionalObservationDate(body.listingDate);
+      if (parsed === "invalid") {
+        return NextResponse.json(
+          { error: "上場日（listingDate）は YYYY-MM-DD 形式の有効な日付で指定してください" },
+          { status: 400 },
+        );
+      }
+      listingDatePatch = parsed;
+    } else {
+      return NextResponse.json({ error: "listingDate は文字列または null です" }, { status: 400 });
+    }
+  }
+
+  let marketCapPatch: number | null | undefined = undefined;
+  if (body.marketCap !== undefined) {
+    if (body.marketCap === null) {
+      marketCapPatch = null;
+    } else if (typeof body.marketCap === "number" && Number.isFinite(body.marketCap)) {
+      marketCapPatch = body.marketCap;
+    } else {
+      return NextResponse.json({ error: "marketCap は有限の数値または null です" }, { status: 400 });
+    }
+  }
+
+  let listingPricePatch: number | null | undefined = undefined;
+  if (body.listingPrice !== undefined) {
+    if (body.listingPrice === null) {
+      listingPricePatch = null;
+    } else if (typeof body.listingPrice === "number" && Number.isFinite(body.listingPrice)) {
+      listingPricePatch = body.listingPrice;
+    } else {
+      return NextResponse.json({ error: "listingPrice は有限の数値または null です" }, { status: 400 });
+    }
+  }
 
   try {
     await updateEcosystemMember(getDb(), {
@@ -141,6 +195,10 @@ export async function PATCH(request: Request) {
       role,
       isMajorPlayer,
       companyName,
+      memo,
+      listingDate: listingDatePatch,
+      marketCap: marketCapPatch,
+      listingPrice: listingPricePatch,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

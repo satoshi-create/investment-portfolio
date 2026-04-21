@@ -474,6 +474,16 @@ export function EcosystemWatchlistTableRow({
                 {fmtEps(ecoEpsOf(e))}
               </td>
             );
+          case "trend5d":
+          case "listing":
+          case "mktCap":
+          case "perfListed":
+          case "earnings":
+            return (
+              <td key={colId} className={`px-6 py-4 text-xs text-muted-foreground ${stickyFirst}`}>
+                —
+              </td>
+            );
           case "alpha":
             return (
               <td
@@ -492,7 +502,7 @@ export function EcosystemWatchlistTableRow({
                 )}
               </td>
             );
-          case "trend":
+          case "cumTrend":
             return (
               <td key={colId} className={`px-6 py-4 align-top min-w-[9rem] ${stickyFirst}`}>
                 <div className="flex flex-col items-center gap-1">
@@ -505,7 +515,7 @@ export function EcosystemWatchlistTableRow({
                 </div>
               </td>
             );
-          case "last":
+          case "price":
             return (
               <td key={colId} className={`px-6 py-4 text-right align-top min-w-[8rem] whitespace-nowrap ${stickyFirst}`}>
                 <div className="flex flex-col items-end gap-1">

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
-import { FileSpreadsheet, GripVertical, NotebookPen, Search, X } from "lucide-react";
+import { FileSpreadsheet, GripVertical, MessageSquare, NotebookPen, Search, Star, X } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -22,7 +22,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import type { ExpectationCategory, Stock } from "@/src/types/investment";
-import { EXPECTATION_CATEGORY_KEYS, EXPECTATION_CATEGORY_LABEL_JA } from "@/src/types/investment";
+import {
+  EXPECTATION_CATEGORY_KEYS,
+  EXPECTATION_CATEGORY_LABEL_JA,
+  INVESTMENT_METRIC_TONE_TEXT_CLASS,
+  investmentMetricToneForSignedPercent,
+} from "@/src/types/investment";
+import { patchHoldingMemo, toggleHoldingBookmark } from "@/app/actions/holding-meta";
 import { expectationCategoryBadgeClass, expectationCategoryBadgeShortJa } from "@/src/lib/expectation-category";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
@@ -52,9 +58,13 @@ import {
 type SortKey =
   | "asset"
   | "alpha"
-  | "trend"
+  | "trend5d"
   | "position"
   | "research"
+  | "earnings"
+  | "listing"
+  | "mktCap"
+  | "perfListed"
   | "deviation"
   | "drawdown"
   | "ruleOf40"
@@ -125,6 +135,36 @@ function ruleOf40SortValue(s: Stock): number | null {
 
 function fcfYieldSortValue(s: Stock): number | null {
   return Number.isFinite(s.fcfYield) ? s.fcfYield : null;
+}
+
+function listingYmdSortKey(s: Stock): string | null {
+  const d = s.listingDate;
+  if (d == null || String(d).trim().length < 10) return null;
+  const ymd = String(d).trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+}
+
+function fmtMarketCapShort(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const v = Math.abs(n);
+  if (v >= 1e15) return `${(n / 1e15).toFixed(2)}Q`;
+  if (v >= 1e12) return `${(n / 1e12).toFixed(2)}T`;
+  if (v >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (v >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return String(Math.round(n));
+}
+
+function listingYearLabel(s: Stock): string {
+  const fk = listingYmdSortKey(s);
+  if (fk == null) return "—";
+  return fk.slice(0, 4);
+}
+
+function earningsSortValue(s: Stock): number | null {
+  const d = s.daysToEarnings;
+  if (d == null || !Number.isFinite(d) || d < 0) return null;
+  return d;
 }
 
 function SortableInventoryTh({
@@ -269,6 +309,29 @@ export function InventoryTable({
   const [structureFilter, setStructureFilter] = useState("");
   const [expectationFilter, setExpectationFilter] = useState<"" | "__unset__" | ExpectationCategory>("");
   const [columnOrder, setColumnOrder] = useState<InventoryColId[]>(DEFAULT_COLUMN_ORDER);
+  const [bookmarksOnly, setBookmarksOnly] = useState(false);
+  const [memoModalStock, setMemoModalStock] = useState<Stock | null>(null);
+  const [memoDraft, setMemoDraft] = useState("");
+  const [memoSaving, setMemoSaving] = useState(false);
+  const [memoErr, setMemoErr] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (memoModalStock) {
+      setMemoDraft(memoModalStock.memo ?? "");
+      setMemoErr(null);
+    }
+  }, [memoModalStock]);
+
+  const [bookmarkPatch, addBookmarkPatch] = useOptimistic(
+    {} as Record<string, boolean>,
+    (current, update: { id: string; value: boolean }) => ({ ...current, [update.id]: update.value }),
+  );
+
+  function bookmarkDisplayed(s: Stock): boolean {
+    const p = bookmarkPatch[s.id];
+    return p !== undefined ? p : s.isBookmarked;
+  }
 
   useEffect(() => {
     setColumnOrder(loadInventoryColumnOrder());
@@ -324,8 +387,11 @@ export function InventoryTable({
     } else if (expectationFilter !== "") {
       list = list.filter((s) => s.expectationCategory === expectationFilter);
     }
+    if (bookmarksOnly) {
+      list = list.filter((s) => bookmarkDisplayed(s));
+    }
     return list;
-  }, [stocks, structureFilter, expectationFilter]);
+  }, [stocks, structureFilter, expectationFilter, bookmarksOnly, bookmarkPatch]);
 
   const sortedStocks = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -343,8 +409,14 @@ export function InventoryTable({
       };
 
       if (key === "asset") return dir * cmpStr(a.ticker, b.ticker);
+      if (key === "earnings") return dir * cmpNum(earningsSortValue(a), earningsSortValue(b));
+      if (key === "listing")
+        return dir * cmpStr(listingYmdSortKey(a) ?? "\uFFFF", listingYmdSortKey(b) ?? "\uFFFF");
+      if (key === "mktCap") return dir * cmpNum(a.marketCap, b.marketCap);
+      if (key === "perfListed")
+        return dir * cmpNum(a.performanceSinceFoundation, b.performanceSinceFoundation);
       if (key === "alpha") return dir * cmpNum(sortableAlphaValue(a), sortableAlphaValue(b));
-      if (key === "trend") return dir * cmpNum(recordedLastAlphaPct(a), recordedLastAlphaPct(b));
+      if (key === "trend5d") return dir * cmpNum(recordedLastAlphaPct(a), recordedLastAlphaPct(b));
       if (key === "position") return dir * cmpNum(a.marketValue, b.marketValue);
       if (key === "judgment") {
         const ja = judgmentPriorityRank(a.judgmentStatus as JudgmentStatus);
@@ -358,13 +430,8 @@ export function InventoryTable({
       if (key === "fcfYield") return dir * cmpNum(fcfYieldSortValue(a), fcfYieldSortValue(b));
       if (key === "deviation") return dir * cmpNum(deviationOf(a), deviationOf(b));
       if (key === "drawdown") return dir * cmpNum(drawdownOf(a), drawdownOf(b));
-      // research: prioritize upcoming earnings (smaller days), then yield.
-      const earnCmp = cmpNum(
-        a.daysToEarnings != null && a.daysToEarnings >= 0 ? a.daysToEarnings : null,
-        b.daysToEarnings != null && b.daysToEarnings >= 0 ? b.daysToEarnings : null,
-      );
-      if (earnCmp !== 0) return dir * earnCmp;
-      return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+      if (key === "research") return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+      return 0;
     });
     return arr;
   }, [filteredStocks, sortDir, sortKey]);
@@ -486,8 +553,45 @@ export function InventoryTable({
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(nextKey);
-      setSortDir("desc");
+      setSortDir(nextKey === "earnings" ? "asc" : "desc");
     }
+  }
+
+  async function saveHoldingMemo() {
+    if (!memoModalStock) return;
+    setMemoSaving(true);
+    setMemoErr(null);
+    try {
+      const res = await patchHoldingMemo(
+        memoModalStock.id,
+        memoDraft.trim().length > 0 ? memoDraft.trim() : null,
+        { userId },
+      );
+      if (!res.ok) {
+        setMemoErr(res.message ?? "保存に失敗しました");
+        return;
+      }
+      setMemoModalStock(null);
+      await onEarningsNoteSaved?.();
+    } catch (e) {
+      setMemoErr(e instanceof Error ? e.message : "保存に失敗しました");
+    } finally {
+      setMemoSaving(false);
+    }
+  }
+
+  function handleBookmarkClick(stock: Stock) {
+    const prev = bookmarkDisplayed(stock);
+    const next = !prev;
+    startTransition(async () => {
+      addBookmarkPatch({ id: stock.id, value: next });
+      const r = await toggleHoldingBookmark(stock.id, { userId });
+      if (!r.ok) {
+        addBookmarkPatch({ id: stock.id, value: prev });
+        return;
+      }
+      await onEarningsNoteSaved?.();
+    });
   }
 
   function sortMark(k: SortKey) {
@@ -571,6 +675,19 @@ export function InventoryTable({
           ) : null}
           <button
             type="button"
+            onClick={() => setBookmarksOnly((v) => !v)}
+            className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
+              bookmarksOnly
+                ? "text-accent-amber border-accent-amber/50 bg-accent-amber/10"
+                : "text-muted-foreground border-border hover:bg-muted/50"
+            }`}
+            title="ブックマーク（★）済みの銘柄のみ表示"
+          >
+            <Star className={`h-3.5 w-3.5 shrink-0 ${bookmarksOnly ? "fill-accent-amber text-accent-amber" : ""}`} />
+            ブックマークのみ
+          </button>
+          <button
+            type="button"
             onClick={() => setShowValueCols((v) => !v)}
             className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
               showValueCols
@@ -629,7 +746,7 @@ export function InventoryTable({
       <div className="relative w-full max-w-full overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleInventoryColumnDragEnd}>
           <table className="w-full min-w-[1040px] text-left text-xs lg:text-sm">
-            <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em]">
+            <thead className="sticky top-0 z-30 bg-background/85 text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em] backdrop-blur-md supports-[backdrop-filter]:bg-background/75 border-b border-border shadow-sm">
               <tr>
                 <SortableContext items={visibleColumnIds} strategy={horizontalListSortingStrategy}>
                   {visibleColumnIds.map((colId, idx) => {
@@ -651,6 +768,92 @@ export function InventoryTable({
                               onClick={() => toggleSort("asset")}
                             >
                               Asset{sortMark("asset")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "bookmark":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="center"
+                            className="px-2 py-4 w-10 text-center"
+                            title="ブックマーク（列の並べ替えのみドラッグ）"
+                          >
+                            <span className="pointer-events-none inline-flex justify-center" aria-hidden>
+                              <Star className="h-3.5 w-3.5 text-muted-foreground" />
+                            </span>
+                          </SortableInventoryTh>
+                        );
+                      case "listing":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="center"
+                            className="px-3 py-4 text-center cursor-pointer select-none whitespace-nowrap"
+                            title="初回取引日（年）で並べ替え（DB / Yahoo の first trade 近似。IPO 年とは限らない）"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 font-[inherit] text-inherit"
+                              onClick={() => toggleSort("listing")}
+                            >
+                              初取引{sortMark("listing")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "mktCap":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="時価総額（参照: Yahoo Finance・同期時点。任意スケールの手入力も可）"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("mktCap")}
+                            >
+                              MCAP{sortMark("mktCap")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "perfListed":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="長期変動率（%）: 日足の系列上・最古日〜最新日（adj ペア優先）。IPO 公式リターンではない。取得不能時のみ 現在価÷listing_price"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("perfListed")}
+                            >
+                              長期%{sortMark("perfListed")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "earnings":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="center"
+                            className="px-4 py-4 text-center cursor-pointer select-none whitespace-nowrap"
+                            title="次回決算までの営業日数が小さいほど「近い」"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 font-[inherit] text-inherit"
+                              onClick={() => toggleSort("earnings")}
+                            >
+                              決算まで{sortMark("earnings")}
                             </button>
                           </SortableInventoryTh>
                         );
@@ -788,21 +991,21 @@ export function InventoryTable({
                             </button>
                           </SortableInventoryTh>
                         );
-                      case "trend":
+                      case "trend5d":
                         return (
                           <SortableInventoryTh
                             key={colId}
                             id={colId}
                             align="center"
-                            className="px-6 py-4 text-center cursor-pointer select-none"
-                            title="Sort"
+                            className="px-4 py-4 text-center cursor-pointer select-none whitespace-nowrap"
+                            title="直近5観測の日次 Alpha に基づくミニチャートで並べ替え"
                           >
                             <button
                               type="button"
                               className="bg-transparent p-0 font-[inherit] text-inherit"
-                              onClick={() => toggleSort("trend")}
+                              onClick={() => toggleSort("trend5d")}
                             >
-                              5D Trend{sortMark("trend")}
+                              5D{sortMark("trend5d")}
                             </button>
                           </SortableInventoryTh>
                         );
@@ -897,10 +1100,10 @@ export function InventoryTable({
                     switch (colId) {
                       case "asset":
                         return (
-                          <td key={colId} className={`px-6 py-4 min-w-[12rem] max-w-[14rem] ${stickyFirst}`}>
-                            <div className="flex flex-col gap-0.5">
-                              <div className="flex flex-row flex-nowrap items-start justify-between gap-2 whitespace-nowrap">
-                                <span className="font-bold text-foreground group-hover:text-accent-cyan transition-colors inline-flex items-center gap-1 min-w-0 whitespace-nowrap">
+                          <td key={colId} className={`px-6 py-4 min-w-0 max-w-[14rem] ${stickyFirst}`}>
+                            <div className="flex min-w-0 flex-col gap-1">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <div className="flex min-w-0 flex-1 items-center gap-1.5">
                                   {opp ? (
                                     <span
                                       className="shrink-0 text-base leading-none"
@@ -910,7 +1113,9 @@ export function InventoryTable({
                                       ✨
                                     </span>
                                   ) : null}
-                                  <span className="truncate whitespace-nowrap">{stock.ticker}</span>
+                                  <span className="min-w-0 truncate font-bold font-mono text-foreground group-hover:text-accent-cyan transition-colors">
+                                    {stock.ticker}
+                                  </span>
                                   {stock.expectationCategory ? (
                                     <span
                                       className={`shrink-0 text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(stock.expectationCategory)}`}
@@ -919,8 +1124,8 @@ export function InventoryTable({
                                       {expectationCategoryBadgeShortJa(stock.expectationCategory)}
                                     </span>
                                   ) : null}
-                                </span>
-                                <div className="flex items-center gap-1 shrink-0">
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
                                   {ecoKeep != null && onToggleEcosystemKeep != null ? (
                                     <EcosystemKeepButton
                                       size="xs"
@@ -929,7 +1134,7 @@ export function InventoryTable({
                                     />
                                   ) : null}
                                   <span
-                                    className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                                    className={`shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
                                       (stock.accountType ?? "特定") === "NISA"
                                         ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
                                         : "text-muted-foreground border-border bg-background/60"
@@ -941,7 +1146,7 @@ export function InventoryTable({
                                 </div>
                               </div>
                               {onTrade ? (
-                                <div className="mt-1 flex flex-wrap items-center gap-1">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1">
                                   <button
                                     type="button"
                                     onClick={() => onTrade(tradeInitialForStock(stock))}
@@ -970,6 +1175,88 @@ export function InventoryTable({
                             </div>
                           </td>
                         );
+                      case "bookmark":
+                        return (
+                          <td key={colId} className="px-2 py-4 text-center align-middle">
+                            <button
+                              type="button"
+                              onClick={() => handleBookmarkClick(stock)}
+                              className={`inline-flex rounded-md p-1 transition-colors hover:bg-muted/80 ${
+                                bookmarkDisplayed(stock) ? "text-accent-amber" : "text-muted-foreground"
+                              }`}
+                              title={bookmarkDisplayed(stock) ? "ブックマークを外す" : "ブックマークに追加"}
+                              aria-pressed={bookmarkDisplayed(stock)}
+                            >
+                              <Star
+                                className={`h-4 w-4 ${bookmarkDisplayed(stock) ? "fill-accent-amber text-accent-amber" : ""}`}
+                              />
+                            </button>
+                          </td>
+                        );
+                      case "listing":
+                        return (
+                          <td
+                            key={colId}
+                            className="px-3 py-4 text-center font-mono text-xs tabular-nums text-foreground/90"
+                            title={
+                              stock.listingDate
+                                ? `初回取引日（参照）: ${stock.listingDate}（IPO 日とは限らない）`
+                                : undefined
+                            }
+                          >
+                            {listingYearLabel(stock)}
+                          </td>
+                        );
+                      case "mktCap":
+                        return (
+                          <td
+                            key={colId}
+                            className="px-4 py-4 text-right font-mono text-xs text-foreground/90"
+                            title={
+                              stock.marketCap != null
+                                ? `時価総額（参照・同期時点）: ${stock.marketCap}`
+                                : undefined
+                            }
+                          >
+                            {fmtMarketCapShort(stock.marketCap)}
+                          </td>
+                        );
+                      case "perfListed": {
+                        const pf = stock.performanceSinceFoundation;
+                        const tone = investmentMetricToneForSignedPercent(pf);
+                        const cls = pf == null ? "text-muted-foreground" : INVESTMENT_METRIC_TONE_TEXT_CLASS[tone];
+                        return (
+                          <td
+                            key={colId}
+                            className={`px-4 py-4 text-right font-mono text-xs font-bold tabular-nums ${cls}`}
+                            title="長期変動率: 日足の最古〜最新（adj ペア優先）。チャート取得不能時は現在価÷listing_price（IPO 公式ではない）"
+                          >
+                            {pf == null || !Number.isFinite(pf) ? (
+                              "—"
+                            ) : (
+                              <>
+                                {pf > 0 ? "+" : ""}
+                                {pf.toFixed(1)}%
+                              </>
+                            )}
+                          </td>
+                        );
+                      }
+                      case "earnings":
+                        return (
+                          <td key={colId} className="px-4 py-4 text-center">
+                            {stock.nextEarningsDate ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className="text-[11px] font-bold font-mono tabular-nums text-foreground">
+                                  {stock.daysToEarnings != null ? `D-${stock.daysToEarnings}` : "—"}
+                                </span>
+                                <span className="text-[9px] text-muted-foreground font-mono">{stock.nextEarningsDate}</span>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </td>
+                        );
                       case "research":
                         return (
                           <td key={colId} className="px-6 py-4">
@@ -978,16 +1265,6 @@ export function InventoryTable({
                                 <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
                                   {stock.countryName}
                                 </span>
-                                {stock.nextEarningsDate ? (
-                                  <span
-                                    className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md"
-                                    title={`次期決算予定日: ${stock.nextEarningsDate}`}
-                                  >
-                                    E:{stock.daysToEarnings != null ? `D${stock.daysToEarnings}` : stock.nextEarningsDate}
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-muted-foreground">E:—</span>
-                                )}
                                 {stock.dividendYieldPercent != null ? (
                                   <span
                                     className={`text-[10px] font-bold border px-2 py-0.5 rounded-md ${
@@ -1025,6 +1302,23 @@ export function InventoryTable({
                                   title="決算要約メモを表示・編集"
                                 >
                                   <NotebookPen size={12} className="shrink-0" aria-hidden />
+                                  要約
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMemoModalStock(stock)}
+                                  className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide border px-2 py-0.5 rounded-md transition-colors ${
+                                    stock.memo != null && stock.memo.trim().length > 0
+                                      ? "text-accent-cyan border-accent-cyan/45 bg-accent-cyan/10 hover:bg-accent-cyan/20"
+                                      : "text-muted-foreground border-border bg-background/60 hover:bg-muted/70 hover:text-foreground/90"
+                                  }`}
+                                  title={
+                                    stock.memo != null && stock.memo.trim().length > 0
+                                      ? stock.memo
+                                      : "銘柄メモ（holdings.memo）を編集"
+                                  }
+                                >
+                                  <MessageSquare size={12} className="shrink-0" aria-hidden />
                                   メモ
                                 </button>
                               </div>
@@ -1162,9 +1456,9 @@ export function InventoryTable({
                             </div>
                           </td>
                         );
-                      case "trend":
+                      case "trend5d":
                         return (
-                          <td key={colId} className="px-6 py-4">
+                          <td key={colId} className="px-4 py-4 align-middle">
                             {stock.alphaHistory.length === 0 ? (
                               <span className="text-muted-foreground text-xs">No data</span>
                             ) : (
@@ -1276,7 +1570,17 @@ export function InventoryTable({
                       >
                         Total: {sortedStocks.length}
                         {sortedStocks.length === 1 ? " item" : " items"}
-                        {structureFilter.trim() || expectationFilter !== "" ? `（全 ${totalHoldings}）` : ""}
+                        {structureFilter.trim() || expectationFilter !== "" || bookmarksOnly ? `（全 ${totalHoldings}）` : ""}
+                      </td>
+                    );
+                  case "bookmark":
+                  case "listing":
+                  case "mktCap":
+                  case "perfListed":
+                  case "earnings":
+                    return (
+                      <td key={colId} className="px-4 py-3 text-[10px] text-muted-foreground">
+                        —
                       </td>
                     );
                   case "research":
@@ -1396,9 +1700,9 @@ export function InventoryTable({
                         </div>
                       </td>
                     );
-                  case "trend":
+                  case "trend5d":
                     return (
-                      <td key={colId} className="px-6 py-3 text-center align-top font-mono text-[11px] leading-tight">
+                      <td key={colId} className="px-4 py-3 text-center align-top font-mono text-[11px] leading-tight">
                         {footerStats.avgFiveDayAlphaDelta != null && Number.isFinite(footerStats.avgFiveDayAlphaDelta) ? (
                           <span
                             className={`font-bold tabular-nums ${
@@ -1602,6 +1906,60 @@ export function InventoryTable({
                   {noteSaving ? "保存中…" : "保存"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {memoModalStock ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
+          role="presentation"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
+            aria-label="モーダルを閉じる"
+            onClick={() => !memoSaving && setMemoModalStock(null)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 w-[min(100%,24rem)] rounded-2xl border border-border bg-card shadow-2xl p-4 sm:p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-bold text-foreground">銘柄メモ</h2>
+            <p className="text-[11px] font-mono text-accent-cyan mt-0.5">{memoModalStock.ticker}</p>
+            {memoErr ? <p className="text-[10px] text-destructive font-bold mt-2">{memoErr}</p> : null}
+            <label htmlFor="holding-memo" className="sr-only">
+              メモ
+            </label>
+            <textarea
+              id="holding-memo"
+              value={memoDraft}
+              onChange={(e) => setMemoDraft(e.target.value)}
+              disabled={memoSaving}
+              rows={6}
+              className="mt-3 w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 disabled:opacity-50"
+              placeholder="holdings.memo（短文）"
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={memoSaving}
+                onClick={() => setMemoModalStock(null)}
+                className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/60"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                disabled={memoSaving}
+                onClick={() => void saveHoldingMemo()}
+                className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-3 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
+              >
+                {memoSaving ? "保存中…" : "保存"}
+              </button>
             </div>
           </div>
         </div>
