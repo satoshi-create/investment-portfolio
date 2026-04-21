@@ -105,6 +105,10 @@ export interface Stock {
   exDividendDate: string | null;
   /** 権利落ちまでの日数（今日基準）。取得できない場合は null */
   daysToExDividend: number | null;
+  /** 権利確定日（record date, YYYY-MM-DD）。取得できない場合は null */
+  recordDate: string | null;
+  /** 権利確定までの日数（今日基準）。取得できない場合は null */
+  daysToRecordDate: number | null;
   /** 年間配当（現地通貨）。取得できない場合は null */
   annualDividendRate: number | null;
   /** 年間配当利回り %。取得できない場合は null */
@@ -362,6 +366,10 @@ export type ThemeEcosystemWatchItem = {
   exDividendDate: string | null;
   /** 権利落ちまでの日数（今日基準）。取得できない場合は null */
   daysToExDividend: number | null;
+  /** 権利確定日（record date, YYYY-MM-DD）。取得できない場合は null */
+  recordDate: string | null;
+  /** 権利確定までの日数（今日基準）。取得できない場合は null */
+  daysToRecordDate: number | null;
   /** 年間配当（現地通貨）。取得できない場合は null */
   annualDividendRate: number | null;
   /** 年間配当利回り %。取得できない場合は null */

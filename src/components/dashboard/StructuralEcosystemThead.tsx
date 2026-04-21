@@ -23,7 +23,8 @@ export type StructuralEcoSortKey =
   | "drawdown"
   | "ruleOf40"
   | "fcfYield"
-  | "judgment";
+  | "judgment"
+  | "dividend";
 
 function EcoSortTh({
   id,
@@ -166,9 +167,17 @@ export function StructuralEcosystemThead({
               );
             case "dividend":
               return (
-                <SortableEcoWatchlistTh key={colId} id={colId} align="left" className={`px-6 py-4 whitespace-nowrap ${sfirst}`}>
-                  <span className="pointer-events-none">Dividend</span>
-                </SortableEcoWatchlistTh>
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="dividend"
+                  align="left"
+                  className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  title="権利落ちまでの日数が近い順（未取得は末尾）。2回目クリックで昇順/降順切替"
+                  label="Dividend"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                />
               );
             case "defensiveRole":
               return (

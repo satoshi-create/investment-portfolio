@@ -51,6 +51,8 @@ export type EquityResearchSnapshot = {
   nextEarningsDate: string | null;
   /** Ex-dividend date (権利落ち日), YYYY-MM-DD */
   exDividendDate: string | null;
+  /** Record date (権利確定日), YYYY-MM-DD */
+  recordDate: string | null;
   /** Annual dividend per share/unit (local currency). */
   annualDividendRate: number | null;
   /** Dividend yield percent (e.g. 2.15). */
@@ -64,6 +66,29 @@ export type EquityResearchSnapshot = {
   /** Forward EPS (next FY / forward estimate). */
   forwardEps: number | null;
 };
+
+function pickRecordDateFromQuoteSummary(qss: unknown): string | null {
+  type YahooEarningsDateLike = { raw?: unknown; fmt?: unknown };
+  type YahooQuoteSummaryShape = {
+    calendarEvents?: {
+      dividends?: {
+        recordDate?: unknown;
+        dividendDate?: unknown;
+      };
+    };
+  };
+  const s = qss as unknown as YahooQuoteSummaryShape;
+  const raw =
+    s.calendarEvents?.dividends?.recordDate ??
+    s.calendarEvents?.dividends?.dividendDate ??
+    null;
+  if (raw == null) return null;
+  if (typeof raw === "object" && raw != null) {
+    const r = raw as YahooEarningsDateLike;
+    return ymdFromYahooDateLike((r.raw ?? r.fmt ?? raw) as unknown);
+  }
+  return ymdFromYahooDateLike(raw);
+}
 
 /** Row ready for `alpha_history` / dashboard (daily alpha vs VOO, last shared session). */
 export type LatestAlphaPriceRow = {
@@ -255,6 +280,10 @@ export async function fetchEquityResearchSnapshots(
           earnings?: {
             earningsDate?: unknown;
           };
+          dividends?: {
+            recordDate?: unknown;
+            dividendDate?: unknown;
+          };
         };
         summaryDetail?: {
           dividendRate?: unknown;
@@ -289,6 +318,7 @@ export async function fetchEquityResearchSnapshots(
 
       const dividendYieldPercent = parseDividendYieldPercent(qss.summaryDetail?.dividendYield);
       const exDividendDate = ymdFromYahooDateLike(qss.summaryDetail?.exDividendDate as unknown) ?? null;
+      const recordDate = pickRecordDateFromQuoteSummary(qss);
 
       const trailingPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.trailingPE);
       const forwardPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.forwardPE);
@@ -299,6 +329,7 @@ export async function fetchEquityResearchSnapshots(
         ticker: ticker.toUpperCase(),
         nextEarningsDate,
         exDividendDate,
+        recordDate,
         annualDividendRate,
         dividendYieldPercent,
         trailingPe: trailingPe0 != null && trailingPe0 > 0 ? trailingPe0 : null,

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MessageSquare, Star } from "lucide-react";
+import { CalendarClock, MessageSquare, Star } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
@@ -33,6 +33,67 @@ function pctClass(v: number): string {
   if (v > 0) return "text-emerald-400";
   if (v < 0) return "text-rose-400";
   return "text-muted-foreground";
+}
+
+function countdownJa(days: number | null, label: string): string | null {
+  if (days == null || !Number.isFinite(days)) return null;
+  if (days < 0) return null;
+  if (days === 0) return `今日が${label}`;
+  if (days === 1) return `あと1日で${label}`;
+  return `あと${days}日で${label}`;
+}
+
+/** Div%・配当落ち/権利確定・カウントダウン・近接警告（ディフェンシブの「配当カレンダー」列と Research 列で共有） */
+function EcosystemDividendTradingStrip({ e }: { e: ThemeEcosystemWatchItem }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-row flex-wrap items-center gap-2">
+        {e.dividendYieldPercent != null ? (
+          <span
+            className="rounded-md border border-border bg-card/60 px-2 py-0.5 text-[10px] font-bold text-foreground"
+            title={e.annualDividendRate != null ? `年間配当: ${e.annualDividendRate}` : "年間配当: —"}
+          >
+            Div:{e.dividendYieldPercent.toFixed(2)}%
+          </span>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">Div:—</span>
+        )}
+        {(() => {
+          const d = e.daysToExDividend;
+          const soon = d != null && Number.isFinite(d) && d >= 0 && d <= 7;
+          if (!soon) return null;
+          return (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border border-cyan-400/40 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold text-cyan-200 motion-safe:animate-pulse"
+              title="配当落ち日が近い（7日以内）"
+            >
+              <CalendarClock className="h-3.5 w-3.5 shrink-0 text-cyan-200" aria-hidden />
+              X近
+            </span>
+          );
+        })()}
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-mono text-muted-foreground">
+          <span title="配当落ち日（ex-dividend date）">
+            X:{e.exDividendDate ?? "—"}
+            {e.daysToExDividend != null && e.daysToExDividend >= 0 ? ` (D-${e.daysToExDividend})` : ""}
+          </span>
+          <span title="権利確定日（record date）">
+            R:{e.recordDate ?? "—"}
+            {e.daysToRecordDate != null && e.daysToRecordDate >= 0 ? ` (D-${e.daysToRecordDate})` : ""}
+          </span>
+        </div>
+        {(() => {
+          const r = countdownJa(e.daysToRecordDate, "権利確定");
+          const x = countdownJa(e.daysToExDividend, "配当落ち");
+          const text = r ?? x;
+          if (!text) return null;
+          return <span className="text-[10px] text-muted-foreground">{text}</span>;
+        })()}
+      </div>
+    </div>
+  );
 }
 
 function ecoPeOf(e: ThemeEcosystemWatchItem): number | null {
@@ -493,8 +554,11 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "dividend":
             return (
-              <td key={colId} className={`px-6 py-3 align-top whitespace-nowrap ${stickyFirst}`}>
-                {dividendCalendar(e.dividendMonths)}
+              <td key={colId} className={`px-6 py-3 align-top min-w-0 ${stickyFirst}`}>
+                <div className="flex flex-col gap-2">
+                  <div className="whitespace-nowrap">{dividendCalendar(e.dividendMonths)}</div>
+                  {isDefensiveTheme ? <EcosystemDividendTradingStrip e={e} /> : null}
+                </div>
               </td>
             );
           case "defensiveRole":
@@ -553,17 +617,8 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         <span className="text-[10px] text-muted-foreground">E:—</span>
                       )
                     ) : null}
-                    {e.dividendYieldPercent != null ? (
-                      <span
-                        className="rounded-md border border-border bg-card/60 px-2 py-0.5 text-[10px] font-bold text-foreground"
-                        title={e.annualDividendRate != null ? `年間配当: ${e.annualDividendRate}` : "年間配当: —"}
-                      >
-                        Div:{e.dividendYieldPercent.toFixed(2)}%
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground">Div:—</span>
-                    )}
                   </div>
+                  <EcosystemDividendTradingStrip e={e} />
                 </div>
               </td>
             );

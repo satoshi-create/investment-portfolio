@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { invalidateDashboardCacheForUser } from "@/src/lib/dashboard-api-cache";
 import { getDb, isDbConfigured } from "@/src/lib/db";
+import { fetchEquityResearchSnapshots } from "@/src/lib/price-service";
 import { syncStockMetadata, type SyncStockMetadataResult } from "@/src/lib/instrument-metadata-sync";
 
 /**
@@ -32,5 +33,35 @@ export async function syncStockMetadataAction(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, listingDate: null, marketCap: null, listingPrice: null, error: msg };
+  }
+}
+
+export type DividendResearchDatesResult = {
+  ok: boolean;
+  exDividendDate: string | null;
+  recordDate: string | null;
+  error?: string;
+};
+
+/**
+ * Yahoo から配当関連日付（権利落ち日 / 権利確定日）を取得する（DB更新はしない）。
+ * 欠損時は null を返すので、UI 側でプレースホルダー表示しつつ後続の保存処理を実装可能。
+ */
+export async function fetchDividendResearchDatesAction(
+  ticker: string,
+  options?: { providerSymbol?: string | null },
+): Promise<DividendResearchDatesResult> {
+  const tk = String(ticker ?? "").trim();
+  if (tk.length === 0) return { ok: false, exDividendDate: null, recordDate: null, error: "ticker is required." };
+  try {
+    const m = await fetchEquityResearchSnapshots([{ ticker: tk, providerSymbol: options?.providerSymbol ?? null }], {
+      concurrency: 1,
+      batchDelayMs: 0,
+    });
+    const snap = m.get(tk.toUpperCase()) ?? null;
+    return { ok: true, exDividendDate: snap?.exDividendDate ?? null, recordDate: snap?.recordDate ?? null };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, exDividendDate: null, recordDate: null, error: msg };
   }
 }

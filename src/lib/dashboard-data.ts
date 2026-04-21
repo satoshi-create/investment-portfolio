@@ -1163,6 +1163,7 @@ function buildDraftsFromHoldingRows(
     {
       nextEarningsDate: string | null;
       exDividendDate: string | null;
+      recordDate: string | null;
       annualDividendRate: number | null;
       dividendYieldPercent: number | null;
       trailingPe: number | null;
@@ -1236,6 +1237,7 @@ function buildDraftsFromHoldingRows(
     const research = researchByTicker.get(ticker.toUpperCase()) ?? null;
     const nextEarningsDate = dbNextEarnings ?? research?.nextEarningsDate ?? null;
     const exDividendDate = research?.exDividendDate ?? null;
+    const recordDate = research?.recordDate ?? null;
     const annualDividendRate = research?.annualDividendRate ?? null;
     const dividendYieldPercent = research?.dividendYieldPercent ?? null;
     const trailingPe = research?.trailingPe ?? null;
@@ -1245,6 +1247,13 @@ function buildDraftsFromHoldingRows(
     const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
     const daysToExDividend = exDividendDate != null ? (() => {
       const d = new Date(`${exDividendDate}T00:00:00.000Z`);
+      if (Number.isNaN(d.getTime())) return null;
+      const now = new Date();
+      const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
+    })() : null;
+    const daysToRecordDate = recordDate != null ? (() => {
+      const d = new Date(`${recordDate}T00:00:00.000Z`);
       if (Number.isNaN(d.getTime())) return null;
       const now = new Date();
       const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -1314,6 +1323,8 @@ function buildDraftsFromHoldingRows(
       daysToEarnings,
       exDividendDate,
       daysToExDividend,
+      recordDate,
+      daysToRecordDate,
       annualDividendRate,
       dividendYieldPercent,
       trailingPe,
@@ -1589,6 +1600,7 @@ async function enrichEcosystemMemberRow(
     {
       nextEarningsDate: string | null;
       exDividendDate: string | null;
+      recordDate: string | null;
       annualDividendRate: number | null;
       dividendYieldPercent: number | null;
       trailingPe: number | null;
@@ -1665,6 +1677,7 @@ async function enrichEcosystemMemberRow(
   const research = researchByTicker.get(researchKey) ?? null;
   const nextEarningsDate = dbNextEarningsEco ?? research?.nextEarningsDate ?? null;
   const exDividendDate = research?.exDividendDate ?? null;
+  const recordDate = research?.recordDate ?? null;
   const annualDividendRate = research?.annualDividendRate ?? null;
   const dividendYieldPercent = research?.dividendYieldPercent ?? null;
   const trailingPe = research?.trailingPe ?? null;
@@ -1676,6 +1689,16 @@ async function enrichEcosystemMemberRow(
     exDividendDate != null
       ? (() => {
           const d = new Date(`${exDividendDate}T00:00:00.000Z`);
+          if (Number.isNaN(d.getTime())) return null;
+          const now = new Date();
+          const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+          return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
+        })()
+      : null;
+  const daysToRecordDate =
+    recordDate != null
+      ? (() => {
+          const d = new Date(`${recordDate}T00:00:00.000Z`);
           if (Number.isNaN(d.getTime())) return null;
           const now = new Date();
           const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -1888,6 +1911,8 @@ async function enrichEcosystemMemberRow(
     daysToEarnings,
     exDividendDate,
     daysToExDividend,
+    recordDate,
+    daysToRecordDate,
     annualDividendRate,
     dividendYieldPercent,
     trailingPe,
@@ -2908,6 +2933,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       daysToEarnings: null,
       exDividendDate: null,
       daysToExDividend: null,
+      recordDate: null,
+      daysToRecordDate: null,
       annualDividendRate: null,
       dividendYieldPercent: null,
       trailingPe: null,

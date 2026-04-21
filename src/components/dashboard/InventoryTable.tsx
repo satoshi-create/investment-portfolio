@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
-import { FileSpreadsheet, GripVertical, MessageSquare, NotebookPen, Search, Star, X } from "lucide-react";
+import { CalendarClock, FileSpreadsheet, GripVertical, MessageSquare, NotebookPen, Search, Star, X } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -669,6 +669,14 @@ export function InventoryTable({
     return `${v.toFixed(1)}%`;
   }
 
+  function countdownJa(days: number | null, label: string): string | null {
+    if (days == null || !Number.isFinite(days)) return null;
+    if (days < 0) return null;
+    if (days === 0) return `今日が${label}`;
+    if (days === 1) return `あと1日で${label}`;
+    return `あと${days}日で${label}`;
+  }
+
   function rule40Tone(v: number): { text: string; cls: string } {
     if (!Number.isFinite(v)) return { text: "—", cls: "text-muted-foreground" };
     if (v >= 40) return { text: fmtPct0(v), cls: "text-green-500 font-bold" };
@@ -1332,6 +1340,20 @@ export function InventoryTable({
                                 ) : (
                                   <span className="text-[10px] text-muted-foreground">Div:—</span>
                                 )}
+                                {(() => {
+                                  const d = stock.daysToExDividend;
+                                  const soon = d != null && Number.isFinite(d) && d >= 0 && d <= 7;
+                                  if (!soon) return null;
+                                  return (
+                                    <span
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-300 border border-cyan-400/40 bg-cyan-500/10 px-2 py-0.5 rounded-md motion-safe:animate-pulse"
+                                      title="配当落ち日が近い（7日以内）"
+                                    >
+                                      <CalendarClock className="h-3.5 w-3.5 shrink-0 text-cyan-300" aria-hidden />
+                                      X近
+                                    </span>
+                                  );
+                                })()}
                                 {stock.dividendYieldPercent != null && stock.dividendYieldPercent >= 3 ? (
                                   <span
                                     className="text-[10px] font-bold text-amber-200 border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 rounded-md"
@@ -1370,6 +1392,29 @@ export function InventoryTable({
                                   <MessageSquare size={12} className="shrink-0" aria-hidden />
                                   メモ
                                 </button>
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-mono text-muted-foreground">
+                                  <span title="配当落ち日（ex-dividend date）">
+                                    X:{stock.exDividendDate ?? "—"}
+                                    {stock.daysToExDividend != null && stock.daysToExDividend >= 0
+                                      ? ` (D-${stock.daysToExDividend})`
+                                      : ""}
+                                  </span>
+                                  <span title="権利確定日（record date）">
+                                    R:{stock.recordDate ?? "—"}
+                                    {stock.daysToRecordDate != null && stock.daysToRecordDate >= 0
+                                      ? ` (D-${stock.daysToRecordDate})`
+                                      : ""}
+                                  </span>
+                                </div>
+                                {(() => {
+                                  const r = countdownJa(stock.daysToRecordDate, "権利確定");
+                                  const x = countdownJa(stock.daysToExDividend, "配当落ち");
+                                  const text = r ?? x;
+                                  if (!text) return null;
+                                  return <span className="text-[10px] text-muted-foreground">{text}</span>;
+                                })()}
                               </div>
                               <span className="text-[10px] text-muted-foreground">
                                 {stock.accountType ?? "特定"}

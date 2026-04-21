@@ -198,6 +198,14 @@ function ecoEarningsSortValue(e: ThemeEcosystemWatchItem): number | null {
   return d;
 }
 
+/** 配当（Dividend）列ソート: 未来の権利落ちが近いほど小さい。未取得は末尾。過去のみは未来より後ろ。 */
+function ecoDividendSortScore(e: ThemeEcosystemWatchItem): number {
+  const d = e.daysToExDividend;
+  if (d == null || !Number.isFinite(d)) return 1e9;
+  if (d >= 0) return d;
+  return 20000 + d;
+}
+
 function mapThemeLabelForQuery(raw: string): {
   query: string;
   display: string;
@@ -1475,6 +1483,11 @@ export function ThemePageClient({
         return dir * cmpNum(a.currentPrice, b.currentPrice);
       if (ecoSortKey === "deviation") return dir * cmpNum(devZ(a), devZ(b));
       if (ecoSortKey === "drawdown") return dir * cmpNum(ddOf(a), ddOf(b));
+      if (ecoSortKey === "dividend") {
+        const c1 = cmpNum(ecoDividendSortScore(a), ecoDividendSortScore(b));
+        if (c1 !== 0) return dir * c1;
+        return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+      }
       if (ecoSortKey === "research") return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
       return 0;
     });
@@ -1548,7 +1561,7 @@ export function ThemePageClient({
       setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setEcoSortKey(next);
-      setEcoSortDir(next === "earnings" ? "asc" : "desc");
+      setEcoSortDir(next === "earnings" || next === "dividend" ? "asc" : "desc");
     }
   }
 
