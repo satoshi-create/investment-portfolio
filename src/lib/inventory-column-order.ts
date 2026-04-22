@@ -14,6 +14,7 @@ export const INVENTORY_COLUMN_IDS = [
   "drawdown",
   "pe",
   "peg",
+  "egrowth",
   "eps",
   "alpha",
   "position",

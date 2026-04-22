@@ -16,6 +16,7 @@ export type StructuralEcoSortKey =
   | "trend5d"
   | "pe"
   | "peg"
+  | "egrowth"
   | "eps"
   | "alpha"
   | "cumTrend"
@@ -300,6 +301,20 @@ export function StructuralEcosystemThead({
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
                   title="PER÷成長率（小さいほど割安）"
                   label="PEG"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                />
+              );
+            case "egrowth":
+              return (
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="egrowth"
+                  align="right"
+                  className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  title="Yahoo 由来の予想 EPS 成長率（%）"
+                  label="成長%"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                 />
