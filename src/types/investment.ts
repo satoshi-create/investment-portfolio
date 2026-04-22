@@ -128,6 +128,10 @@ export interface Stock {
   forwardPe: number | null;
   trailingEps: number | null;
   forwardEps: number | null;
+  /** PEG（Forward PER 優先で成長率とペア。算出不可は null） */
+  pegRatio: number | null;
+  /** 予想EPS成長率（小数 0.15 = 15%）。Yahoo 由来・未取得は null */
+  expectedGrowth: number | null;
   /** 構造投資テーマ（`structure_tags` 先頭） */
   tag: string;
   alphaHistory: AlphaHistory;
@@ -397,6 +401,8 @@ export type ThemeEcosystemWatchItem = {
   forwardPe: number | null;
   trailingEps: number | null;
   forwardEps: number | null;
+  pegRatio: number | null;
+  expectedGrowth: number | null;
   /** `theme_ecosystem_members.observation_started_at`（銘柄投入日・累積 Alpha の第一優先起点）。未設定時は null */
   observationStartedAt: string | null;
   /** 観測起点からの累積 Alpha %（累積系列）。スパークライン・最新累積値用。日次は `alphaDailyHistory`。 */
@@ -611,4 +617,8 @@ export type HoldingDailySnapshotRow = {
   benchmarkTicker: string;
   benchmarkClose: number | null;
   fxUsdJpy: number;
+  /** 記録時点の PEG（算出不可は null） */
+  pegRatio: number | null;
+  /** 記録時点の予想成長率（小数） */
+  expectedGrowth: number | null;
 };

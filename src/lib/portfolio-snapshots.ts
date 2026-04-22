@@ -479,7 +479,7 @@ export async function fetchHoldingDailySnapshotsLatestForUser(
       sql: `SELECT id, user_id, holding_id, snapshot_date, recorded_at, ticker, name, instrument_kind,
                    category, secondary_tag, quantity, valuation_factor, avg_acquisition_price, close_price,
                    market_value_jpy, unrealized_pnl_jpy, unrealized_pnl_pct, day_change_pct,
-                   benchmark_ticker, benchmark_close, fx_usd_jpy
+                   benchmark_ticker, benchmark_close, fx_usd_jpy, peg_ratio, expected_growth
             FROM holding_daily_snapshots
             WHERE user_id = ?
             ORDER BY snapshot_date DESC, ticker ASC`,
@@ -507,13 +507,55 @@ export async function fetchHoldingDailySnapshotsLatestForUser(
       benchmarkTicker: String(row.benchmark_ticker),
       benchmarkClose: numOrNull(row.benchmark_close),
       fxUsdJpy: Number(row.fx_usd_jpy),
+      pegRatio: numOrNull(row.peg_ratio),
+      expectedGrowth: numOrNull(row.expected_growth),
     }));
     const snapshotDate = rows.length > 0 ? rows[0]!.snapshotDate : null;
     return { snapshotDate, rows };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("no such table") || msg.toLowerCase().includes("holding_daily_snapshots")) {
+    const msgLower = msg.toLowerCase();
+    if (msg.includes("no such table") || msgLower.includes("holding_daily_snapshots")) {
       return { snapshotDate: null, rows: [] };
+    }
+    if (msgLower.includes("no such column") && msgLower.includes("peg_ratio")) {
+      const rs = await db.execute({
+        sql: `SELECT id, user_id, holding_id, snapshot_date, recorded_at, ticker, name, instrument_kind,
+                   category, secondary_tag, quantity, valuation_factor, avg_acquisition_price, close_price,
+                   market_value_jpy, unrealized_pnl_jpy, unrealized_pnl_pct, day_change_pct,
+                   benchmark_ticker, benchmark_close, fx_usd_jpy
+            FROM holding_daily_snapshots
+            WHERE user_id = ?
+            ORDER BY snapshot_date DESC, ticker ASC`,
+        args: [userId],
+      });
+      const rows: HoldingDailySnapshotRow[] = rs.rows.map((row) => ({
+        id: String(row.id),
+        userId: String(row.user_id),
+        holdingId: String(row.holding_id),
+        snapshotDate: String(row.snapshot_date),
+        recordedAt: String(row.recorded_at),
+        ticker: String(row.ticker),
+        name: row.name != null ? String(row.name) : "",
+        instrumentKind: parseInstrumentKind(String(row.instrument_kind)),
+        category: String(row.category) === "Core" ? "Core" : "Satellite",
+        secondaryTag: row.secondary_tag != null ? String(row.secondary_tag) : "",
+        quantity: Number(row.quantity),
+        valuationFactor: Number(row.valuation_factor),
+        avgAcquisitionPrice: numOrNull(row.avg_acquisition_price),
+        closePrice: numOrNull(row.close_price),
+        marketValueJpy: Number(row.market_value_jpy),
+        unrealizedPnlJpy: numOrNull(row.unrealized_pnl_jpy),
+        unrealizedPnlPct: numOrNull(row.unrealized_pnl_pct),
+        dayChangePct: numOrNull(row.day_change_pct),
+        benchmarkTicker: String(row.benchmark_ticker),
+        benchmarkClose: numOrNull(row.benchmark_close),
+        fxUsdJpy: Number(row.fx_usd_jpy),
+        pegRatio: null,
+        expectedGrowth: null,
+      }));
+      const snapshotDate = rows.length > 0 ? rows[0]!.snapshotDate : null;
+      return { snapshotDate, rows };
     }
     throw e;
   }
@@ -574,8 +616,8 @@ async function upsertHoldingDailySnapshotsFromStocks(
               id, user_id, holding_id, snapshot_date, recorded_at, ticker, name, instrument_kind,
               category, secondary_tag, quantity, valuation_factor, avg_acquisition_price, close_price,
               market_value_jpy, unrealized_pnl_jpy, unrealized_pnl_pct, day_change_pct,
-              benchmark_ticker, benchmark_close, fx_usd_jpy
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              benchmark_ticker, benchmark_close, fx_usd_jpy, peg_ratio, expected_growth
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(holding_id, snapshot_date) DO UPDATE SET
               id = excluded.id,
               recorded_at = excluded.recorded_at,
@@ -594,7 +636,9 @@ async function upsertHoldingDailySnapshotsFromStocks(
               day_change_pct = excluded.day_change_pct,
               benchmark_ticker = excluded.benchmark_ticker,
               benchmark_close = excluded.benchmark_close,
-              fx_usd_jpy = excluded.fx_usd_jpy`,
+              fx_usd_jpy = excluded.fx_usd_jpy,
+              peg_ratio = excluded.peg_ratio,
+              expected_growth = excluded.expected_growth`,
       args: [
         rowId,
         userId,
@@ -617,6 +661,8 @@ async function upsertHoldingDailySnapshotsFromStocks(
         SIGNAL_BENCHMARK_TICKER,
         benchmarkClose,
         fxUsdJpyApplied,
+        st.pegRatio,
+        st.expectedGrowth,
       ],
     });
   }

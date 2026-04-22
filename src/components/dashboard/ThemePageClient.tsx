@@ -160,6 +160,11 @@ function ecoPeOf(e: ThemeEcosystemWatchItem): number | null {
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
 }
 
+function ecoPegOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.pegRatio;
+  return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
 function ecoEpsOf(e: ThemeEcosystemWatchItem): number | null {
   const v = e.trailingEps ?? e.forwardEps ?? null;
   return v != null && Number.isFinite(v) ? v : null;
@@ -1399,6 +1404,7 @@ export function ThemePageClient({
       if (ecoSortKey === "fcfYield")
         return dir * cmpNum(ecoFcfYieldSortValue(a), ecoFcfYieldSortValue(b));
       if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
+      if (ecoSortKey === "peg") return dir * cmpNum(ecoPegOf(a), ecoPegOf(b));
       if (ecoSortKey === "eps") return dir * cmpNum(ecoEpsOf(a), ecoEpsOf(b));
       if (ecoSortKey === "alpha")
         return dir * cmpNum(a.latestAlpha, b.latestAlpha);
@@ -1502,7 +1508,9 @@ export function ThemePageClient({
     else {
       setEcoSortKey(next);
       setEcoSortDir(
-        next === "earnings" || next === "dividend" || next === "research" ? "asc" : "desc",
+        next === "earnings" || next === "dividend" || next === "research" || next === "peg"
+          ? "asc"
+          : "desc",
       );
     }
   }

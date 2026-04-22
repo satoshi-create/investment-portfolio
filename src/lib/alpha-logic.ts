@@ -58,6 +58,37 @@ export function defaultBenchmarkTickerForTicker(ticker: string): string {
   return defaultBenchmarkTickerForInstrumentKind(classifyTickerInstrument(ticker));
 }
 
+/**
+ * PEG = PER / (予想EPS成長率の小数 × 100)（例: 成長15%→0.15、PER30→PEG2）。
+ * Forward PER と将来成長のペアを想定（呼び出し側で forward を優先すること）。
+ */
+export function computePegRatio(per: number, earningsGrowthDecimal: number): number | null {
+  if (!Number.isFinite(per) || per <= 0) return null;
+  if (!Number.isFinite(earningsGrowthDecimal) || earningsGrowthDecimal <= 0) return null;
+  const denom = earningsGrowthDecimal * 100;
+  if (!(denom > 0)) return null;
+  const peg = per / denom;
+  if (!Number.isFinite(peg) || peg < 0) return null;
+  return Math.round(peg * 100) / 100;
+}
+
+/** 自前計算を優先し、不足時は Yahoo `pegRatio` を採用。 */
+export function resolveStockPegRatio(args: {
+  forwardPe: number | null;
+  trailingPe: number | null;
+  expectedGrowthDecimal: number | null;
+  yahooPegRatio: number | null;
+}): number | null {
+  const per = args.forwardPe ?? args.trailingPe ?? null;
+  if (per != null && args.expectedGrowthDecimal != null) {
+    const peg = computePegRatio(per, args.expectedGrowthDecimal);
+    if (peg != null) return peg;
+  }
+  const y = args.yahooPegRatio;
+  if (y != null && Number.isFinite(y) && y > 0) return Math.round(y * 100) / 100;
+  return null;
+}
+
 /** TOPIX ETF（日本リージョンの既定ベンチ）。合成ベンチの JP レッグに使用。 */
 export const TOPIX_ETF_BENCHMARK_TICKER = DEFAULT_BENCHMARK_BY_INSTRUMENT_KIND.JP_LISTED_EQUITY;
 

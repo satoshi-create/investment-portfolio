@@ -7,6 +7,7 @@ import type { HoldingDailySnapshotRow, TickerInstrumentKind } from "@/src/types/
 import { HOLDING_SNAPSHOT_CSV_COLUMNS, holdingSnapshotsToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
 import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
+import { fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -133,7 +134,7 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[1120px]">
+          <table className="w-full text-left text-sm min-w-[1200px]">
             <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.06em]">
               <tr>
                 <th className={`px-4 py-3 whitespace-nowrap min-w-[10rem] max-w-[12rem] ${stickyThFirst}`}>
@@ -149,6 +150,7 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
                 <th className="px-4 py-3 text-right whitespace-nowrap">評価額（円）</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">損益（円）</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">損益率</th>
+                <th className="px-4 py-3 text-right whitespace-nowrap">PEG</th>
                 <th className="px-4 py-3 whitespace-nowrap">Cat</th>
               </tr>
             </thead>
@@ -203,6 +205,11 @@ export function HoldingDailySnapshotsTable({ snapshotDate, rows }: Props) {
                     {r.avgAcquisitionPrice != null && r.closePrice != null && r.closePrice > 0
                       ? formatSignedPercent(r.unrealizedPnlPct)
                       : "—"}
+                  </td>
+                  <td
+                    className={`px-4 py-2.5 text-right font-mono text-xs font-medium ${pegRatioTextClass(r.pegRatio)}`}
+                  >
+                    {fmtPegRatio(r.pegRatio)}
                   </td>
                   <td className="px-4 py-2.5 text-[10px] font-semibold text-slate-500 whitespace-nowrap">
                     {r.category === "Core" ? "Core" : "Sat"}

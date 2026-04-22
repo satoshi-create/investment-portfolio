@@ -21,6 +21,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_IDS = [
   "deviation",
   "drawdown",
   "pe",
+  "peg",
   "eps",
   "alpha",
   "cumTrend",

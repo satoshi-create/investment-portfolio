@@ -13,6 +13,7 @@ import { dailyAlphaSeriesForMiniTrend } from "@/src/lib/eco-trend-daily";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { cn } from "@/src/lib/cn";
+import { fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
 import { INVESTMENT_METRIC_TONE_TEXT_CLASS, investmentMetricToneForSignedPercent } from "@/src/types/investment";
@@ -714,6 +715,24 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                 }
               >
                 {fmtPe(ecoPeOf(e))}
+              </td>
+            );
+          case "peg":
+            return (
+              <td
+                key={colId}
+                className={cn(
+                  "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums",
+                  pegRatioTextClass(e.pegRatio),
+                  stickyFirst,
+                )}
+                title={
+                  e.expectedGrowth != null && Number.isFinite(e.expectedGrowth)
+                    ? `予想成長(小数)=${e.expectedGrowth.toFixed(4)}`
+                    : "PEG"
+                }
+              >
+                {fmtPegRatio(e.pegRatio)}
               </td>
             );
           case "eps":

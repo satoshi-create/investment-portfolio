@@ -58,6 +58,7 @@ import {
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
 import { computeLiveAlphaDayPercent } from "@/src/lib/alpha-logic";
+import { fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import { cn } from "@/src/lib/cn";
 import {
   DEFAULT_COLUMN_ORDER,
@@ -90,6 +91,7 @@ type SortKey =
   | "fcfYield"
   | "judgment"
   | "pe"
+  | "peg"
   | "eps";
 
 type EarningsNoteModalTab = "edit" | "preview";
@@ -106,6 +108,11 @@ function drawdownOf(s: Stock): number | null {
 
 function peOf(s: Stock): number | null {
   const v = s.trailingPe ?? s.forwardPe ?? null;
+  return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function pegOf(s: Stock): number | null {
+  const v = s.pegRatio;
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
 }
 
@@ -477,6 +484,7 @@ export function InventoryTable({
         return dir * cmpStr(a.ticker, b.ticker);
       }
       if (key === "pe") return dir * cmpNum(peOf(a), peOf(b));
+      if (key === "peg") return dir * cmpNum(pegOf(a), pegOf(b));
       if (key === "eps") return dir * cmpNum(epsOf(a), epsOf(b));
       if (key === "ruleOf40") return dir * cmpNum(ruleOf40SortValue(a), ruleOf40SortValue(b));
       if (key === "fcfYield") return dir * cmpNum(fcfYieldSortValue(a), fcfYieldSortValue(b));
@@ -559,6 +567,8 @@ export function InventoryTable({
 
     let peSum = 0;
     let peN = 0;
+    let pegSum = 0;
+    let pegN = 0;
     let epsSum = 0;
     let epsN = 0;
     let trend5dSum = 0;
@@ -568,6 +578,11 @@ export function InventoryTable({
       if (pe != null) {
         peSum += pe;
         peN += 1;
+      }
+      const pg = pegOf(s);
+      if (pg != null) {
+        pegSum += pg;
+        pegN += 1;
       }
       const ep = epsOf(s);
       if (ep != null) {
@@ -593,6 +608,7 @@ export function InventoryTable({
       avgDailyAlphaVisible,
       avgLiveAlphaVisible,
       avgPeVisible: peN > 0 ? peSum / peN : null,
+      avgPegVisible: pegN > 0 ? pegSum / pegN : null,
       avgEpsVisible: epsN > 0 ? epsSum / epsN : null,
       avgFiveDayAlphaDelta: trend5dN > 0 ? trend5dSum / trend5dN : null,
       totalMarketValueVisible: totalMv,
@@ -609,7 +625,9 @@ export function InventoryTable({
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(nextKey);
-      setSortDir(nextKey === "earnings" || nextKey === "research" ? "asc" : "desc");
+      setSortDir(
+        nextKey === "earnings" || nextKey === "research" || nextKey === "peg" ? "asc" : "desc",
+      );
     }
   }
 
@@ -1135,6 +1153,24 @@ export function InventoryTable({
                             </button>
                           </SortableInventoryTh>
                         );
+                      case "peg":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="PEG（小さいほど割安）· Forward PER 優先"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("peg")}
+                            >
+                              PEG{sortMark("peg")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
                       case "eps":
                         return (
                           <SortableInventoryTh
@@ -1632,6 +1668,23 @@ export function InventoryTable({
                             {fmtPe(peOf(stock))}
                           </td>
                         );
+                      case "peg":
+                        return (
+                          <td
+                            key={colId}
+                            className={cn(
+                              "px-4 py-4 text-right font-mono text-xs tabular-nums",
+                              pegRatioTextClass(stock.pegRatio),
+                            )}
+                            title={
+                              stock.expectedGrowth != null && Number.isFinite(stock.expectedGrowth)
+                                ? `予想成長(小数)=${stock.expectedGrowth.toFixed(4)}`
+                                : "成長率未取得の場合は Yahoo PEG のみのことがあります"
+                            }
+                          >
+                            {fmtPegRatio(stock.pegRatio)}
+                          </td>
+                        );
                       case "eps":
                         return (
                           <td
@@ -1884,6 +1937,18 @@ export function InventoryTable({
                     return (
                       <td key={colId} className="px-4 py-3 text-right align-top font-mono text-[11px] text-foreground/90">
                         {footerStats.avgPeVisible != null ? fmtPe(footerStats.avgPeVisible) : "—"}
+                      </td>
+                    );
+                  case "peg":
+                    return (
+                      <td
+                        key={colId}
+                        className={cn(
+                          "px-4 py-3 text-right align-top font-mono text-[11px]",
+                          pegRatioTextClass(footerStats.avgPegVisible),
+                        )}
+                      >
+                        {footerStats.avgPegVisible != null ? fmtPegRatio(footerStats.avgPegVisible) : "N/A"}
                       </td>
                     );
                   case "eps":

@@ -66,6 +66,13 @@ export type EquityResearchSnapshot = {
   trailingEps: number | null;
   /** Forward EPS (next FY / forward estimate). */
   forwardEps: number | null;
+  /**
+   * 予想EPS成長率（小数: 15% → 0.15）。`earningsTrend` / `financialData` 由来。
+   * Yahoo の表記揺れ（% / 小数）を正規化済み。
+   */
+  expectedGrowth: number | null;
+  /** Yahoo `defaultKeyStatistics.pegRatio`（自前計算のフォールバック用）。 */
+  yahooPegRatio: number | null;
 };
 
 function pickRecordDateFromQuoteSummary(qss: unknown): string | null {
@@ -245,6 +252,50 @@ function parseFiniteNumberOrNull(raw: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Yahoo: 成長率が小数（0.15）またはパーセント（15）のどちらでも正規化して小数に。 */
+function normalizeYahooEarningsGrowthDecimal(raw: unknown): number | null {
+  const n = typeof raw === "number" ? raw : raw != null ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n > 1 && n <= 400) return n / 100;
+  if (n > 0 && n <= 1) return n;
+  return null;
+}
+
+type YahooEarningsTrendRow = {
+  period?: string;
+  growth?: unknown;
+  earningsEstimate?: { growth?: unknown };
+};
+
+function growthFromEarningsTrendRow(row: YahooEarningsTrendRow | undefined): number | null {
+  if (row == null) return null;
+  const direct = normalizeYahooEarningsGrowthDecimal(row.growth);
+  if (direct != null) return direct;
+  return normalizeYahooEarningsGrowthDecimal(row.earningsEstimate?.growth);
+}
+
+function pickExpectedEarningsGrowthDecimalFromQuoteSummary(qs: {
+  earningsTrend?: { trend?: YahooEarningsTrendRow[] };
+  financialData?: { earningsGrowth?: unknown };
+}): number | null {
+  const trends = qs.earningsTrend?.trend;
+  if (Array.isArray(trends) && trends.length > 0) {
+    const matchPeriod = (re: RegExp) => {
+      const row = trends.find((t) => re.test(String(t.period ?? "")));
+      return growthFromEarningsTrendRow(row);
+    };
+    for (const re of [/\+5y/i, /5y/i, /\+1y/i, /1y/i, /^0y$/i]) {
+      const g = matchPeriod(re);
+      if (g != null) return g;
+    }
+    for (const t of trends) {
+      const g = growthFromEarningsTrendRow(t);
+      if (g != null) return g;
+    }
+  }
+  return normalizeYahooEarningsGrowthDecimal(qs.financialData?.earningsGrowth);
+}
+
 function daysUntilYmd(ymd: string): number | null {
   const d = new Date(`${ymd}T00:00:00.000Z`);
   if (Number.isNaN(d.getTime())) return null;
@@ -272,7 +323,7 @@ export async function fetchEquityResearchSnapshots(
     if (!sym) return null;
     try {
       const qs = await yahooFinance.quoteSummary(sym, {
-        modules: ["calendarEvents", "summaryDetail", "defaultKeyStatistics"],
+        modules: ["calendarEvents", "summaryDetail", "defaultKeyStatistics", "financialData", "earningsTrend"],
       });
 
       type YahooEarningsDateLike = { raw?: unknown; fmt?: unknown };
@@ -296,7 +347,10 @@ export async function fetchEquityResearchSnapshots(
         defaultKeyStatistics?: {
           trailingEps?: unknown;
           forwardEps?: unknown;
+          pegRatio?: unknown;
         };
+        financialData?: { earningsGrowth?: unknown };
+        earningsTrend?: { trend?: YahooEarningsTrendRow[] };
       };
       const qss = qs as unknown as YahooQuoteSummaryShape;
 
@@ -325,6 +379,9 @@ export async function fetchEquityResearchSnapshots(
       const forwardPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.forwardPE);
       const trailingEps0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.trailingEps);
       const forwardEps0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.forwardEps);
+      const expectedGrowth = pickExpectedEarningsGrowthDecimalFromQuoteSummary(qss);
+      const yahooPeg0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.pegRatio);
+      const yahooPegRatio = yahooPeg0 != null && yahooPeg0 > 0 ? yahooPeg0 : null;
 
       return {
         ticker: ticker.toUpperCase(),
@@ -337,6 +394,8 @@ export async function fetchEquityResearchSnapshots(
         forwardPe: forwardPe0 != null && forwardPe0 > 0 ? forwardPe0 : null,
         trailingEps: trailingEps0,
         forwardEps: forwardEps0,
+        expectedGrowth,
+        yahooPegRatio,
       } satisfies EquityResearchSnapshot;
     } catch (e) {
       logSkip(sym, "quoteSummary failed (research snapshot)", e);

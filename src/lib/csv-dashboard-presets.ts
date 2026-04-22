@@ -55,6 +55,8 @@ export function stocksToCsvRows(stocks: Stock[]): Record<string, unknown>[] {
     instrumentKind: s.instrumentKind,
     priceSource: s.priceSource,
     avgAcquisitionPrice: s.avgAcquisitionPrice,
+    pegRatio: s.pegRatio,
+    expectedGrowth: s.expectedGrowth,
   }));
 }
 
@@ -86,6 +88,8 @@ export const STOCK_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "instrumentKind", header: "銘柄種別" },
   { key: "priceSource", header: "価格ソース" },
   { key: "avgAcquisitionPrice", header: "平均取得単価" },
+  { key: "pegRatio", header: "PEG" },
+  { key: "expectedGrowth", header: "予想EPS成長率（小数）" },
 ];
 
 export function portfolioSnapshotsToCsvRows(rows: PortfolioDailySnapshotRow[]): Record<string, unknown>[] {
@@ -156,6 +160,8 @@ export function holdingSnapshotsToCsvRows(rows: HoldingDailySnapshotRow[]): Reco
     benchmarkTicker: r.benchmarkTicker,
     benchmarkClose: r.benchmarkClose,
     fxUsdJpy: r.fxUsdJpy,
+    pegRatio: r.pegRatio,
+    expectedGrowth: r.expectedGrowth,
   }));
 }
 
@@ -177,6 +183,8 @@ export const HOLDING_SNAPSHOT_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "benchmarkTicker", header: "ベンチマーク" },
   { key: "benchmarkClose", header: "BM終値" },
   { key: "fxUsdJpy", header: "USD/JPY" },
+  { key: "pegRatio", header: "PEG" },
+  { key: "expectedGrowth", header: "予想成長率（小数）" },
 ];
 
 export function closedTradesToCsvRows(rows: ClosedTradeDashboardRow[]): Record<string, unknown>[] {
@@ -258,6 +266,10 @@ export function themeEcosystemWatchlistToCsvRows(
     alphaHistorySeries: e.alphaHistory.length > 0 ? JSON.stringify(e.alphaHistory) : "",
     alphaDailyHistorySeries: e.alphaDailyHistory.length > 0 ? JSON.stringify(e.alphaDailyHistory) : "",
     currentPrice: e.currentPrice,
+    trailingPe: e.trailingPe,
+    forwardPe: e.forwardPe,
+    pegRatio: e.pegRatio,
+    expectedGrowth: e.expectedGrowth,
   }));
 }
 
@@ -296,4 +308,8 @@ export const THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "alphaHistorySeries", header: "累積Alpha系列（JSON）" },
   { key: "alphaDailyHistorySeries", header: "日次Alpha系列（JSON）" },
   { key: "currentPrice", header: "現在値（建て通貨）" },
+  { key: "trailingPe", header: "PER（TTM）" },
+  { key: "forwardPe", header: "PER（Forward）" },
+  { key: "pegRatio", header: "PEG" },
+  { key: "expectedGrowth", header: "予想EPS成長率（小数）" },
 ];

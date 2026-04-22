@@ -27,6 +27,7 @@ export const INVENTORY_COLUMN_LABEL_JA: Record<InventoryColId, string> = {
   deviation: "乖離",
   drawdown: "落率",
   pe: "PER",
+  peg: "PEG",
   eps: "EPS",
   alpha: "Cum. α",
   position: "比率",

@@ -34,6 +34,7 @@ import {
   LIVE_ALPHA_US_BENCHMARK_TICKER,
   mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
+  resolveStockPegRatio,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
@@ -69,6 +70,7 @@ import {
   fetchGlobalMarketIndicators,
   fetchLatestPrice,
   fetchEquityResearchSnapshots,
+  type EquityResearchSnapshot,
   fetchRecentDatedDailyAlphasVsBenchmark,
   fetchLatestPriceWithChangePct,
   fetchLiveQuoteSnapshot,
@@ -1194,20 +1196,7 @@ async function prefetchChartListedTotalReturnByHoldingKey(
 function buildDraftsFromHoldingRows(
   rows: HoldingQueryRow[],
   byTicker: Map<string, AlphaPoint[]>,
-  researchByTicker: Map<
-    string,
-    {
-      nextEarningsDate: string | null;
-      exDividendDate: string | null;
-      recordDate: string | null;
-      annualDividendRate: number | null;
-      dividendYieldPercent: number | null;
-      trailingPe: number | null;
-      forwardPe: number | null;
-      trailingEps: number | null;
-      forwardEps: number | null;
-    }
-  >,
+  researchByTicker: Map<string, EquityResearchSnapshot>,
   fxUsdJpy: number,
   hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
   efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
@@ -1280,6 +1269,13 @@ function buildDraftsFromHoldingRows(
     const forwardPe = research?.forwardPe ?? null;
     const trailingEps = research?.trailingEps ?? null;
     const forwardEps = research?.forwardEps ?? null;
+    const expectedGrowth = research?.expectedGrowth ?? null;
+    const pegRatio = resolveStockPegRatio({
+      forwardPe,
+      trailingPe,
+      expectedGrowthDecimal: expectedGrowth,
+      yahooPegRatio: research?.yahooPegRatio ?? null,
+    });
     const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
     const daysToExDividend = exDividendDate != null ? (() => {
       const d = new Date(`${exDividendDate}T00:00:00.000Z`);
@@ -1373,6 +1369,8 @@ function buildDraftsFromHoldingRows(
       forwardPe,
       trailingEps,
       forwardEps,
+      pegRatio,
+      expectedGrowth,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
       latestAlphaObservationYmd,
@@ -1637,20 +1635,7 @@ async function enrichEcosystemMemberRow(
   row: Record<string, unknown>,
   portfolioTickerSet: Set<string>,
   themeCreatedAt: string | null,
-  researchByTicker: Map<
-    string,
-    {
-      nextEarningsDate: string | null;
-      exDividendDate: string | null;
-      recordDate: string | null;
-      annualDividendRate: number | null;
-      dividendYieldPercent: number | null;
-      trailingPe: number | null;
-      forwardPe: number | null;
-      trailingEps: number | null;
-      forwardEps: number | null;
-    }
-  >,
+  researchByTicker: Map<string, EquityResearchSnapshot>,
   efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
   options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem> {
@@ -1726,6 +1711,13 @@ async function enrichEcosystemMemberRow(
   const forwardPe = research?.forwardPe ?? null;
   const trailingEps = research?.trailingEps ?? null;
   const forwardEps = research?.forwardEps ?? null;
+  const expectedGrowth = research?.expectedGrowth ?? null;
+  const pegRatio = resolveStockPegRatio({
+    forwardPe,
+    trailingPe,
+    expectedGrowthDecimal: expectedGrowth,
+    yahooPegRatio: research?.yahooPegRatio ?? null,
+  });
   const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
   const daysToExDividend =
     exDividendDate != null
@@ -1961,6 +1953,8 @@ async function enrichEcosystemMemberRow(
     forwardPe,
     trailingEps,
     forwardEps,
+    pegRatio,
+    expectedGrowth,
     observationStartedAt,
     alphaHistory,
     alphaDailyHistory: dailyAlphas,
@@ -2983,6 +2977,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       forwardPe: null,
       trailingEps: null,
       forwardEps: null,
+      pegRatio: null,
+      expectedGrowth: null,
       tag,
       alphaHistory: [alpha],
       latestAlphaObservationYmd: null,

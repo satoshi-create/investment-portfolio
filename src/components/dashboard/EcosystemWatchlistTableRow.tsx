@@ -10,6 +10,7 @@ import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { cn } from "@/src/lib/cn";
+import { fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
@@ -449,6 +450,24 @@ export function EcosystemWatchlistTableRow({
                 }
               >
                 {fmtPe(ecoPeOf(e))}
+              </td>
+            );
+          case "peg":
+            return (
+              <td
+                key={colId}
+                className={cn(
+                  "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap",
+                  pegRatioTextClass(e.pegRatio),
+                  stickyFirst,
+                )}
+                title={
+                  e.expectedGrowth != null && Number.isFinite(e.expectedGrowth)
+                    ? `予想成長(小数)=${e.expectedGrowth.toFixed(4)}`
+                    : "PEG · 成長率未取得時は N/A または Yahoo 値のみ"
+                }
+              >
+                {fmtPegRatio(e.pegRatio)}
               </td>
             );
           case "eps":
