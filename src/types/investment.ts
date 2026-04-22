@@ -488,6 +488,11 @@ export type ThemeEcosystemWatchItem = {
   performanceSinceFoundation: number | null;
 };
 
+/** 全テーマ横断のウォッチブックマーク 1 行（`getEcosystemCrossThemeBookmarks` 用） */
+export type EcosystemCrossThemeBookmarkItem = ThemeEcosystemWatchItem & {
+  themeName: string;
+};
+
 /** Alias: テーマエコシステムの 1 行（`ThemeEcosystemWatchItem` と同一）。 */
 export type ThemeMember = ThemeEcosystemWatchItem;
 

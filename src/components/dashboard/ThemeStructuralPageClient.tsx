@@ -39,7 +39,7 @@ import {
   INVESTMENT_METRIC_TONE_TEXT_CLASS,
   investmentMetricToneForSignedPercent,
 } from "@/src/types/investment";
-import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
+import type { JudgmentStatus } from "@/src/lib/judgment-logic";
 import {
   ecoFcfYieldSortValue,
   ecoFcfYieldTone,
@@ -118,6 +118,7 @@ import {
 } from "@/src/lib/ecosystem-watchlist-column-visibility";
 import { EcosystemWatchlistColumnToolbar } from "@/src/components/dashboard/EcosystemWatchlistColumnToolbar";
 import { EcosystemThemeTableMappedRow } from "@/src/components/dashboard/EcosystemThemeTableMappedRow";
+import { sortStructuralEcosystemWatchlist } from "@/src/components/dashboard/ecosystem-structural-watchlist-sort";
 import {
   StructuralEcosystemThead,
   type StructuralEcoSortKey,
@@ -1548,124 +1549,15 @@ export function ThemePageClient({
     [ecosystem],
   );
 
-  const ecosystemSorted = useMemo(() => {
-    const cmpStr = (a: string, b: string) => a.localeCompare(b, "ja");
-    const cmpNum = (a: number | null, b: number | null) => {
-      const ax = a == null || !Number.isFinite(a) ? null : a;
-      const by = b == null || !Number.isFinite(b) ? null : b;
-      if (ax == null && by == null) return 0;
-      if (ax == null) return 1;
-      if (by == null) return -1;
-      return ax < by ? -1 : ax > by ? 1 : 0;
-    };
-    const dir = ecoSortDir === "asc" ? 1 : -1;
-    const lastAlpha = (e: ThemeEcosystemWatchItem) =>
-      e.alphaHistory.length > 0
-        ? e.alphaHistory[e.alphaHistory.length - 1]!
-        : null;
-    const devZ = (e: ThemeEcosystemWatchItem) =>
-      e.alphaDeviationZ != null && Number.isFinite(e.alphaDeviationZ)
-        ? e.alphaDeviationZ
-        : null;
-    const ddOf = (e: ThemeEcosystemWatchItem) =>
-      e.drawdownFromHigh90dPct != null &&
-      Number.isFinite(e.drawdownFromHigh90dPct)
-        ? e.drawdownFromHigh90dPct
-        : null;
-    const absZ = (e: ThemeEcosystemWatchItem) => {
-      const z = devZ(e);
-      return z == null ? null : Math.abs(z);
-    };
-
-    function cmpNumDir(a: number | null, b: number | null, d: 1 | -1) {
-      return d * cmpNum(a, b);
-    }
-
-    const arr = [...ecosystemFiltered];
-    arr.sort((a, b) => {
-      if (ecoSortMode === "dip_rank") {
-        // Structural Dip priority:
-        // - drawdown deeper first (more negative)
-        // - Z closer to 0 first (trend not statistically broken)
-        // - Cumα higher first (structure quality)
-        const c1 = cmpNumDir(ddOf(a), ddOf(b), 1); // asc: -40 before -10
-        if (c1 !== 0) return c1;
-        const c2 = cmpNumDir(absZ(a), absZ(b), 1);
-        if (c2 !== 0) return c2;
-        const c3 = cmpNumDir(a.latestAlpha, b.latestAlpha, -1);
-        if (c3 !== 0) return c3;
-        return cmpStr(a.ticker, b.ticker);
-      }
-      if (ecoSortMode === "deep_value_rank") {
-        // Deep Value priority:
-        // - Z more negative first
-        // - drawdown deeper first
-        // - Cumα higher first (if structure still holds)
-        const c1 = cmpNumDir(devZ(a), devZ(b), 1);
-        if (c1 !== 0) return c1;
-        const c2 = cmpNumDir(ddOf(a), ddOf(b), 1);
-        if (c2 !== 0) return c2;
-        const c3 = cmpNumDir(a.latestAlpha, b.latestAlpha, -1);
-        if (c3 !== 0) return c3;
-        return cmpStr(a.ticker, b.ticker);
-      }
-
-      if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
-      if (ecoSortKey === "earnings") return dir * cmpNum(ecoEarningsSortValue(a), ecoEarningsSortValue(b));
-      if (ecoSortKey === "listing")
-        return dir * cmpStr(ecoListingYmdKey(a) ?? "\uFFFF", ecoListingYmdKey(b) ?? "\uFFFF");
-      if (ecoSortKey === "mktCap") return dir * cmpNum(a.marketCap, b.marketCap);
-      if (ecoSortKey === "perfListed")
-        return dir * cmpNum(a.performanceSinceFoundation, b.performanceSinceFoundation);
-      if (ecoSortKey === "judgment") {
-        const ja = judgmentPriorityRank(a.judgmentStatus as JudgmentStatus);
-        const jb = judgmentPriorityRank(b.judgmentStatus as JudgmentStatus);
-        if (ja !== jb) return dir * (ja - jb);
-        return dir * cmpStr(a.ticker, b.ticker);
-      }
-      if (ecoSortKey === "ruleOf40")
-        return dir * cmpNum(ecoRuleOf40SortValue(a), ecoRuleOf40SortValue(b));
-      if (ecoSortKey === "fcfYield")
-        return dir * cmpNum(ecoFcfYieldSortValue(a), ecoFcfYieldSortValue(b));
-      if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
-      if (ecoSortKey === "peg") return dir * cmpNum(ecoPegOf(a), ecoPegOf(b));
-      if (ecoSortKey === "egrowth") return dir * cmpNum(ecoExpectedGrowthOf(a), ecoExpectedGrowthOf(b));
-      if (ecoSortKey === "eps") return dir * cmpNum(ecoEpsOf(a), ecoEpsOf(b));
-      if (ecoSortKey === "alpha")
-        return dir * cmpNum(a.latestAlpha, b.latestAlpha);
-      if (ecoSortKey === "trend5d")
-        return dir * cmpNum(lastAlpha(a), lastAlpha(b));
-      if (ecoSortKey === "cumTrend")
-        return dir * cmpNum(lastAlpha(a), lastAlpha(b));
-      if (ecoSortKey === "price")
-        return dir * cmpNum(a.currentPrice, b.currentPrice);
-      if (ecoSortKey === "deviation") return dir * cmpNum(devZ(a), devZ(b));
-      if (ecoSortKey === "drawdown") return dir * cmpNum(ddOf(a), ddOf(b));
-      if (ecoSortKey === "dividend") {
-        const c1 = cmpNum(ecoDividendSortScore(a), ecoDividendSortScore(b));
-        if (c1 !== 0) return dir * c1;
-        return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
-      }
-      if (ecoSortKey === "payout")
-        return dir * cmpNum(ecosystemDividendPayoutPercent(a), ecosystemDividendPayoutPercent(b));
-      if (ecoSortKey === "research") {
-        const earnCmp = cmpNum(
-          a.daysToEarnings != null && a.daysToEarnings >= 0
-            ? a.daysToEarnings
-            : null,
-          b.daysToEarnings != null && b.daysToEarnings >= 0
-            ? b.daysToEarnings
-            : null,
-        );
-        if (earnCmp !== 0) return dir * earnCmp;
-        const divEx = cmpNum(ecoDividendSortScore(a), ecoDividendSortScore(b));
-        if (divEx !== 0) return dir * divEx;
-        return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
-      }
-      return 0;
-    });
-    return arr;
-  }, [ecosystemFiltered, ecoSortDir, ecoSortKey, ecoSortMode]);
+  const ecosystemSorted = useMemo(
+    () =>
+      sortStructuralEcosystemWatchlist(ecosystemFiltered, {
+        ecoSortKey,
+        ecoSortDir,
+        ecoSortMode,
+      }),
+    [ecosystemFiltered, ecoSortDir, ecoSortKey, ecoSortMode],
+  );
 
   useEffect(() => {
     setEcoColumnOrder(loadEcosystemWatchlistColumnOrder());

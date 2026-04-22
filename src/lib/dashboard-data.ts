@@ -11,6 +11,7 @@ import type {
   Stock,
   StructureTagSlice,
   ThemeDetailData,
+  EcosystemCrossThemeBookmarkItem,
   ThemeEcosystemWatchItem,
   ThemeStructuralSparklineEntry,
   TickerInstrumentKind,
@@ -2421,6 +2422,156 @@ async function fetchEnrichedThemeEcosystem(
     }
     throw e;
   }
+}
+
+function stripThemeMetaFromEcosystemRow(row: Record<string, unknown>): {
+  member: Record<string, unknown>;
+  themeName: string;
+  themeCreatedAt: string | null;
+} {
+  const themeName = row.theme_name != null ? String(row.theme_name) : "";
+  const themeCreatedAt =
+    row.theme_created_at != null && String(row.theme_created_at).trim().length > 0
+      ? String(row.theme_created_at)
+      : null;
+  const member = { ...row };
+  delete member.theme_name;
+  delete member.theme_created_at;
+  return { member, themeName, themeCreatedAt };
+}
+
+/**
+ * 全テーマの `theme_ecosystem_members` で is_bookmark 済みの行を一括拡張（テーマ名付き）。`/themes/bookmarks` 用。
+ */
+export async function getEcosystemCrossThemeBookmarks(
+  db: Client,
+  userId: string,
+  options?: { fast?: boolean },
+): Promise<EcosystemCrossThemeBookmarkItem[]> {
+  const fast = options?.fast === true;
+  const holdingRows = (await fetchHoldingsRowsWithInvestmentMeta(db, userId)).rows as unknown as HoldingQueryRow[];
+  const portfolioTickerSet = new Set(holdingRows.map((r) => String(r.ticker).trim().toUpperCase()));
+
+  let rows: Record<string, unknown>[];
+  try {
+    try {
+      const rs = await db.execute({
+        sql: `SELECT m.id, m.theme_id, m.ticker, m.is_unlisted, m.proxy_ticker, m.estimated_ipo_date, m.estimated_valuation,
+                     m.last_round_valuation, m.private_credit_backing, m.observation_notes,
+                     m.company_name, m.field, m.role, m.is_major_player, m.observation_started_at,
+                     m.adoption_stage, m.adoption_stage_rationale, m.expectation_category,
+                     m.holder_tags, m.dividend_months, m.defensive_strength, m.is_kept,
+                     m.revenue_growth, m.fcf_margin, m.fcf, m.fcf_yield
+              , m.listing_date, m.market_cap, m.listing_price, m.next_earnings_date, m.memo, m.is_bookmarked, m.instrument_meta_synced_at
+              , t.name AS theme_name, t.created_at AS theme_created_at
+              FROM theme_ecosystem_members m
+              INNER JOIN investment_themes t ON m.theme_id = t.id
+              WHERE t.user_id = ? AND COALESCE(m.is_bookmarked, 0) = 1
+              ORDER BY t.name ASC, m.field ASC, m.ticker ASC`,
+        args: [userId],
+      });
+      rows = rs.rows as unknown as Record<string, unknown>[];
+    } catch (eEff) {
+      if (!ecosystemMissingEfficiencyColumns(eEff)) throw eEff;
+      const rs = await db.execute({
+        sql: `SELECT m.id, m.theme_id, m.ticker, m.is_unlisted, m.proxy_ticker, m.estimated_ipo_date, m.estimated_valuation,
+                     m.last_round_valuation, m.private_credit_backing, m.observation_notes,
+                     m.company_name, m.field, m.role, m.is_major_player, m.observation_started_at,
+                     m.adoption_stage, m.adoption_stage_rationale, m.expectation_category,
+                     m.holder_tags, m.dividend_months, m.defensive_strength, m.is_kept
+              , m.listing_date, m.market_cap, m.listing_price, m.next_earnings_date, m.memo, m.is_bookmarked, m.instrument_meta_synced_at
+              , t.name AS theme_name, t.created_at AS theme_created_at
+              FROM theme_ecosystem_members m
+              INNER JOIN investment_themes t ON m.theme_id = t.id
+              WHERE t.user_id = ? AND COALESCE(m.is_bookmarked, 0) = 1
+              ORDER BY t.name ASC, m.field ASC, m.ticker ASC`,
+        args: [userId],
+      });
+      rows = (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({
+        ...r,
+        revenue_growth: null,
+        fcf_margin: null,
+        fcf: null,
+        fcf_yield: null,
+      }));
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.toLowerCase().includes("no such table") || msg.toLowerCase().includes("theme_ecosystem_members")) {
+      return [];
+    }
+    if (msg.toLowerCase().includes("is_bookmarked")) {
+      return [];
+    }
+    throw e;
+  }
+
+  if (rows.length === 0) return [];
+
+  const byTheme = new Map<string, Record<string, unknown>[]>();
+  for (const r of rows) {
+    const tid = String(r.theme_id);
+    if (!byTheme.has(tid)) byTheme.set(tid, []);
+    byTheme.get(tid)!.push(r);
+  }
+  for (const [tid, trows] of byTheme) {
+    await prefetchThemeEcosystemInstrumentMetadata(db, userId, tid, trows, { fast });
+  }
+
+  const researchTargets = rows
+    .map((r) => {
+      const isUnlisted = Number(r["is_unlisted"]) === 1;
+      const t = String(r["ticker"] ?? "").trim();
+      const proxy = r["proxy_ticker"] != null ? String(r["proxy_ticker"]).trim() : "";
+      const effective = isUnlisted ? proxy : t;
+      return effective;
+    })
+    .filter((x) => x.length > 0);
+  const researchByTicker = fast
+    ? new Map()
+    : await fetchEquityResearchSnapshots(
+        [...new Set(researchTargets)].map((ticker) => ({ ticker, providerSymbol: null })),
+        { concurrency: 10, batchDelayMs: 25 },
+      );
+
+  const listedTickersForEfficiency = rows
+    .filter((r) => Number(r["is_unlisted"]) !== 1)
+    .map((r) => String(r["ticker"] ?? "").trim())
+    .filter((t) => t.length > 0);
+  const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, listedTickersForEfficiency);
+
+  const CONCURRENCY = fast ? 10 : 8;
+  const results: (EcosystemCrossThemeBookmarkItem | null)[] = new Array(rows.length).fill(null);
+  let nextIdx = 0;
+
+  async function worker() {
+    while (true) {
+      const i = nextIdx;
+      nextIdx += 1;
+      if (i >= rows.length) return;
+      const raw = rows[i]!;
+      const { member, themeName, themeCreatedAt } = stripThemeMetaFromEcosystemRow(raw);
+      try {
+        const enriched = await enrichEcosystemMemberRow(
+          db,
+          userId,
+          member,
+          portfolioTickerSet,
+          themeCreatedAt,
+          researchByTicker,
+          efficiencyByTickerUpper,
+          { fast },
+        );
+        results[i] = { ...enriched, themeName: themeName.length > 0 ? themeName : "（無題）" };
+      } catch {
+        results[i] = null;
+      }
+    }
+  }
+
+  await Promise.allSettled(Array.from({ length: Math.min(CONCURRENCY, rows.length) }, () => worker()));
+
+  return results.filter((x): x is EcosystemCrossThemeBookmarkItem => x != null);
 }
 
 /**

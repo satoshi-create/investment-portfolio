@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { Layout, Radar } from "lucide-react";
+import { Layout, Radar, Star } from "lucide-react";
 
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import type { InvestmentThemeRecord } from "@/src/types/investment";
@@ -48,6 +48,14 @@ export function ThemesNavigationSection(props: {
           >
             <span className="text-[12px] leading-none">AI</span>
             AIユニコーン
+          </Link>
+          <Link
+            href="/themes/bookmarks"
+            className="text-[10px] font-bold uppercase tracking-wide text-amber-700 border border-amber-500/35 bg-amber-500/10 hover:bg-amber-500/15 dark:text-amber-200 dark:bg-amber-500/5 dark:hover:bg-amber-500/10 transition-all inline-flex items-center gap-2"
+            title="全テーマの Ecosystem ウォッチのブックマーク一覧"
+          >
+            <Star size={14} className="text-amber-500 fill-amber-500/20" />
+            ブックマーク
           </Link>
           <Link
             href="/etf-collection"

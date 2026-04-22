@@ -829,7 +829,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                           ticker: e.isUnlisted && e.proxyTicker ? e.proxyTicker : e.ticker,
                           name: e.companyName || undefined,
                           theme: themeLabel,
-                          themeId: theme?.id,
+                          themeId: theme?.id ?? e.themeId,
                           quantityDefault: 1,
                           ...(e.currentPrice != null && Number.isFinite(e.currentPrice) && e.currentPrice > 0
                             ? { unitPrice: e.currentPrice }

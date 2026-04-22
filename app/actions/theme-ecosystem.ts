@@ -44,6 +44,7 @@ export async function toggleThemeEcosystemMemberKept(
 
     revalidatePath("/");
     revalidatePath("/themes", "layout");
+    revalidatePath("/themes/bookmarks");
     const slug = options?.themeSlugForRevalidate?.trim();
     if (slug != null && slug.length > 0) {
       revalidatePath(`/themes/${encodeURIComponent(slug)}`);
@@ -101,6 +102,7 @@ export async function toggleThemeEcosystemMemberBookmark(
 
     revalidatePath("/");
     revalidatePath("/themes", "layout");
+    revalidatePath("/themes/bookmarks");
     const slug = options?.themeSlugForRevalidate?.trim();
     if (slug != null && slug.length > 0) {
       revalidatePath(`/themes/${encodeURIComponent(slug)}`);
