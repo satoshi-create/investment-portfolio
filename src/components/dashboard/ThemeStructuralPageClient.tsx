@@ -121,6 +121,16 @@ import {
   StructuralEcosystemThead,
   type StructuralEcoSortKey,
 } from "@/src/components/dashboard/StructuralEcosystemThead";
+import { BitcoinThemePriceComparisonChart } from "@/src/components/dashboard/BitcoinThemePriceComparisonChart";
+import {
+  BitcoinStructuralHeaderAside,
+  BitcoinStructuralObservationPanel,
+  type StructuralBtcGlancePayload,
+} from "@/src/components/dashboard/BitcoinStructuralPanels";
+import {
+  BITCOIN_STRUCTURAL_THEME_QUERY_NAME,
+  BITCOIN_STRUCTURAL_THEME_SLUG,
+} from "@/src/lib/bitcoin-structural-theme";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
@@ -225,6 +235,13 @@ function mapThemeLabelForQuery(raw: string): {
       query: "ディフェンシブ銘柄",
       display: "ディフェンシブ銘柄",
       slug: "defensive-stocks",
+    };
+  }
+  if (s.toLowerCase() === BITCOIN_STRUCTURAL_THEME_SLUG) {
+    return {
+      query: BITCOIN_STRUCTURAL_THEME_QUERY_NAME,
+      display: BITCOIN_STRUCTURAL_THEME_QUERY_NAME,
+      slug: BITCOIN_STRUCTURAL_THEME_SLUG,
     };
   }
   if (s === "半導体製造装置") {
@@ -624,6 +641,7 @@ export function ThemePageClient({
   const isSemiconductorSupplyChainTheme =
     themeQueryName === SEMICONDUCTOR_SUPPLY_CHAIN_THEME_NAME;
   const isAiUnicornTheme = themeQueryName === "AIユニコーン";
+  const isBitcoinTheme = themeQueryName === BITCOIN_STRUCTURAL_THEME_QUERY_NAME;
   const [holderFilter, setHolderFilter] = useState<string[]>([]);
 
   const [data, setData] = useState<ThemeDetailData | null>(null);
@@ -690,6 +708,11 @@ export function ThemePageClient({
   const [ecoMemoModalTab, setEcoMemoModalTab] = useState<"edit" | "preview">("edit");
   /** Asset 列のカテゴリ（`field`）による複数選択フィルター */
   const [ecoFieldFilter, setEcoFieldFilter] = useState<string[]>([]);
+  const [btcStructuralGlance, setBtcStructuralGlance] = useState<StructuralBtcGlancePayload | null>(
+    null,
+  );
+  const [btcStructuralGlanceErr, setBtcStructuralGlanceErr] = useState<string | null>(null);
+  const [btcStructuralGlanceLoading, setBtcStructuralGlanceLoading] = useState(false);
 
   /** `refetchThemeDetailQuiet` 並列時、古いレスポンスが `setData` しないよう世代管理 */
   const themeDetailQuietFetchGen = useRef(0);
@@ -803,6 +826,37 @@ export function ThemePageClient({
     return () => ac.abort();
   }, [load]);
 
+  useEffect(() => {
+    if (!isBitcoinTheme) {
+      setBtcStructuralGlance(null);
+      setBtcStructuralGlanceErr(null);
+      setBtcStructuralGlanceLoading(false);
+      return;
+    }
+    const ac = new AbortController();
+    setBtcStructuralGlanceLoading(true);
+    setBtcStructuralGlanceErr(null);
+    void fetch("/api/structural-btc-glance", { cache: "no-store", signal: ac.signal })
+      .then(async (res) => {
+        const j = (await res.json()) as StructuralBtcGlancePayload & { error?: string };
+        if (!res.ok) {
+          setBtcStructuralGlance(null);
+          setBtcStructuralGlanceErr(j.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        setBtcStructuralGlance(j);
+      })
+      .catch((e) => {
+        if (e instanceof Error && e.name === "AbortError") return;
+        setBtcStructuralGlance(null);
+        setBtcStructuralGlanceErr(e instanceof Error ? e.message : "fetch failed");
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setBtcStructuralGlanceLoading(false);
+      });
+    return () => ac.abort();
+  }, [isBitcoinTheme]);
+
   const openTradeForm = useCallback((initial: TradeEntryInitial | null) => {
     setTradeInitial(initial);
     setTradeFormOpen(true);
@@ -841,6 +895,23 @@ export function ThemePageClient({
     () => isThemeStructuralTrendPositiveUp(themeStructuralTrendSeries),
     [themeStructuralTrendSeries],
   );
+
+  /** 価格チャート比較用（代理ティッカー優先、N/A 行除外） */
+  const bitcoinChartCompareTickers = useMemo(() => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const e of ecosystem) {
+      const proxy = e.proxyTicker != null ? String(e.proxyTicker).trim() : "";
+      const raw = e.isUnlisted && proxy.length > 0 ? proxy : String(e.ticker).trim();
+      if (raw.length === 0) continue;
+      const u = raw.toUpperCase();
+      if (u.startsWith("N/A:")) continue;
+      if (seen.has(u)) continue;
+      seen.add(u);
+      out.push(u);
+    }
+    return out;
+  }, [ecosystem]);
 
   const handleToggleEcosystemBookmark = useCallback(
     async (memberId: string) => {
@@ -1706,21 +1777,39 @@ export function ThemePageClient({
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
-                <Crosshair size={14} className="text-cyan-500/90" />
+                <Crosshair
+                  size={14}
+                  className={isBitcoinTheme ? "text-amber-500/90" : "text-cyan-500/90"}
+                />
                 <span>Structural theme command</span>
               </div>
               <h1 className="text-3xl font-bold text-foreground tracking-tight">
                 {themeDisplayName}
               </h1>
-              <p className="text-[11px] text-muted-foreground mt-2">
-                <span className="font-mono text-muted-foreground/90">
-                  {DEFAULT_USER_ID}
-                </span>
-                ・<span className="font-mono">structure_tags[0]</span>{" "}
-                がこのテーマ名と一致する保有のみ
-              </p>
+              {isBitcoinTheme ? (
+                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                  <span className="font-mono text-muted-foreground/90">{DEFAULT_USER_ID}</span>
+                  ・<span className="font-mono">structure_tags[0]</span>
+                  が「ビットコイン」の保有とエコシステムを束ねます。相対パフォーマンスの物差しは従来どおり VOO
+                  / 合成ベンチ（銘柄構成による）で、現物・ETF の参照は右カラムと下の構造レンズで併読してください。
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  <span className="font-mono text-muted-foreground/90">
+                    {DEFAULT_USER_ID}
+                  </span>
+                  ・<span className="font-mono">structure_tags[0]</span>{" "}
+                  がこのテーマ名と一致する保有のみ
+                </p>
+              )}
             </div>
-            {data?.themeSyntheticUsRatio != null && data.themeSyntheticJpRatio != null ? (
+            {isBitcoinTheme ? (
+              <BitcoinStructuralHeaderAside
+                glance={btcStructuralGlance}
+                error={btcStructuralGlanceErr}
+                loading={btcStructuralGlanceLoading}
+              />
+            ) : data?.themeSyntheticUsRatio != null && data.themeSyntheticJpRatio != null ? (
               <div
                 className="rounded-xl border border-border bg-card/60 px-4 py-3 text-right shrink-0 max-w-[16rem]"
                 title={data.themeSyntheticBenchmarkTooltip ?? undefined}
@@ -1820,6 +1909,17 @@ export function ThemePageClient({
             <ThemeMetaBlock theme={theme} themeName={themeLabel} />
 
             <KeptStockShelf themeName={themeDisplayName} items={ecosystem} />
+
+            {isBitcoinTheme ? (
+              <BitcoinStructuralObservationPanel
+                glance={btcStructuralGlance}
+                glanceError={btcStructuralGlanceErr}
+              />
+            ) : null}
+
+            {isBitcoinTheme ? (
+              <BitcoinThemePriceComparisonChart compareTickers={bitcoinChartCompareTickers} />
+            ) : null}
 
             {themeLabel === "SaaSアポカリプス" ? <SaaSApocalypseLensPanel /> : null}
 
@@ -2309,7 +2409,11 @@ export function ThemePageClient({
                             onChange={(ev) =>
                               setEcosystemSearchQuery(ev.target.value)
                             }
-                            placeholder="銘柄・役割・ノートで検索"
+                            placeholder={
+                              isBitcoinTheme
+                                ? "銘柄・レイヤー（採掘/ETF等）・ノートで検索"
+                                : "銘柄・役割・ノートで検索"
+                            }
                             className="w-full rounded-lg border border-border bg-muted/80 pl-8 pr-3 py-2 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/40"
                             autoComplete="off"
                           />

@@ -8,9 +8,10 @@
  *     `N/A:`・名称のみ・8 桁投信コード等は `@/src/lib/ecosystem-ticker-hygiene` で除外。
  *   上記をマージし重複排除。取得キューは未登録または `last_updated_at` が 7 日超（上限 `YAHOO_MAX_TICKERS`）。
  *
- * - **米国株**: fundamentalsTimeSeries（年次 financials + cash-flow）→ `defaultKeyStatistics`（株主数）
- * - **日本株**: 同上を試行し、不足時は quoteSummary（`incomeStatementHistory` / `cashflowStatementHistory` 等）でフォールバック。
- *   ソース列: `Yahoo_TS` または `Yahoo_JP`。
+ * - **米国株**: fundamentalsTimeSeries（年次）に加え、**常に** quoteSummary 拡張（PL/CF 等）で欠損を補完し、
+ *   Rule of 40・`fcf_yield`（時価総額ベースの近似）を埋める。
+ * - **日本株**: 同上を試行し、不足時は quoteSummary でフォールバック。
+ *   ソース列: `Yahoo_TS` / `Yahoo_JP` / `Yahoo_US_QS`。
  *
  * Env:
  *   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
@@ -39,6 +40,17 @@ import type { TickerInstrumentKind } from "@/src/types/investment";
 
 const SOURCE_YAHOO_TS = "Yahoo_TS";
 const SOURCE_YAHOO_JP = "Yahoo_JP";
+/** 米国株: quoteSummary（income/cashflow/financialData）由来の補完 */
+const SOURCE_YAHOO_US_QS = "Yahoo_US_QS";
+
+const QUOTE_SUMMARY_EXTENDED_MODULES = [
+  "defaultKeyStatistics",
+  "incomeStatementHistory",
+  "cashflowStatementHistory",
+  "financialData",
+  "summaryDetail",
+  "price",
+] as const;
 
 /** `last_updated_at` がこれより古い行は再取得対象 */
 const STALE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -427,6 +439,50 @@ function jpNeedsQuoteFallback(
   return false;
 }
 
+/**
+ * quoteSummary から欠損のみ埋める。TS で既に有限の値は上書きしない。
+ * `fcf_yield` は DB 静的列用に、fb 側が有限なら設定する（TS 単体では null になりやすい）。
+ */
+function mergeQuoteSummaryFallbackIntoMetrics(
+  tsBaseline: { revenueGrowthPct: number; fcfMarginPct: number; annualFcf: number | null },
+  current: {
+    revenueGrowthPct: number;
+    fcfMarginPct: number;
+    annualFcf: number | null;
+    fcfYieldStored: number | null;
+  },
+  fb: JpFallbackParsed,
+): { revenueGrowthPct: number; fcfMarginPct: number; annualFcf: number | null; fcfYieldStored: number | null; applied: boolean } {
+  let applied = false;
+  let revenueGrowthPct = current.revenueGrowthPct;
+  let fcfMarginPct = current.fcfMarginPct;
+  let annualFcf = current.annualFcf;
+  let fcfYieldStored = current.fcfYieldStored;
+
+  if (!Number.isFinite(tsBaseline.revenueGrowthPct) && Number.isFinite(fb.revenueGrowthPct)) {
+    revenueGrowthPct = fb.revenueGrowthPct;
+    applied = true;
+  }
+  if (!Number.isFinite(tsBaseline.fcfMarginPct) && Number.isFinite(fb.fcfMarginPct)) {
+    fcfMarginPct = fb.fcfMarginPct;
+    applied = true;
+  }
+  if (
+    (tsBaseline.annualFcf == null || !Number.isFinite(tsBaseline.annualFcf)) &&
+    fb.annualFcf != null &&
+    Number.isFinite(fb.annualFcf)
+  ) {
+    annualFcf = fb.annualFcf;
+    applied = true;
+  }
+  if (fb.fcfYieldPct != null && Number.isFinite(fb.fcfYieldPct)) {
+    fcfYieldStored = fb.fcfYieldPct;
+    applied = true;
+  }
+
+  return { revenueGrowthPct, fcfMarginPct, annualFcf, fcfYieldStored, applied };
+}
+
 async function main() {
   dotenv.config({ path: path.join(process.cwd(), ".env.local") });
 
@@ -524,7 +580,7 @@ async function main() {
   };
 
   console.log(
-    `Yahoo fundamentals: user=${userId} holdings=${fromHoldings.length} ecosystem=${fromEcosystem.length} merged_unique=${mergedAll.length} pending_refresh=${pendingRefresh.length} batch=${batch.length} baseDelayMs=${delayMs} | TS + JP quote fallback | sources=${SOURCE_YAHOO_TS}|${SOURCE_YAHOO_JP}`,
+    `Yahoo fundamentals: user=${userId} holdings=${fromHoldings.length} ecosystem=${fromEcosystem.length} merged_unique=${mergedAll.length} pending_refresh=${pendingRefresh.length} batch=${batch.length} baseDelayMs=${delayMs} | TS + quoteSummary（JP 欠損時 / US 常時） | sources=${SOURCE_YAHOO_TS}|${SOURCE_YAHOO_JP}|${SOURCE_YAHOO_US_QS}`,
   );
 
   let ok = 0;
@@ -573,17 +629,11 @@ async function main() {
           fcfMarginPct,
         });
 
-      const quoteModules =
-        needJpQs
-          ? ([
-              "defaultKeyStatistics",
-              "incomeStatementHistory",
-              "cashflowStatementHistory",
-              "financialData",
-              "summaryDetail",
-              "price",
-            ] as const)
-          : (["defaultKeyStatistics"] as const);
+      /** 米国株は TS だけでは fcf_yield が空になりやすいため、quoteSummary 拡張を常に取得して補完する。 */
+      const useUsQuoteDetail = instrumentKind === "US_EQUITY";
+      const needExtendedQuote = needJpQs || useUsQuoteDetail;
+
+      const quoteModules = needExtendedQuote ? QUOTE_SUMMARY_EXTENDED_MODULES : (["defaultKeyStatistics"] as const);
 
       const qs = await yahooFinance.quoteSummary(yahooSym, {
         modules: [...quoteModules],
@@ -592,37 +642,38 @@ async function main() {
 
       let sharesOut = sharesFromQuoteSummary(qs);
       let fcfYieldStored: number | null = null;
-      let jpFallbackApplied = false;
+      let quoteFallbackApplied = false;
 
-      if (needJpQs) {
+      if (needExtendedQuote) {
         const fb = parseJpFallbackFromQuoteSummary(qs);
         if (fb != null) {
-          if (!Number.isFinite(tsMetrics.revenueGrowthPct) && Number.isFinite(fb.revenueGrowthPct)) {
-            revenueGrowthPct = fb.revenueGrowthPct;
-            jpFallbackApplied = true;
-          }
-          if (!Number.isFinite(tsMetrics.fcfMarginPct) && Number.isFinite(fb.fcfMarginPct)) {
-            fcfMarginPct = fb.fcfMarginPct;
-            jpFallbackApplied = true;
-          }
-          if (
-            (tsMetrics.annualFcf == null || !Number.isFinite(tsMetrics.annualFcf)) &&
-            fb.annualFcf != null &&
-            Number.isFinite(fb.annualFcf)
-          ) {
-            annualFcf = fb.annualFcf;
-            jpFallbackApplied = true;
-          }
-          if (fb.fcfYieldPct != null && Number.isFinite(fb.fcfYieldPct)) {
-            fcfYieldStored = fb.fcfYieldPct;
-            jpFallbackApplied = true;
-          }
+          const mergedFb = mergeQuoteSummaryFallbackIntoMetrics(
+            {
+              revenueGrowthPct: tsMetrics.revenueGrowthPct,
+              fcfMarginPct: tsMetrics.fcfMarginPct,
+              annualFcf: tsMetrics.annualFcf,
+            },
+            { revenueGrowthPct, fcfMarginPct, annualFcf, fcfYieldStored },
+            fb,
+          );
+          revenueGrowthPct = mergedFb.revenueGrowthPct;
+          fcfMarginPct = mergedFb.fcfMarginPct;
+          annualFcf = mergedFb.annualFcf;
+          fcfYieldStored = mergedFb.fcfYieldStored;
+          quoteFallbackApplied = mergedFb.applied;
         } else if (merged.length === 0) {
-          console.warn(`[warn] ${ticker} (${yahooSym}): JP quoteSummary fallback produced no metrics`);
+          const region = useUsQuoteDetail ? "US" : "JP";
+          console.warn(
+            `[warn] ${ticker} (${yahooSym}): ${region} quoteSummary fallback produced no metrics`,
+          );
         }
       }
 
-      const sourceTag = jpFallbackApplied ? SOURCE_YAHOO_JP : SOURCE_YAHOO_TS;
+      const sourceTag = quoteFallbackApplied
+        ? instrumentKind === "US_EQUITY"
+          ? SOURCE_YAHOO_US_QS
+          : SOURCE_YAHOO_JP
+        : SOURCE_YAHOO_TS;
 
       const ruleOf40 =
         Number.isFinite(revenueGrowthPct) && Number.isFinite(fcfMarginPct)
@@ -692,7 +743,7 @@ async function main() {
   }
 
   console.log(
-    `Done. upsert_attempts=${batch.length} 新規取得銘柄数=${newMetricRows} 更新銘柄数=${updatedMetricRows} ok_metrics=${ok} empty_parse=${skipped} failed=${failed} (${SOURCE_YAHOO_TS}|${SOURCE_YAHOO_JP})`,
+    `Done. upsert_attempts=${batch.length} 新規取得銘柄数=${newMetricRows} 更新銘柄数=${updatedMetricRows} ok_metrics=${ok} empty_parse=${skipped} failed=${failed} (${SOURCE_YAHOO_TS}|${SOURCE_YAHOO_JP}|${SOURCE_YAHOO_US_QS})`,
   );
 }
 
