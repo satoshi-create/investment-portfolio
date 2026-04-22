@@ -37,6 +37,9 @@ export type GenerateSignalsDetail = { holdingId: string; type: "BUY" | "WARN" | 
 /** Enough trailing days for ~30-σ daily alpha Z vs prior window (see `computeAlphaDeviationZScore`). */
 const ALPHA_HISTORY_TAIL_LIMIT = 35;
 
+/** 累積 Alpha（日次の合計）が過去ピークから落ちた幅がこのポイント以上なら BREAK（トレイリング） */
+const ALPHA_CUMULATIVE_TRAIL_DROP_PP = 5;
+
 export type GenerateSignalsResult = {
   inserted: number;
   details: GenerateSignalsDetail[];
@@ -49,6 +52,92 @@ function todayUtcYmd(): string {
   const m = String(now.getUTCMonth() + 1).padStart(2, "0");
   const d = String(now.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function disciplinePnlPercentFromClose(avg: number | null | undefined, close: number | null): number | null {
+  if (avg == null || !Number.isFinite(avg) || avg <= 0 || close == null || !Number.isFinite(close) || close <= 0) {
+    return null;
+  }
+  return roundAlphaMetric((close / avg - 1) * 100);
+}
+
+/** 日次 Alpha の累積系列のピークからの下落（パーセントポイント）が `dropPp` 以上 */
+function cumulativeAlphaTrailDroppedFromPeak(dailyAlphas: number[], dropPp: number): boolean {
+  if (dailyAlphas.length === 0 || !Number.isFinite(dropPp) || dropPp <= 0) return false;
+  let cum = 0;
+  let peak = -Infinity;
+  for (const a of dailyAlphas) {
+    if (!Number.isFinite(a)) continue;
+    cum += a;
+    peak = Math.max(peak, cum);
+  }
+  return Number.isFinite(peak) && peak - cum >= dropPp;
+}
+
+async function tryInsertDisciplineSignals(
+  db: Client,
+  holdingId: string,
+  h: Holding,
+  alphas: number[],
+  chronological: Record<string, unknown>[],
+  alphaDateYmd: string,
+  runDateYmd: string,
+): Promise<{ inserted: number; details: GenerateSignalsDetail[] }> {
+  const out: GenerateSignalsDetail[] = [];
+  let n = 0;
+  if (!h.exitRuleEnabled) return { inserted: 0, details: out };
+
+  const lastRow = chronological.length > 0 ? chronological[chronological.length - 1]! : null;
+  const rawClose = lastRow ? lastRow["close_price"] : undefined;
+  const lastClose =
+    rawClose != null && Number.isFinite(Number(rawClose)) && Number(rawClose) > 0 ? Number(rawClose) : null;
+  const pnlPct = disciplinePnlPercentFromClose(h.avgAcquisitionPrice ?? null, lastClose);
+  const alphaAt = roundAlphaMetric(alphas[alphas.length - 1]!);
+
+  const stopLine = h.stopLossPct != null && h.stopLossPct > 0 ? -h.stopLossPct : null;
+  if (pnlPct != null && stopLine != null && pnlPct <= stopLine) {
+    const exists = await signalExistsForAlphaDay(db, holdingId, "CRITICAL", alphaDateYmd);
+    if (!exists) {
+      await insertSignal(db, holdingId, "CRITICAL", alphaAt, alphaDateYmd);
+      n += 1;
+      out.push({ holdingId, type: "CRITICAL" });
+      signalsDebug("inserted CRITICAL (discipline stop-loss)", { ticker: h.ticker, pnlPct, stopLine });
+    }
+  }
+
+  const target = h.targetProfitPct != null && h.targetProfitPct > 0 ? h.targetProfitPct : null;
+  if (pnlPct != null && target != null && pnlPct >= target) {
+    const exists = await signalExistsForAlphaDay(db, holdingId, "BUY", alphaDateYmd);
+    if (!exists) {
+      await insertSignal(db, holdingId, "BUY", alphaAt, alphaDateYmd);
+      n += 1;
+      out.push({ holdingId, type: "BUY" });
+      signalsDebug("inserted BUY (discipline take-profit)", { ticker: h.ticker, pnlPct, target });
+    }
+  }
+
+  if (cumulativeAlphaTrailDroppedFromPeak(alphas, ALPHA_CUMULATIVE_TRAIL_DROP_PP)) {
+    const exists = await signalExistsForAlphaDay(db, holdingId, "BREAK", alphaDateYmd);
+    if (!exists) {
+      await insertSignal(db, holdingId, "BREAK", alphaAt, alphaDateYmd);
+      n += 1;
+      out.push({ holdingId, type: "BREAK" });
+      signalsDebug("inserted BREAK (alpha cumulative trailing stop)", { ticker: h.ticker });
+    }
+  }
+
+  const dl = h.tradeDeadline != null && h.tradeDeadline.length >= 10 ? h.tradeDeadline.slice(0, 10) : null;
+  if (dl != null && runDateYmd > dl) {
+    const exists = await signalExistsForAlphaDay(db, holdingId, "WARN", alphaDateYmd);
+    if (!exists) {
+      await insertSignal(db, holdingId, "WARN", alphaAt, alphaDateYmd);
+      n += 1;
+      out.push({ holdingId, type: "WARN" });
+      signalsDebug("inserted WARN (trade deadline passed)", { ticker: h.ticker, tradeDeadline: dl, runDateYmd });
+    }
+  }
+
+  return { inserted: n, details: out };
 }
 
 async function signalExistsForAlphaDay(
@@ -121,7 +210,7 @@ export async function generateSignalsForUser(
     const holdingId = h.id;
     const benchmarkTicker = defaultBenchmarkTickerForTicker(h.ticker);
     const alphaRs = await db.execute({
-      sql: `SELECT recorded_at, alpha_value FROM alpha_history
+      sql: `SELECT recorded_at, alpha_value, close_price FROM alpha_history
             WHERE user_id = ? AND ticker = ? AND benchmark_ticker = ?
             ORDER BY recorded_at DESC
             LIMIT ?`,
@@ -249,6 +338,10 @@ export async function generateSignalsForUser(
     } else {
       signalsDebug("BUY not evaluated: fewer than 2 alpha points", { ticker: h.ticker, n: alphas.length });
     }
+
+    const discipline = await tryInsertDisciplineSignals(db, holdingId, h, alphas, chronological, alphaDateYmd, runDateYmd);
+    inserted += discipline.inserted;
+    details.push(...discipline.details);
   }
 
   signalsDebug("generateSignalsForUser end", { inserted, details });

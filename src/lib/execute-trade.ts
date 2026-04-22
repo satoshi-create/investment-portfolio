@@ -37,6 +37,15 @@ export type ExecuteTradeParams = {
    * 空文字は NULL にクリア。
    */
   expectationCategory?: string;
+  /** 短期売買ルール（BUY 時のみ DB に保存。省略時は新規 NULL/0・買い増しは既存維持） */
+  shortTermExitRules?: ShortTermExitRulesInput;
+};
+
+export type ShortTermExitRulesInput = {
+  stopLossPct: number | null;
+  targetProfitPct: number | null;
+  tradeDeadline: string | null;
+  exitRuleEnabled: boolean;
 };
 
 export type ExecuteTradeResult =
@@ -82,6 +91,10 @@ type HoldingRow = {
   name: string | null;
   accountType: string | null;
   expectationCategoryDb: string | null;
+  stopLossPctDb: number | null;
+  targetProfitPctDb: number | null;
+  tradeDeadlineDb: string | null;
+  exitRuleEnabledDb: number;
 };
 
 function normalizeExpectationCategoryInput(raw: string | undefined): string | null {
@@ -91,14 +104,44 @@ function normalizeExpectationCategoryInput(raw: string | undefined): string | nu
   return parseExpectationCategory(t) != null ? t : null;
 }
 
+function normalizeOptionalPositivePctForDb(raw: number | null | undefined): number | null {
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+  return raw;
+}
+
+function normalizeTradeDeadlineForDb(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const t = String(raw).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+  return t;
+}
+
 async function selectHolding(tx: Transaction, userId: string, ticker: string): Promise<HoldingRow | null> {
-  const rs = await tx.execute({
-    sql: `SELECT id, quantity, avg_acquisition_price, name, account_type, expectation_category FROM holdings WHERE user_id = ? AND ticker = ? LIMIT 1`,
-    args: [userId, ticker],
-  });
+  let rs;
+  let hasShortTermColumns = true;
+  try {
+    rs = await tx.execute({
+      sql: `SELECT id, quantity, avg_acquisition_price, name, account_type, expectation_category,
+                   stop_loss_pct, target_profit_pct, trade_deadline, exit_rule_enabled
+            FROM holdings WHERE user_id = ? AND ticker = ? LIMIT 1`,
+      args: [userId, ticker],
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.toLowerCase().includes("no such column") && msg.toLowerCase().includes("stop_loss_pct")) {
+      hasShortTermColumns = false;
+      rs = await tx.execute({
+        sql: `SELECT id, quantity, avg_acquisition_price, name, account_type, expectation_category FROM holdings WHERE user_id = ? AND ticker = ? LIMIT 1`,
+        args: [userId, ticker],
+      });
+    } else {
+      throw e;
+    }
+  }
   if (rs.rows.length === 0) return null;
   const r = rs.rows[0]!;
   const expRaw = r.expectation_category != null ? String(r.expectation_category).trim() : "";
+  const hasShortTerm = hasShortTermColumns;
   return {
     id: String(r.id),
     quantity: Number(r.quantity),
@@ -109,6 +152,16 @@ async function selectHolding(tx: Transaction, userId: string, ticker: string): P
     name: r.name != null ? String(r.name) : null,
     accountType: r.account_type != null ? String(r.account_type) : null,
     expectationCategoryDb: expRaw.length > 0 ? expRaw : null,
+    stopLossPctDb:
+      hasShortTerm && r.stop_loss_pct != null
+        ? normalizeOptionalPositivePctForDb(Number(r.stop_loss_pct))
+        : null,
+    targetProfitPctDb:
+      hasShortTerm && r.target_profit_pct != null
+        ? normalizeOptionalPositivePctForDb(Number(r.target_profit_pct))
+        : null,
+    tradeDeadlineDb: hasShortTerm ? normalizeTradeDeadlineForDb(r.trade_deadline != null ? String(r.trade_deadline) : null) : null,
+    exitRuleEnabledDb: hasShortTerm && r.exit_rule_enabled != null && Number(r.exit_rule_enabled) === 1 ? 1 : 0,
   };
 }
 
@@ -117,6 +170,30 @@ const TRADE_REASON_MAX_LEN = 4000;
 function normalizeTradeReason(raw: string | undefined): string | null {
   const t = (raw ?? "").trim().slice(0, TRADE_REASON_MAX_LEN);
   return t.length > 0 ? t : null;
+}
+
+function resolveShortTermExitForBuy(
+  p: ExecuteTradeParams,
+  existing: HoldingRow | null,
+): { stopLossPct: number | null; targetProfitPct: number | null; tradeDeadline: string | null; exitRuleEnabled: number } {
+  if (p.shortTermExitRules === undefined) {
+    if (existing == null) {
+      return { stopLossPct: null, targetProfitPct: null, tradeDeadline: null, exitRuleEnabled: 0 };
+    }
+    return {
+      stopLossPct: existing.stopLossPctDb,
+      targetProfitPct: existing.targetProfitPctDb,
+      tradeDeadline: existing.tradeDeadlineDb,
+      exitRuleEnabled: existing.exitRuleEnabledDb,
+    };
+  }
+  const r = p.shortTermExitRules;
+  return {
+    stopLossPct: normalizeOptionalPositivePctForDb(r.stopLossPct),
+    targetProfitPct: normalizeOptionalPositivePctForDb(r.targetProfitPct),
+    tradeDeadline: normalizeTradeDeadlineForDb(r.tradeDeadline),
+    exitRuleEnabled: r.exitRuleEnabled ? 1 : 0,
+  };
 }
 
 async function resolveSignalsForHolding(tx: Transaction, holdingId: string): Promise<void> {
@@ -208,6 +285,8 @@ export async function executeTradeInTransaction(
         ? existing?.expectationCategoryDb ?? null
         : normalizeExpectationCategoryInput(p.expectationCategory);
 
+    const shortTermResolved = resolveShortTermExitForBuy(p, existing);
+
     if (existing == null) {
       holdingId = crypto.randomUUID();
       newQty = qty;
@@ -215,8 +294,10 @@ export async function executeTradeInTransaction(
       await tx.execute({
         sql: `INSERT INTO holdings (
                 id, user_id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category,
-                provider_symbol, valuation_factor, account_type, expectation_category, created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, datetime('now'))`,
+                provider_symbol, valuation_factor, account_type, expectation_category,
+                stop_loss_pct, target_profit_pct, trade_deadline, exit_rule_enabled,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, ?, ?, datetime('now'))`,
         args: [
           holdingId,
           p.userId,
@@ -229,6 +310,10 @@ export async function executeTradeInTransaction(
           p.categoryForNewHolding,
           p.accountName,
           expectationForNew,
+          shortTermResolved.stopLossPct,
+          shortTermResolved.targetProfitPct,
+          shortTermResolved.tradeDeadline,
+          shortTermResolved.exitRuleEnabled,
         ],
       });
     } else {
@@ -244,7 +329,8 @@ export async function executeTradeInTransaction(
       }
       await tx.execute({
         sql: `UPDATE holdings
-              SET quantity = ?, avg_acquisition_price = ?, name = ?, structure_tags = ?, sector = ?, expectation_category = ?
+              SET quantity = ?, avg_acquisition_price = ?, name = ?, structure_tags = ?, sector = ?, expectation_category = ?,
+                  stop_loss_pct = ?, target_profit_pct = ?, trade_deadline = ?, exit_rule_enabled = ?
               WHERE id = ? AND user_id = ?`,
         args: [
           newQty,
@@ -253,6 +339,10 @@ export async function executeTradeInTransaction(
           structureTagsJson,
           sectorColumn,
           expectationForExisting,
+          shortTermResolved.stopLossPct,
+          shortTermResolved.targetProfitPct,
+          shortTermResolved.tradeDeadline,
+          shortTermResolved.exitRuleEnabled,
           holdingId,
           p.userId,
         ],
@@ -388,6 +478,13 @@ export async function executeTradeWithClient(db: Client, p: ExecuteTradeParams):
         ok: false,
         message:
           "holdings に expectation_category 列がありません。migrations/020_expectation_category.sql を適用してください。",
+      };
+    }
+    if (msg.toLowerCase().includes("no such column") && msg.toLowerCase().includes("stop_loss_pct")) {
+      return {
+        ok: false,
+        message:
+          "holdings に短期ルール列がありません。migrations/044_add_short_term_trade_rules.sql を適用してください。",
       };
     }
     return { ok: false, message: msg };

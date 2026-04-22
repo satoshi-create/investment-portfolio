@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { TimerOff } from "lucide-react";
 
 import type { Stock, TickerInstrumentKind } from "@/src/types/investment";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
+import { cn } from "@/src/lib/cn";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { formatJpyValueForView, formatLocalPriceForView } from "@/src/lib/format-display-currency";
@@ -35,6 +37,108 @@ function formatSignedPercent(v: number | null): string {
   if (v == null) return "—";
   const sign = v > 0 ? "+" : "";
   return `${sign}${v.toFixed(2)}%`;
+}
+
+function utcCalendarDaysFromToday(ymd: string | null): number | null {
+  if (ymd == null || ymd.length < 10) return null;
+  const d = new Date(`${ymd.slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return Math.round((d.getTime() - todayUtc.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function ShortTermRulesCell({ s }: { s: Stock }) {
+  const pnlOk = s.avgAcquisitionPrice != null && s.currentPrice != null && s.currentPrice > 0;
+  const pnl = pnlOk ? s.unrealizedPnlPercent : null;
+
+  const hasBand = s.stopLossPct != null || s.targetProfitPct != null;
+  const lo =
+    s.stopLossPct != null
+      ? -Math.abs(s.stopLossPct)
+      : s.targetProfitPct != null
+        ? 0
+        : null;
+  const hi =
+    s.targetProfitPct != null
+      ? Math.abs(s.targetProfitPct)
+      : s.stopLossPct != null
+        ? 0
+        : null;
+
+  let t = 0.5;
+  if (pnl != null && lo != null && hi != null && hi > lo) {
+    const raw = (pnl - lo) / (hi - lo);
+    t = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0.5;
+  }
+
+  const nearStop =
+    s.exitRuleEnabled &&
+    s.stopLossPct != null &&
+    pnl != null &&
+    pnl > -s.stopLossPct &&
+    pnl <= -s.stopLossPct + 2;
+
+  const daysLeft = utcCalendarDaysFromToday(s.tradeDeadline);
+
+  if (!s.exitRuleEnabled) {
+    return <span className="text-muted-foreground text-[10px]">—</span>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2 min-w-[7.5rem]">
+      {hasBand && lo != null && hi != null && hi > lo ? (
+        <div className={cn("space-y-1", nearStop && "animate-pulse")}>
+          <div
+            className={cn(
+              "relative h-2 rounded-full bg-gradient-to-r from-accent-rose/45 via-muted to-accent-emerald/45 border border-border/60 overflow-visible",
+              nearStop && "ring-1 ring-accent-rose/50",
+            )}
+            title={`損益レンジ ${lo.toFixed(1)}% 〜 ${hi.toFixed(1)}%（現在 ${pnl != null ? formatSignedPercent(pnl) : "—"}）`}
+          >
+            <div
+              className="absolute top-1/2 -translate-y-1/2 size-2.5 rounded-full bg-accent-cyan border-2 border-background shadow-sm z-10"
+              style={{ left: `clamp(4px, calc(${t * 100}% - 5px), calc(100% - 14px))` }}
+            />
+          </div>
+          <div className="flex justify-between gap-1 text-[8px] font-mono uppercase tracking-tight">
+            <span className="text-accent-rose tabular-nums">{lo.toFixed(0)}%</span>
+            <span className="text-accent-emerald tabular-nums">{hi.toFixed(0)}%</span>
+          </div>
+          {pnl != null ? (
+            <span
+              className={cn(
+                "text-[9px] font-mono tabular-nums",
+                nearStop ? "text-accent-rose font-bold" : "text-foreground/85",
+              )}
+            >
+              現在 {formatSignedPercent(pnl)}
+            </span>
+          ) : (
+            <span className="text-[9px] text-muted-foreground">損益率: —</span>
+          )}
+        </div>
+      ) : (
+        <span className="text-[9px] text-muted-foreground">損切・利確未設定</span>
+      )}
+
+      {s.tradeDeadline != null && s.tradeDeadline.length >= 10 ? (
+        daysLeft != null && daysLeft < 0 ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-accent-rose">
+            <TimerOff className="size-3.5 shrink-0 opacity-90" aria-hidden />
+            期限切れ
+          </span>
+        ) : (
+          <span
+            className="inline-flex w-fit text-[10px] font-bold text-accent-cyan border border-border bg-background/60 px-2 py-0.5 rounded-md tabular-nums"
+            title={`賞味期限 ${s.tradeDeadline}`}
+          >
+            残り {daysLeft != null ? `${daysLeft} 日` : "—"}
+          </span>
+        )
+      ) : null}
+    </div>
+  );
 }
 
 function computeFooterAggregates(stocks: Stock[]) {
@@ -176,7 +280,7 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
       </div>
 
       <div className="relative overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full text-left text-sm min-w-[1100px]">
+        <table className="w-full text-left text-sm min-w-[1280px]">
           <thead className="bg-background text-muted-foreground text-[10px] uppercase font-bold tracking-[0.08em]">
             <tr>
               <th
@@ -215,6 +319,9 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
               </th>
               <th className="px-4 py-3 text-right whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("pnlpct")} title="Sort">
                 損益率{sortMark("pnlpct")}
+              </th>
+              <th className="px-4 py-3 whitespace-nowrap text-[10px] uppercase font-bold tracking-wide text-muted-foreground">
+                短期ルール
               </th>
               <th className="px-4 py-3 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort("cat")} title="Sort">
                 カテゴリ{sortMark("cat")}
@@ -316,6 +423,9 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                     ? formatSignedPercent(s.unrealizedPnlPercent)
                     : "—"}
                 </td>
+                <td className="px-4 py-3 align-top">
+                  <ShortTermRulesCell s={s} />
+                </td>
                 <td className="px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">
                   {s.category}
                 </td>
@@ -386,6 +496,7 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                   "—"
                 )}
               </td>
+              <td className="px-4 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
               <td className="px-4 py-3 text-[10px] text-muted-foreground whitespace-nowrap">—</td>
             </tr>
           </tfoot>

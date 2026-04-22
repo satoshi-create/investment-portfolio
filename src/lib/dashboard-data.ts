@@ -683,6 +683,10 @@ type HoldingQueryRow = {
   memo?: unknown;
   is_bookmarked?: unknown;
   instrument_meta_synced_at?: unknown;
+  stop_loss_pct?: unknown;
+  target_profit_pct?: unknown;
+  trade_deadline?: unknown;
+  exit_rule_enabled?: unknown;
 };
 
 function parseEarningsSummaryNote(raw: unknown): string | null {
@@ -708,6 +712,23 @@ function parseBookmarkFlag(raw: unknown): boolean {
   return raw != null && String(raw).trim() !== "" ? Number(raw) === 1 : false;
 }
 
+function parseShortTermExitRulePercents(row: HoldingQueryRow): {
+  stopLossPct: number | null;
+  targetProfitPct: number | null;
+  tradeDeadline: string | null;
+  exitRuleEnabled: boolean;
+} {
+  const exitRuleEnabled = row.exit_rule_enabled != null && Number(row.exit_rule_enabled) === 1;
+  const slp = row.stop_loss_pct;
+  const tpp = row.target_profit_pct;
+  const stopLossPct =
+    slp != null && Number.isFinite(Number(slp)) && Number(slp) > 0 ? Number(slp) : null;
+  const targetProfitPct =
+    tpp != null && Number.isFinite(Number(tpp)) && Number(tpp) > 0 ? Number(tpp) : null;
+  const tradeDeadline = parseOptionalIsoDatePrefix(row.trade_deadline);
+  return { stopLossPct, targetProfitPct, tradeDeadline, exitRuleEnabled };
+}
+
 /** Calendar-day gap (UTC midnight) until `nextYmd` (YYYY-MM-DD). */
 function computeUtcCalendarDaysUntil(nextYmd: string | null): number | null {
   if (nextYmd == null || nextYmd.length < 10) return null;
@@ -730,25 +751,34 @@ function computePerformanceSinceFoundationPercent(
 }
 
 async function fetchHoldingsRowsWithInvestmentMeta(db: Client, userId: string) {
-  const extended = `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note,
-          listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at`;
+  const core = `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note`;
+  const meta = `, listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at`;
+  const shortTerm = `, stop_loss_pct, target_profit_pct, trade_deadline, exit_rule_enabled`;
+  const from = ` FROM holdings WHERE user_id = ? AND quantity > 0 ORDER BY ticker`;
+  const run = (frag: string) => db.execute({ sql: `${frag}${from}`, args: [userId] });
+
   try {
-    return await db.execute({
-      sql: `${extended}
-          FROM holdings
-          WHERE user_id = ? AND quantity > 0
-          ORDER BY ticker`,
-      args: [userId],
-    });
+    return await run(`${core}${meta}${shortTerm}`);
   } catch (e) {
-    if (!holdingsMissingInvestmentMeta(e)) throw e;
-    return await db.execute({
-      sql: `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note
-            FROM holdings
-            WHERE user_id = ? AND quantity > 0
-            ORDER BY ticker`,
-      args: [userId],
-    });
+    if (holdingsMissingShortTermRulesColumns(e)) {
+      try {
+        return await run(`${core}${meta}`);
+      } catch (e2) {
+        if (!holdingsMissingInvestmentMeta(e2)) throw e2;
+        return await run(`${core}`);
+      }
+    }
+    if (holdingsMissingInvestmentMeta(e)) {
+      try {
+        return await run(`${core}${shortTerm}`);
+      } catch (e2) {
+        if (holdingsMissingShortTermRulesColumns(e2)) {
+          return await run(`${core}`);
+        }
+        throw e2;
+      }
+    }
+    throw e;
   }
 }
 
@@ -919,6 +949,12 @@ function holdingsMissingInvestmentMeta(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   const lower = msg.toLowerCase();
   return lower.includes("no such column") && lower.includes("listing_date");
+}
+
+function holdingsMissingShortTermRulesColumns(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("stop_loss_pct");
 }
 
 function ecosystemMissingInvestmentMetaColumns(e: unknown): boolean {
@@ -1305,6 +1341,8 @@ function buildDraftsFromHoldingRows(
         ? chartListedPct
         : computePerformanceSinceFoundationPercent(currentPrice, listingPriceDb);
 
+    const shortTermExit = parseShortTermExitRulePercents(row);
+
     return {
       id,
       ticker,
@@ -1318,6 +1356,10 @@ function buildDraftsFromHoldingRows(
       listingPrice: listingPriceDb,
       memo: memoDb,
       isBookmarked,
+      stopLossPct: shortTermExit.stopLossPct,
+      targetProfitPct: shortTermExit.targetProfitPct,
+      tradeDeadline: shortTermExit.tradeDeadline,
+      exitRuleEnabled: shortTermExit.exitRuleEnabled,
       performanceSinceFoundation,
       nextEarningsDate,
       daysToEarnings,
@@ -2982,6 +3024,10 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       listingPrice: null,
       memo: null,
       isBookmarked: false,
+      stopLossPct: null,
+      targetProfitPct: null,
+      tradeDeadline: null,
+      exitRuleEnabled: false,
       performanceSinceFoundation: null,
       previousClose: null,
       benchmarkDayChangePercent: null,

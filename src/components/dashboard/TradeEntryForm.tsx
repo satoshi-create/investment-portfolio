@@ -118,6 +118,10 @@ function TradeEntryFormInner({
   const [expectationCategory, setExpectationCategory] = useState<string>(() =>
     initial?.expectationCategory != null ? initial.expectationCategory : "",
   );
+  const [exitRuleEnabled, setExitRuleEnabled] = useState(false);
+  const [stopLossPctInput, setStopLossPctInput] = useState("");
+  const [targetProfitPctInput, setTargetProfitPctInput] = useState("");
+  const [tradeDeadlineInput, setTradeDeadlineInput] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +211,13 @@ function TradeEntryFormInner({
     return `${base}${jpy} / ${effLabel}`;
   }, [feeCurrency, feeLocalNumber, feesJpyComputed, parsedQty, parsedUnit]);
 
+  function parseOptionalPositivePercentInput(raw: string): number | null {
+    const t = raw.trim().replace(/,/g, "");
+    if (t.length === 0) return null;
+    const n = Number(t);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
@@ -235,6 +246,15 @@ function TradeEntryFormInner({
         themeId: selectedThemeId.trim() || undefined,
         reason: tradeReason.trim() || undefined,
         expectationCategory,
+        shortTermExitRules:
+          side === "BUY"
+            ? {
+                stopLossPct: parseOptionalPositivePercentInput(stopLossPctInput),
+                targetProfitPct: parseOptionalPositivePercentInput(targetProfitPctInput),
+                tradeDeadline: tradeDeadlineInput.trim().length >= 10 ? tradeDeadlineInput.trim().slice(0, 10) : null,
+                exitRuleEnabled,
+              }
+            : undefined,
       });
       setMessage(res.message);
       if (res.ok) {
@@ -516,6 +536,58 @@ function TradeEntryFormInner({
                 <option value="Satellite">Satellite</option>
                 <option value="Core">Core</option>
               </select>
+            </div>
+          ) : null}
+
+          {side === "BUY" ? (
+            <div className="rounded-xl border border-slate-700/80 bg-slate-950/50 p-3 space-y-3">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">短期トレード設定</h3>
+              <label className="flex items-center gap-2 text-[11px] text-slate-300 select-none">
+                <input
+                  type="checkbox"
+                  checked={exitRuleEnabled}
+                  onChange={(e) => setExitRuleEnabled(e.target.checked)}
+                  className="accent-cyan-500"
+                />
+                自己規律ルールを有効にする（損切・利確・期限・Alpha トレイリングはシグナル生成に使用）
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">損切り（%）</label>
+                  <input
+                    value={stopLossPctInput}
+                    onChange={(e) => setStopLossPctInput(e.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                    inputMode="decimal"
+                    placeholder="例: 5（−5% で損切り）"
+                    disabled={!exitRuleEnabled}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">利確（%）</label>
+                  <input
+                    value={targetProfitPctInput}
+                    onChange={(e) => setTargetProfitPctInput(e.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 font-mono"
+                    inputMode="decimal"
+                    placeholder="例: 10"
+                    disabled={!exitRuleEnabled}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">賞味期限（任意）</label>
+                <input
+                  type="date"
+                  value={tradeDeadlineInput}
+                  onChange={(e) => setTradeDeadlineInput(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+                  disabled={!exitRuleEnabled}
+                />
+                <p className="text-[9px] text-slate-600 mt-1">
+                  期限超過で低優先度 WARN が生成されます（当日は含みません）。
+                </p>
+              </div>
             </div>
           ) : null}
 

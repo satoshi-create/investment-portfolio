@@ -8,6 +8,12 @@ function holdingsMissingInvestmentMeta(e: unknown): boolean {
   return lower.includes("no such column") && lower.includes("listing_date");
 }
 
+function holdingsMissingShortTermRulesColumns(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("stop_loss_pct");
+}
+
 function parseOptionalIsoDatePrefix(raw: unknown): string | null {
   if (raw == null) return null;
   const s = String(raw).trim();
@@ -20,6 +26,13 @@ function parseOptionalFiniteNumberMeta(raw: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** 損切・利確など正の % のみ採用（0 以下・非有限は null） */
+function parseOptionalPositivePercentRule(raw: unknown): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function parseBookmarkFlag(raw: unknown): boolean {
   return raw != null && String(raw).trim() !== "" ? Number(raw) === 1 : false;
 }
@@ -28,7 +41,8 @@ function parseBookmarkFlag(raw: unknown): boolean {
 export async function fetchHoldingsWithProviderForUser(db: Client, userId: string): Promise<Holding[]> {
   try {
     const rs = await db.execute({
-      sql: `SELECT id, ticker, provider_symbol, listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at
+      sql: `SELECT id, ticker, provider_symbol, avg_acquisition_price, listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at,
+                   stop_loss_pct, target_profit_pct, trade_deadline, exit_rule_enabled
             FROM holdings
             WHERE user_id = ? AND quantity > 0
             ORDER BY ticker`,
@@ -39,6 +53,7 @@ export async function fetchHoldingsWithProviderForUser(db: Client, userId: strin
       ticker: String(row.ticker),
       providerSymbol:
         row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
+      avgAcquisitionPrice: parseOptionalFiniteNumberMeta(row.avg_acquisition_price),
       listingDate: parseOptionalIsoDatePrefix(
         row.listing_date ?? (row as Record<string, unknown>)["founded_date"],
       ),
@@ -47,11 +62,43 @@ export async function fetchHoldingsWithProviderForUser(db: Client, userId: strin
       nextEarningsDate: parseOptionalIsoDatePrefix(row.next_earnings_date),
       memo: row.memo != null && String(row.memo).trim().length > 0 ? String(row.memo) : null,
       isBookmarked: parseBookmarkFlag(row.is_bookmarked),
+      stopLossPct: parseOptionalPositivePercentRule(row.stop_loss_pct),
+      targetProfitPct: parseOptionalPositivePercentRule(row.target_profit_pct),
+      tradeDeadline: parseOptionalIsoDatePrefix(row.trade_deadline),
+      exitRuleEnabled: row.exit_rule_enabled != null && Number(row.exit_rule_enabled) === 1,
     }));
   } catch (e) {
+    if (holdingsMissingShortTermRulesColumns(e)) {
+      const rs = await db.execute({
+        sql: `SELECT id, ticker, provider_symbol, avg_acquisition_price, listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at
+              FROM holdings
+              WHERE user_id = ? AND quantity > 0
+              ORDER BY ticker`,
+        args: [userId],
+      });
+      return rs.rows.map((row) => ({
+        id: String(row.id),
+        ticker: String(row.ticker),
+        providerSymbol:
+          row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
+        avgAcquisitionPrice: parseOptionalFiniteNumberMeta(row.avg_acquisition_price),
+        listingDate: parseOptionalIsoDatePrefix(
+          row.listing_date ?? (row as Record<string, unknown>)["founded_date"],
+        ),
+        marketCap: parseOptionalFiniteNumberMeta(row.market_cap),
+        listingPrice: parseOptionalFiniteNumberMeta(row.listing_price),
+        nextEarningsDate: parseOptionalIsoDatePrefix(row.next_earnings_date),
+        memo: row.memo != null && String(row.memo).trim().length > 0 ? String(row.memo) : null,
+        isBookmarked: parseBookmarkFlag(row.is_bookmarked),
+        stopLossPct: null,
+        targetProfitPct: null,
+        tradeDeadline: null,
+        exitRuleEnabled: false,
+      }));
+    }
     if (!holdingsMissingInvestmentMeta(e)) throw e;
     const rs = await db.execute({
-      sql: `SELECT id, ticker, provider_symbol FROM holdings WHERE user_id = ? AND quantity > 0 ORDER BY ticker`,
+      sql: `SELECT id, ticker, provider_symbol, avg_acquisition_price FROM holdings WHERE user_id = ? AND quantity > 0 ORDER BY ticker`,
       args: [userId],
     });
     return rs.rows.map((row) => ({
@@ -59,12 +106,17 @@ export async function fetchHoldingsWithProviderForUser(db: Client, userId: strin
       ticker: String(row.ticker),
       providerSymbol:
         row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
+      avgAcquisitionPrice: parseOptionalFiniteNumberMeta(row.avg_acquisition_price),
       listingDate: null,
       marketCap: null,
       listingPrice: null,
       nextEarningsDate: null,
       memo: null,
       isBookmarked: false,
+      stopLossPct: null,
+      targetProfitPct: null,
+      tradeDeadline: null,
+      exitRuleEnabled: false,
     }));
   }
 }

@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
-import { executeTradeWithClient, type ExecuteTradeParams } from "@/src/lib/execute-trade";
+import {
+  executeTradeWithClient,
+  type ExecuteTradeParams,
+  type ShortTermExitRulesInput,
+} from "@/src/lib/execute-trade";
 import { getDb, isDbConfigured } from "@/src/lib/db";
 
 export type ExecuteTradeActionInput = {
@@ -29,6 +33,8 @@ export type ExecuteTradeActionInput = {
   reason?: string;
   /** `holdings.expectation_category`（空でクリア。省略時は買い増しで既存維持） */
   expectationCategory?: string;
+  /** BUY のみ。省略時は買い増しで短期ルール列は既存維持 */
+  shortTermExitRules?: ShortTermExitRulesInput;
 };
 
 export type ExecuteTradeActionResult = {
@@ -91,6 +97,7 @@ export async function executeTradeAction(input: ExecuteTradeActionInput): Promis
     themeId: input.themeId != null && String(input.themeId).trim().length > 0 ? String(input.themeId).trim() : null,
     reason: reasonRaw.length > 0 ? reasonRaw : undefined,
     expectationCategory: input.expectationCategory,
+    shortTermExitRules: side === "BUY" ? input.shortTermExitRules : undefined,
   };
 
   const db = getDb();

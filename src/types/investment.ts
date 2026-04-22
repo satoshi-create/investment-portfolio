@@ -33,6 +33,16 @@ export interface Holding {
   memo?: string | null;
   /** DB `holdings.is_bookmarked`。未読込時は省略可 */
   isBookmarked?: boolean;
+  /** DB `holdings.stop_loss_pct`（%・含み損益率が −値でこの幅を超えたら損切り想定）。未設定は null */
+  stopLossPct?: number | null;
+  /** DB `holdings.target_profit_pct`（%・利確ライン）。未設定は null */
+  targetProfitPct?: number | null;
+  /** DB `holdings.trade_deadline`（YYYY-MM-DD）。未設定は null */
+  tradeDeadline?: string | null;
+  /** DB `holdings.exit_rule_enabled`（1=短期ルールをシグナル・UIに適用） */
+  exitRuleEnabled?: boolean;
+  /** DB `holdings.avg_acquisition_price`（`fetchHoldingsWithProviderForUser` が読む場合のみ） */
+  avgAcquisitionPrice?: number | null;
 }
 
 /**
@@ -186,6 +196,14 @@ export interface Stock {
   memo: string | null;
   /** DB `holdings.is_bookmarked` */
   isBookmarked: boolean;
+  /** DB `holdings.stop_loss_pct`（%）。未設定は null */
+  stopLossPct: number | null;
+  /** DB `holdings.target_profit_pct`（%）。未設定は null */
+  targetProfitPct: number | null;
+  /** DB `holdings.trade_deadline`（YYYY-MM-DD）。未設定は null */
+  tradeDeadline: string | null;
+  /** DB `holdings.exit_rule_enabled` */
+  exitRuleEnabled: boolean;
   /**
    * 上場来騰落率（表示用）。可能なら Yahoo 日足の **最古日〜最新日** を同一基準（adj または close のペア）で
    * (末日/初日 − 1)×100。チャート取得不能時は (現在価格 / listing_price − 1)×100 にフォールバック。
