@@ -5,6 +5,8 @@
  */
 import YahooFinance from "yahoo-finance2";
 
+import { MARKET_GLANCE_MACRO_SYMBOL_SET } from "@/src/lib/market-glance-macros";
+
 const yahooFinance = new YahooFinance();
 
 export type MarketGlancePeriod = "5d" | "1mo";
@@ -39,9 +41,7 @@ function normalizePeriod(raw: string | null): MarketGlancePeriod {
 }
 
 export function assertAllowedMacroSymbol(symbol: string): void {
-  // Only allow the macro symbols we intentionally support (prevents arbitrary Yahoo requests).
-  const allowed = new Set(["GC=F", "BTC-USD", "JPY=X", "^VIX"]);
-  if (!allowed.has(symbol)) {
+  if (!MARKET_GLANCE_MACRO_SYMBOL_SET.has(symbol)) {
     throw new Error(`Unsupported symbol: ${symbol}`);
   }
 }

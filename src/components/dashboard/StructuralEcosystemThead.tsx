@@ -193,7 +193,7 @@ export function StructuralEcosystemThead({
                   sortKey="research"
                   align="left"
                   className={`px-6 py-4 cursor-pointer select-none ${sfirst}`}
-                  title="Sort"
+                  title="決算までの日数 → 配当落ちまでの日数 → 配当利回りで並べ替え"
                   label="Research"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}

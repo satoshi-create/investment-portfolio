@@ -96,7 +96,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background text-foreground font-sans overflow-x-hidden md:h-dvh md:max-h-dvh md:overflow-hidden">
+    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-x-hidden overflow-hidden bg-background text-foreground font-sans">
       {/* Floating hamburger: stays clickable while scrolling */}
       <button
         type="button"
@@ -108,7 +108,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
         Menu
       </button>
 
-      <div className="flex flex-1 flex-row min-w-0 md:min-h-0">
+      <div className="flex min-h-0 flex-1 flex-row min-w-0">
         {/* Desktop sidebar */}
         <div
           className={`hidden md:block shrink-0 self-stretch h-full overflow-hidden transition-[width] duration-200 ease-out ${
@@ -420,9 +420,6 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
           <div
             className={`${COCKPIT_MAIN_SCROLL_CLASS} cockpit-main-surface`}
             onScroll={(e) => {
-              if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches === false) {
-                return;
-              }
               const top = (e.currentTarget as HTMLDivElement).scrollTop;
               setHeaderCompact(top > 12);
             }}

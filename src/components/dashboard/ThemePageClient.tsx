@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  CircleSlash,
   Crosshair,
   FileSpreadsheet,
   Layers,
@@ -560,6 +561,10 @@ function ecoDividendSortScore(e: ThemeEcosystemWatchItem): number {
   return 20000 + d;
 }
 
+function ecoHasUsableQuote(e: ThemeEcosystemWatchItem): boolean {
+  return e.currentPrice != null && Number.isFinite(e.currentPrice) && e.currentPrice > 0;
+}
+
 export function ThemePageClient({
   themeLabel,
   supplyChainCatalogRows = null,
@@ -628,6 +633,7 @@ export function ThemePageClient({
   const [ecoEditListingPrice, setEcoEditListingPrice] = useState("");
   const [ecoEditSaving, setEcoEditSaving] = useState(false);
   const [ecoBookmarksOnly, setEcoBookmarksOnly] = useState(false);
+  const [ecoHideIncompleteQuotes, setEcoHideIncompleteQuotes] = useState(false);
   const [ecoColumnOrder, setEcoColumnOrder] = useState<EcosystemWatchlistColId[]>(
     DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER,
   );
@@ -1283,10 +1289,14 @@ export function ThemePageClient({
         return true;
       });
     }
+    if (ecoHideIncompleteQuotes) {
+      out = out.filter((e) => ecoHasUsableQuote(e));
+    }
     return out;
   }, [
     ecosystem,
     ecoBookmarksOnly,
+    ecoHideIncompleteQuotes,
     patrolOn,
     postChasmOnly,
     ecosystemSearchQuery,
@@ -1415,6 +1425,8 @@ export function ThemePageClient({
             : null,
         );
         if (earnCmp !== 0) return dir * earnCmp;
+        const divEx = cmpNum(ecoDividendSortScore(a), ecoDividendSortScore(b));
+        if (divEx !== 0) return dir * divEx;
         return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
       }
       return 0;
@@ -1489,7 +1501,9 @@ export function ThemePageClient({
       setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setEcoSortKey(next);
-      setEcoSortDir(next === "earnings" || next === "dividend" ? "asc" : "desc");
+      setEcoSortDir(
+        next === "earnings" || next === "dividend" || next === "research" ? "asc" : "desc",
+      );
     }
   }
 
@@ -1559,7 +1573,7 @@ export function ThemePageClient({
   const canRenderContent = data != null;
 
   return (
-    <div className="min-h-min bg-background text-foreground pb-8 font-sans">
+    <div className="bg-background text-foreground pb-8 font-sans">
       <div className="mx-auto w-full max-w-6xl lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem] space-y-8">
         <header className="border-b border-border pb-8">
           <Link
@@ -2234,6 +2248,20 @@ export function ThemePageClient({
                         </button>
                         <button
                           type="button"
+                          onClick={() => setEcoHideIncompleteQuotes((v) => !v)}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors",
+                            ecoHideIncompleteQuotes
+                              ? "border-rose-500/45 bg-rose-500/10 text-rose-200"
+                              : "border-border text-muted-foreground hover:bg-muted/70",
+                          )}
+                          title="現在株価が取得できていないウォッチ銘柄を非表示"
+                        >
+                          <CircleSlash className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          株価未取得を隠す
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setEcoShowValueCols((v) => !v)}
                           className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
                             ecoShowValueCols
@@ -2537,6 +2565,7 @@ export function ThemePageClient({
                           {                          patrolOn ||
                           postChasmOnly ||
                           ecoBookmarksOnly ||
+                          ecoHideIncompleteQuotes ||
                           ecosystemSearchQuery.trim().length > 0 ||
                           ecoMarketFilter !== "all"
                             ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
@@ -2570,6 +2599,7 @@ export function ThemePageClient({
                         (patrolOn ||
                           postChasmOnly ||
                           ecoBookmarksOnly ||
+                          ecoHideIncompleteQuotes ||
                           ecosystemSearchQuery.trim().length > 0 ||
                           ecoMarketFilter !== "all" ||
                           ecoPeMin.trim().length > 0 ||
@@ -2588,6 +2618,19 @@ export function ThemePageClient({
                                   !patrolOn &&
                                   !postChasmOnly &&
                                   !q;
+                                const quoteOnly =
+                                  ecoHideIncompleteQuotes &&
+                                  !patrolOn &&
+                                  !postChasmOnly &&
+                                  !ecoBookmarksOnly &&
+                                  !q &&
+                                  ecoMarketFilter === "all" &&
+                                  ecoPeMin.trim().length === 0 &&
+                                  ecoPeMax.trim().length === 0 &&
+                                  !ecoEpsPositiveOnly;
+                                if (quoteOnly) {
+                                  return "現在株価が取得できている銘柄がありません。フィルターを解除するか、後で再試行してください。";
+                                }
                                 if (q) return "該当する構造が見つかりません";
                                 if (marketOnly && ecoMarketFilter === "jp") {
                                   return "日本市場に該当する銘柄がありません。";

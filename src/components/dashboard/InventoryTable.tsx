@@ -2,7 +2,17 @@
 
 import React, { useCallback, useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
-import { CalendarClock, FileSpreadsheet, GripVertical, MessageSquare, NotebookPen, Search, Star, X } from "lucide-react";
+import {
+  CalendarClock,
+  CircleSlash,
+  FileSpreadsheet,
+  GripVertical,
+  MessageSquare,
+  NotebookPen,
+  Search,
+  Star,
+  X,
+} from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -176,6 +186,18 @@ function earningsSortValue(s: Stock): number | null {
   return d;
 }
 
+/** 配当落ちまでの日数（Research / Dividend 系ソート）。未取得は末尾。過去のみは未来より後ろ。 */
+function stockExDividendSortScore(s: Stock): number {
+  const d = s.daysToExDividend;
+  if (d == null || !Number.isFinite(d)) return 1e9;
+  if (d >= 0) return d;
+  return 20000 + d;
+}
+
+function stockHasUsableQuote(s: Stock): boolean {
+  return s.currentPrice != null && Number.isFinite(s.currentPrice) && s.currentPrice > 0;
+}
+
 function SortableInventoryTh({
   id,
   className,
@@ -321,6 +343,7 @@ export function InventoryTable({
   const [inventoryHiddenColumnIds, setInventoryHiddenColumnIds] = useState<InventoryColId[]>([]);
   const [inventoryTableCompact, setInventoryTableCompact] = useState(false);
   const [bookmarksOnly, setBookmarksOnly] = useState(false);
+  const [hideIncompleteQuotes, setHideIncompleteQuotes] = useState(false);
   const [memoModalStock, setMemoModalStock] = useState<Stock | null>(null);
   const [memoDraft, setMemoDraft] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
@@ -416,8 +439,11 @@ export function InventoryTable({
     if (bookmarksOnly) {
       list = list.filter((s) => bookmarkDisplayed(s));
     }
+    if (hideIncompleteQuotes) {
+      list = list.filter((s) => stockHasUsableQuote(s));
+    }
     return list;
-  }, [stocks, structureFilter, expectationFilter, bookmarksOnly, bookmarkPatch]);
+  }, [stocks, structureFilter, expectationFilter, bookmarksOnly, hideIncompleteQuotes, bookmarkPatch]);
 
   const sortedStocks = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -456,7 +482,11 @@ export function InventoryTable({
       if (key === "fcfYield") return dir * cmpNum(fcfYieldSortValue(a), fcfYieldSortValue(b));
       if (key === "deviation") return dir * cmpNum(deviationOf(a), deviationOf(b));
       if (key === "drawdown") return dir * cmpNum(drawdownOf(a), drawdownOf(b));
-      if (key === "research") return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+      if (key === "research") {
+        const ex = cmpNum(stockExDividendSortScore(a), stockExDividendSortScore(b));
+        if (ex !== 0) return dir * ex;
+        return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
+      }
       return 0;
     });
     return arr;
@@ -579,7 +609,7 @@ export function InventoryTable({
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(nextKey);
-      setSortDir(nextKey === "earnings" ? "asc" : "desc");
+      setSortDir(nextKey === "earnings" || nextKey === "research" ? "asc" : "desc");
     }
   }
 
@@ -719,6 +749,19 @@ export function InventoryTable({
           >
             <Star className={`h-3.5 w-3.5 shrink-0 ${bookmarksOnly ? "fill-accent-amber text-accent-amber" : ""}`} />
             ブックマークのみ
+          </button>
+          <button
+            type="button"
+            onClick={() => setHideIncompleteQuotes((v) => !v)}
+            className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
+              hideIncompleteQuotes
+                ? "text-rose-200 border-rose-500/45 bg-rose-500/10"
+                : "text-muted-foreground border-border hover:bg-muted/50"
+            }`}
+            title="現在株価が取得できていない銘柄を非表示（API 欠損・未更新）"
+          >
+            <CircleSlash className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            株価未取得を隠す
           </button>
           <button
             type="button"
@@ -911,7 +954,7 @@ export function InventoryTable({
                             id={colId}
                             align="left"
                             className="px-6 py-4 text-left cursor-pointer select-none min-w-[18rem]"
-                            title="Sort"
+                            title="配当落ちまでの日数が近い順（未取得は末尾）→ 配当利回り"
                           >
                             <button
                               type="button"
@@ -1370,10 +1413,10 @@ export function InventoryTable({
                                       ? "text-violet-200 border-violet-500/45 bg-violet-500/15 hover:bg-violet-500/25"
                                       : "text-muted-foreground border-border bg-background/60 hover:bg-muted/70 hover:text-foreground/90"
                                   }`}
-                                  title="決算要約メモを表示・編集"
+                                  title="決算要約メモ（earnings_summary_note）を表示・編集"
                                 >
                                   <NotebookPen size={12} className="shrink-0" aria-hidden />
-                                  要約
+                                  決算要約
                                 </button>
                                 <button
                                   type="button"
@@ -1390,7 +1433,7 @@ export function InventoryTable({
                                   }
                                 >
                                   <MessageSquare size={12} className="shrink-0" aria-hidden />
-                                  メモ
+                                  銘柄メモ
                                 </button>
                               </div>
                               <div className="flex flex-col gap-0.5">
@@ -1664,7 +1707,9 @@ export function InventoryTable({
                       >
                         Total: {sortedStocks.length}
                         {sortedStocks.length === 1 ? " item" : " items"}
-                        {structureFilter.trim() || expectationFilter !== "" || bookmarksOnly ? `（全 ${totalHoldings}）` : ""}
+                        {structureFilter.trim() || expectationFilter !== "" || bookmarksOnly || hideIncompleteQuotes
+                          ? `（全 ${totalHoldings}）`
+                          : ""}
                       </td>
                     );
                   case "bookmark":
@@ -2019,30 +2064,48 @@ export function InventoryTable({
           <div
             role="dialog"
             aria-modal="true"
-            className="relative z-10 w-[min(100%,24rem)] rounded-2xl border border-border bg-card shadow-2xl p-4 sm:p-5"
+            className="relative z-10 flex max-h-[min(92dvh,48rem)] w-[min(100%,36rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-w-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-base font-bold text-foreground">銘柄メモ</h2>
-            <p className="text-[11px] font-mono text-accent-cyan mt-0.5">{memoModalStock.ticker}</p>
-            {memoErr ? <p className="text-[10px] text-destructive font-bold mt-2">{memoErr}</p> : null}
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-foreground sm:text-lg">銘柄メモ</h2>
+                <p className="text-[11px] font-mono text-accent-cyan mt-0.5">{memoModalStock.ticker}</p>
+                {memoModalStock.name ? (
+                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">{memoModalStock.name}</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                disabled={memoSaving}
+                onClick={() => setMemoModalStock(null)}
+                className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {memoErr ? (
+              <p className="shrink-0 px-4 pt-2 text-[10px] text-destructive font-bold sm:px-5">{memoErr}</p>
+            ) : null}
             <label htmlFor="holding-memo" className="sr-only">
-              メモ
+              銘柄メモ
             </label>
             <textarea
               id="holding-memo"
               value={memoDraft}
               onChange={(e) => setMemoDraft(e.target.value)}
               disabled={memoSaving}
-              rows={6}
-              className="mt-3 w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 disabled:opacity-50"
-              placeholder="holdings.memo（短文）"
+              rows={14}
+              className="min-h-[14rem] flex-1 resize-y rounded-none border-0 border-t border-border bg-background px-4 py-3 text-sm sm:px-5 sm:py-4 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent-cyan/40 disabled:opacity-50"
+              placeholder="holdings.memo（短文・長文可）"
             />
-            <div className="mt-3 flex justify-end gap-2">
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card/80 px-4 py-3 sm:px-5">
               <button
                 type="button"
                 disabled={memoSaving}
                 onClick={() => setMemoModalStock(null)}
-                className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/60"
+                className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60"
               >
                 キャンセル
               </button>
@@ -2050,7 +2113,7 @@ export function InventoryTable({
                 type="button"
                 disabled={memoSaving}
                 onClick={() => void saveHoldingMemo()}
-                className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-3 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
+                className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
               >
                 {memoSaving ? "保存中…" : "保存"}
               </button>

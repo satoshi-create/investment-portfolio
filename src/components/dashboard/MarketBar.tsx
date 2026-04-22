@@ -5,6 +5,7 @@
 import React, { useMemo, useState } from "react";
 
 import type { MarketIndicator } from "@/src/types/investment";
+import { MARKET_GLANCE_MACRO_DEFS } from "@/src/lib/market-glance-macros";
 
 type NenrinPeriod = "5d" | "1mo";
 type NenrinPoint = { date: string; changePct: number };
@@ -31,18 +32,10 @@ function formatChange(pct: number): string {
   return `${sign}${pct.toFixed(2)}%`;
 }
 
-/** `fetchGlobalMarketIndicators`（price-service）のラベルと Yahoo シンボルを同期 */
+/** `fetchGlobalMarketIndicators` / `MARKET_GLANCE_MACRO_DEFS` と同期 */
 const MACRO_LABEL_TO_YAHOO_SYMBOL: Record<string, string> = {
-  "USD/JPY": "JPY=X",
-  "Crude (USO)": "USO",
-  Gold: "GC=F",
-  BTC: "BTC-USD",
-  "S&P 500": "^GSPC",
-  "NASDAQ 100": "^NDX",
-  SOX: "^SOX",
-  VIX: "^VIX",
-  "Nikkei 225": "^N225",
-  "10Y Yield": "^TNX",
+  ...Object.fromEntries(MARKET_GLANCE_MACRO_DEFS.map((d) => [d.label, d.symbol] as const)),
+  /** 旧スナップショット・表示ラベル互換 */
   DJIA: "^DJI",
 };
 
@@ -195,7 +188,7 @@ export function MarketBar({
           <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
             {indicators.map((m) => {
               const sym = macroSymbolForLabel(m.label);
-              const clickable = sym != null && Number.isFinite(m.value) && m.value >= 0;
+              const clickable = sym != null;
               return (
                 <li key={m.label} className="relative">
                   <button
@@ -319,8 +312,8 @@ export function MarketBar({
           <button
             key={m.label}
             type="button"
-            onClick={() => macroSymbolForLabel(m.label) && m.value >= 0 && openNenrin(m.label)}
-            disabled={macroSymbolForLabel(m.label) == null || m.value < 0}
+            onClick={() => macroSymbolForLabel(m.label) != null && openNenrin(m.label)}
+            disabled={macroSymbolForLabel(m.label) == null}
             className="min-w-[5.75rem] shrink-0 rounded-lg border border-border bg-background/60 px-2.5 py-1.5 text-left disabled:opacity-90 hover:bg-muted transition-colors"
             title={macroSymbolForLabel(m.label) ? "クリックで年輪（累計騰落率）を表示" : undefined}
           >

@@ -14,6 +14,7 @@ import {
   SIGNAL_BENCHMARK_TICKER,
   type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
+import { MARKET_GLANCE_MACRO_DEFS } from "@/src/lib/market-glance-macros";
 import type { MarketIndicator } from "@/src/types/investment";
 
 /** Yahoo アンケートの初回表示を抑止。先物など quote スキーマ不一致は `fetchLiveQuoteSnapshot` で validateResult: false を使用。 */
@@ -1247,27 +1248,13 @@ async function fetchHybridCloseAndChangeForYahooSymbol(
   return fetchYahooCloseAndDayChangePct(yahooSymbol);
 }
 
-const GLOBAL_MARKET_BAR_DEFS: readonly { label: string; symbol: string }[] = [
-  { label: "USD/JPY", symbol: "JPY=X" },
-  { label: "Crude (USO)", symbol: "USO" },
-  { label: "Gold", symbol: "GC=F" },
-  { label: "BTC", symbol: "BTC-USD" },
-  { label: "S&P 500", symbol: "^GSPC" },
-  { label: "NASDAQ 100", symbol: "^NDX" },
-  { label: "SOX", symbol: "^SOX" },
-  { label: "VIX", symbol: "^VIX" },
-  { label: "Nikkei 225", symbol: "^N225" },
-  { label: "10Y Yield", symbol: "^TNX" },
-  { label: "DJIA", symbol: "^DJI" },
-];
-
 /**
  * ダッシュボード用マーケットグレンス（並列 Yahoo）。`quote` ライブ優先、失敗時は日足。
  * 失敗した指標は `value: -1`（UI は —）。
  */
 export async function fetchGlobalMarketIndicators(): Promise<MarketIndicator[]> {
   const settled = await Promise.allSettled(
-    GLOBAL_MARKET_BAR_DEFS.map(async ({ label, symbol }) => {
+    MARKET_GLANCE_MACRO_DEFS.map(async ({ label, symbol }) => {
       const snap = await fetchHybridCloseAndChangeForYahooSymbol(symbol);
       if (snap == null) return { label, value: -1, changePct: 0 } satisfies MarketIndicator;
       return { label, value: snap.close, changePct: snap.changePct };
@@ -1275,7 +1262,7 @@ export async function fetchGlobalMarketIndicators(): Promise<MarketIndicator[]> 
   );
   return settled.map((r, i) => {
     if (r.status === "fulfilled") return r.value;
-    const { label } = GLOBAL_MARKET_BAR_DEFS[i]!;
+    const { label } = MARKET_GLANCE_MACRO_DEFS[i]!;
     logSkip(label, "indicator fetch rejected", r.reason);
     return { label, value: -1, changePct: 0 };
   });
