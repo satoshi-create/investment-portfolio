@@ -9,6 +9,11 @@ import { ecoFcfYieldTone, ecoRuleOf40Tone } from "@/src/components/dashboard/eco
 import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
+import {
+  dividendPayoutCellClassName,
+  ecosystemDividendPayoutPercent,
+  formatDividendPayoutPercent,
+} from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
@@ -305,6 +310,18 @@ export function EcosystemWatchlistTableRow({
                 {dividendCalendar(e.dividendMonths)}
               </td>
             );
+          case "payout": {
+            const po = ecosystemDividendPayoutPercent(e);
+            return (
+              <td
+                key={colId}
+                className={`whitespace-nowrap px-4 py-4 text-right font-mono text-xs font-bold tabular-nums ${dividendPayoutCellClassName(po)} ${stickyFirst}`}
+                title="配当性向 = 年間配当（1株）÷ TTM EPS ×100"
+              >
+                {formatDividendPayoutPercent(po)}
+              </td>
+            );
+          }
           case "defensiveRole":
             return (
               <td key={colId} className={`px-6 py-4 align-top min-w-[10rem] ${stickyFirst}`}>

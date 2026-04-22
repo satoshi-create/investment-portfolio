@@ -25,6 +25,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
   role: "江戸的役割",
   holder: "Holder",
   dividend: "配当カレンダー",
+  payout: "配当性向",
   defensiveRole: "ディフェンシブ役割",
   ruleOf40: "Rule of 40",
   fcfYield: "FCF Yield",

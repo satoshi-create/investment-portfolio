@@ -8,6 +8,7 @@ import type {
 import { LYNCH_CATEGORY_LABEL_JA } from "@/src/types/investment";
 
 import { ADOPTION_STAGE_META } from "@/src/lib/adoption-stage";
+import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import type { CsvColumnDef } from "@/src/lib/csv-export";
 
 function geopoliticalPotentialFromNotes(observationNotes: string | null | undefined): string {
@@ -249,6 +250,7 @@ export function themeEcosystemWatchlistToCsvRows(
     daysToEarnings: e.daysToEarnings,
     dividendYieldPercent: e.dividendYieldPercent,
     annualDividendRate: e.annualDividendRate,
+    dividendPayoutPercent: ecosystemDividendPayoutPercent(e),
     observationStartedAt: e.observationStartedAt ?? "",
     alphaObservationStartDate: e.alphaObservationStartDate ?? "",
     adoptionStage:
@@ -293,6 +295,7 @@ export const THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "daysToEarnings", header: "決算まで日数" },
   { key: "dividendYieldPercent", header: "配当利回り（%）" },
   { key: "annualDividendRate", header: "年間配当" },
+  { key: "dividendPayoutPercent", header: "配当性向（%）" },
   { key: "observationStartedAt", header: "観測開始日" },
   { key: "alphaObservationStartDate", header: "累積Alpha系列起点" },
   { key: "adoptionStage", header: "普及ステージ（キャズム）" },

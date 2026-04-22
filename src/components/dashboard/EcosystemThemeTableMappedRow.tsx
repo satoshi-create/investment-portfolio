@@ -13,6 +13,11 @@ import { dailyAlphaSeriesForMiniTrend } from "@/src/lib/eco-trend-daily";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { cn } from "@/src/lib/cn";
+import {
+  dividendPayoutCellClassName,
+  ecosystemDividendPayoutPercent,
+  formatDividendPayoutPercent,
+} from "@/src/lib/eco-dividend-payout";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
@@ -562,6 +567,18 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                 </div>
               </td>
             );
+          case "payout": {
+            const po = ecosystemDividendPayoutPercent(e);
+            return (
+              <td
+                key={colId}
+                className={`whitespace-nowrap px-4 py-3 text-right font-mono text-xs font-bold tabular-nums ${dividendPayoutCellClassName(po)} ${stickyFirst}`}
+                title="配当性向 = 年間配当（1株）÷ TTM EPS ×100。高すぎると内部留保が薄く減配リスクに注意"
+              >
+                {formatDividendPayoutPercent(po)}
+              </td>
+            );
+          }
           case "defensiveRole":
             return (
               <td key={colId} className={`min-w-[10rem] px-6 py-3 align-top ${stickyFirst}`}>

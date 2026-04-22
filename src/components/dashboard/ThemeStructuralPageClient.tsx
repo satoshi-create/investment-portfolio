@@ -62,6 +62,7 @@ import {
 } from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { parseAlphaDailyHistoryJson } from "@/src/lib/eco-trend-daily";
+import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
@@ -1111,6 +1112,12 @@ export function ThemePageClient({
         e.dividendYieldPercent != null && Number.isFinite(e.dividendYieldPercent) ? e.dividendYieldPercent : null,
       )
       .filter((x): x is number => x != null);
+    const payouts = base
+      .map((e) => {
+        const p = ecosystemDividendPayoutPercent(e);
+        return p != null && Number.isFinite(p) ? p : null;
+      })
+      .filter((x): x is number => x != null);
 
     const avg = (arr: number[]) =>
       arr.length === 0
@@ -1123,6 +1130,7 @@ export function ThemePageClient({
       avgLatestAlpha: avg(alphas),
       avgDeviationZ: avg(zs),
       avgDividendYield: avg(yields),
+      avgDividendPayout: avg(payouts),
     };
   }, [ecosystem, ecosystemMatchesHolderFilter, isDefensiveTheme]);
 
@@ -1625,6 +1633,8 @@ export function ThemePageClient({
         if (c1 !== 0) return dir * c1;
         return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
       }
+      if (ecoSortKey === "payout")
+        return dir * cmpNum(ecosystemDividendPayoutPercent(a), ecosystemDividendPayoutPercent(b));
       if (ecoSortKey === "research") {
         const earnCmp = cmpNum(
           a.daysToEarnings != null && a.daysToEarnings >= 0
@@ -1712,7 +1722,11 @@ export function ThemePageClient({
     else {
       setEcoSortKey(next);
       setEcoSortDir(
-        next === "earnings" || next === "dividend" || next === "research" || next === "peg"
+        next === "earnings" ||
+        next === "dividend" ||
+        next === "payout" ||
+        next === "research" ||
+        next === "peg"
           ? "asc"
           : "desc",
       );
@@ -2857,6 +2871,14 @@ export function ThemePageClient({
                                   <span className="text-foreground font-bold tabular-nums">
                                     {defensiveHolderStats.avgDividendYield != null
                                       ? `${defensiveHolderStats.avgDividendYield.toFixed(2)}%`
+                                      : "—"}
+                                  </span>
+                                </span>
+                                <span title="年間配当（1株）÷ TTM EPS。算出可能な銘柄のみ平均">
+                                  平均性向{" "}
+                                  <span className="text-foreground font-bold tabular-nums">
+                                    {defensiveHolderStats.avgDividendPayout != null
+                                      ? `${defensiveHolderStats.avgDividendPayout.toFixed(1)}%`
                                       : "—"}
                                   </span>
                                 </span>

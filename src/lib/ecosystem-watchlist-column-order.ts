@@ -14,6 +14,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_IDS = [
   "role",
   "holder",
   "dividend",
+  "payout",
   "defensiveRole",
   "ruleOf40",
   "fcfYield",
@@ -85,7 +86,8 @@ export function visibleEcoColumnsStructural(
 ): EcosystemWatchlistColId[] {
   return order.filter((id) => {
     if (id === "research" || id === "role") return !opts.isDefensiveTheme;
-    if (id === "holder" || id === "dividend" || id === "defensiveRole") return opts.isDefensiveTheme;
+    if (id === "holder" || id === "dividend" || id === "payout" || id === "defensiveRole")
+      return opts.isDefensiveTheme;
     if (id === "deviation" || id === "drawdown") return opts.ecoShowValueCols;
     return true;
   });
