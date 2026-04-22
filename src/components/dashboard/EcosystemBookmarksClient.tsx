@@ -694,7 +694,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
   );
 
   return (
-    <div className="mx-auto w-full max-w-6xl lg:max-w-7xl 2xl:max-w-[104rem] space-y-4 pb-8">
+    <div className="mx-auto w-full max-w-6xl lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem] space-y-4 pb-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <Link
