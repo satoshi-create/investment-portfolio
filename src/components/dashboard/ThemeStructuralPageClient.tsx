@@ -132,6 +132,11 @@ import {
   BITCOIN_STRUCTURAL_THEME_QUERY_NAME,
   BITCOIN_STRUCTURAL_THEME_SLUG,
 } from "@/src/lib/bitcoin-structural-theme";
+import {
+  JTC_REFACTORING_THEME_QUERY_NAME,
+  JTC_REFACTORING_THEME_SLUG,
+} from "@/src/lib/jtc-refactoring-theme";
+import { JtcRefactoringCockpitPanel } from "@/src/components/dashboard/JtcRefactoringCockpitPanel";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
@@ -260,6 +265,13 @@ function mapThemeLabelForQuery(raw: string): {
       query: "半導体サプライチェーン",
       display: "半導体サプライチェーン",
       slug: "半導体製造装置",
+    };
+  }
+  if (s.toLowerCase() === JTC_REFACTORING_THEME_SLUG || s === JTC_REFACTORING_THEME_QUERY_NAME) {
+    return {
+      query: JTC_REFACTORING_THEME_QUERY_NAME,
+      display: JTC_REFACTORING_THEME_QUERY_NAME,
+      slug: JTC_REFACTORING_THEME_SLUG,
     };
   }
   return { query: s, display: s, slug: s };
@@ -653,6 +665,7 @@ export function ThemePageClient({
     themeQueryName === SEMICONDUCTOR_SUPPLY_CHAIN_THEME_NAME;
   const isAiUnicornTheme = themeQueryName === "AIユニコーン";
   const isBitcoinTheme = themeQueryName === BITCOIN_STRUCTURAL_THEME_QUERY_NAME;
+  const isJtcRefactoringTheme = themeQueryName === JTC_REFACTORING_THEME_QUERY_NAME;
   const [holderFilter, setHolderFilter] = useState<string[]>([]);
 
   const [data, setData] = useState<ThemeDetailData | null>(null);
@@ -1937,6 +1950,8 @@ export function ThemePageClient({
             <ThemeMetaBlock theme={theme} themeName={themeLabel} />
 
             <KeptStockShelf themeName={themeDisplayName} items={ecosystem} />
+
+            {isJtcRefactoringTheme ? <JtcRefactoringCockpitPanel ecosystem={ecosystem} /> : null}
 
             {isBitcoinTheme ? (
               <BitcoinStructuralObservationPanel
