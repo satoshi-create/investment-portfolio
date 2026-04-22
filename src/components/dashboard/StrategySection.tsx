@@ -3,12 +3,15 @@
 import React, { useMemo } from "react";
 import { GitBranch, Radar } from "lucide-react";
 
-import type { StructureTagSlice } from "@/src/types/investment";
+import type { LynchCategory, Stock, StructureTagSlice } from "@/src/types/investment";
+import { LYNCH_CATEGORY_LABEL_JA } from "@/src/types/investment";
 import { roundAlphaMetric } from "@/src/lib/alpha-logic";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
+import { lynchCategorySortRank } from "@/src/lib/expectation-category";
 import { StatBox } from "@/src/components/dashboard/StatBox";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { formatJpyValueForView } from "@/src/lib/format-display-currency";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 const SATELLITE_TARGET_MIN = 6;
 const SATELLITE_TARGET_MAX = 10;
@@ -160,8 +163,94 @@ function satelliteGaugeClass(count: number): string {
   return "border-rose-500/40 bg-rose-500/5";
 }
 
+/** インべントリのバッジ色に近い塗り（recharts 用） */
+const LYNCH_PIE_FILL: Record<LynchCategory, string> = {
+  SlowGrower: "#64748b",
+  Stalwart: "#38bdf8",
+  FastGrower: "#34d399",
+  AssetPlay: "#fbbf24",
+  Cyclical: "#a78bfa",
+  Turnaround: "#fb923c",
+};
+const LYNCH_PIE_UNSET = "#475569";
+
+type LynchPieRow = {
+  key: string;
+  name: string;
+  value: number;
+  fill: string;
+  pct: number;
+  count: number;
+};
+
+function buildLynchPieRows(stocks: Stock[]): LynchPieRow[] {
+  const rows = stocks.filter(
+    (s) => s.quantity > 0 && Number.isFinite(s.marketValue) && s.marketValue > 0,
+  );
+  if (rows.length === 0) return [];
+
+  const byKey = new Map<string, { mv: number; count: number }>();
+  for (const s of rows) {
+    const k = s.expectationCategory ?? "__unset__";
+    const cur = byKey.get(k) ?? { mv: 0, count: 0 };
+    cur.mv += s.marketValue;
+    cur.count += 1;
+    byKey.set(k, cur);
+  }
+  const total = [...byKey.values()].reduce((acc, x) => acc + x.mv, 0);
+  if (total <= 0) return [];
+
+  const out: LynchPieRow[] = [];
+  for (const [key, { mv, count }] of byKey) {
+    const pct = (mv / total) * 100;
+    let name: string;
+    let fill: string;
+    if (key === "__unset__") {
+      name = "未設定";
+      fill = LYNCH_PIE_UNSET;
+    } else {
+      name = LYNCH_CATEGORY_LABEL_JA[key as LynchCategory];
+      fill = LYNCH_PIE_FILL[key as LynchCategory];
+    }
+    out.push({ key, name, value: mv, fill, pct, count });
+  }
+  out.sort(
+    (a, b) =>
+      lynchCategorySortRank(a.key === "__unset__" ? null : (a.key as LynchCategory)) -
+      lynchCategorySortRank(b.key === "__unset__" ? null : (b.key as LynchCategory)),
+  );
+  return out;
+}
+
+function LynchPieTooltip({
+  active,
+  payload,
+  viewCurrency,
+  convert,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: LynchPieRow }>;
+  viewCurrency: "USD" | "JPY";
+  convert: (amount: number, from: "USD" | "JPY", to: "USD" | "JPY") => number;
+}) {
+  if (!active || payload == null || payload.length === 0) return null;
+  const p = payload[0]?.payload;
+  if (p == null) return null;
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-[10px] shadow-lg">
+      <p className="font-bold text-foreground">{p.name}</p>
+      <p className="font-mono text-muted-foreground mt-1 tabular-nums">
+        {formatJpyValueForView(p.value, viewCurrency, convert)}（{p.pct.toFixed(1)}%）
+      </p>
+      <p className="text-muted-foreground mt-0.5">{p.count} 銘柄</p>
+    </div>
+  );
+}
+
 type Props = {
   structureBySector: StructureTagSlice[];
+  /** リンチ構成（評価額ウェイト）。省略時は円グラフを出さない。 */
+  stocks?: Stock[];
   /** Satellite かつ評価額 > 0 の銘柄数（個別株モニタ用） */
   satelliteStockCount: number;
   totalMarketValue: number;
@@ -176,6 +265,7 @@ type Props = {
 
 export function StrategySection({
   structureBySector,
+  stocks = [],
   satelliteStockCount,
   totalMarketValue,
   totalProfitJpy,
@@ -186,6 +276,7 @@ export function StrategySection({
 }: Props) {
   const { convert, viewCurrency } = useCurrencyConverter();
   const hasSectors = structureBySector.length > 0;
+  const lynchPieRows = useMemo(() => buildLynchPieRows(stocks), [stocks]);
   const sortedSectors = useMemo(() => sortSectorsForBalanceBar(structureBySector), [structureBySector]);
   const gcBalance = useMemo(() => growthCyclicalFromSortedSectors(sortedSectors), [sortedSectors]);
   const gcStatus = useMemo(() => growthCyclicalBalanceStatus(gcBalance.growthPct), [gcBalance.growthPct]);
@@ -283,80 +374,156 @@ export function StrategySection({
             <span className="text-orange-400/90">Cyclical 側</span>
             ）。左半分スライスの合計を Growth、右半分を Cyclical として 6:4 ターゲット（Growth 60%）と比較します。
           </p>
-          <div className="flex items-center gap-2 mb-2 text-[9px] text-muted-foreground uppercase font-bold tracking-tighter">
-            <GitBranch size={12} className="text-sky-500/90 shrink-0" />
-            <span className="text-sky-400/80">Growth</span>
-            <span className="flex-1 border-t border-dashed border-border" />
-            <span className="text-orange-400/80">Cyclical</span>
-          </div>
-          {hasSectors ? (
-            <>
-              <div className="relative pt-5">
-                <span
-                  className="pointer-events-none absolute left-[60%] top-0 z-30 -translate-x-1/2 text-[8px] font-bold uppercase tracking-widest text-amber-300/95 whitespace-nowrap"
-                  aria-hidden
-                >
-                  Target 6:4
-                </span>
-                <div className="relative h-5 w-full rounded-full overflow-hidden flex border border-border bg-muted">
-                  {sortedSectors.map((slice, segIndex) => {
-                    const pole = sectorPole(slice.tag);
-                    const heat = sectorHeatColor(segIndex, sortedSectors.length);
-                    return (
-                      <div
-                        key={slice.tag}
-                        className="h-full shrink-0 transition-all"
-                        style={{
-                          width: `${slice.weightPercent}%`,
-                          backgroundColor: heat,
-                        }}
-                        title={`${slice.tag}: ${slice.weightPercent}% · ${slice.count} 銘柄 · ${poleHintJa(pole)}`}
-                      />
-                    );
-                  })}
-                  <div
-                    className="pointer-events-none absolute inset-y-0 left-[60%] z-20 w-px -translate-x-1/2 bg-amber-400/95 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
-                    aria-hidden
-                  />
-                </div>
+          <div className="lg:grid lg:grid-cols-[1fr_min(100%,280px)] lg:gap-8 lg:items-start">
+            <div>
+              <div className="flex items-center gap-2 mb-2 text-[9px] text-muted-foreground uppercase font-bold tracking-tighter">
+                <GitBranch size={12} className="text-sky-500/90 shrink-0" />
+                <span className="text-sky-400/80">Growth</span>
+                <span className="flex-1 border-t border-dashed border-border" />
+                <span className="text-orange-400/80">Cyclical</span>
               </div>
-              <ul className="mt-4 space-y-2">
-                {sortedSectors.map((slice, segIndex) => {
-                  const pole = sectorPole(slice.tag);
-                  const heat = sectorHeatColor(segIndex, sortedSectors.length);
-                  const halfLabel =
-                    segIndex < Math.floor(sortedSectors.length / 2) || sortedSectors.length === 1
-                      ? "Growth 側"
-                      : "Cyclical 側";
-                  return (
-                    <li
-                      key={slice.tag}
-                      className="flex justify-between items-start gap-2 text-[10px] font-bold uppercase tracking-tighter"
+              {hasSectors ? (
+                <>
+                  <div className="relative pt-5">
+                    <span
+                      className="pointer-events-none absolute left-[60%] top-0 z-30 -translate-x-1/2 text-[8px] font-bold uppercase tracking-widest text-amber-300/95 whitespace-nowrap"
+                      aria-hidden
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                      Target 6:4
+                    </span>
+                    <div className="relative h-5 w-full rounded-full overflow-hidden flex border border-border bg-muted">
+                      {sortedSectors.map((slice, segIndex) => {
+                        const pole = sectorPole(slice.tag);
+                        const heat = sectorHeatColor(segIndex, sortedSectors.length);
+                        return (
+                          <div
+                            key={slice.tag}
+                            className="h-full shrink-0 transition-all"
+                            style={{
+                              width: `${slice.weightPercent}%`,
+                              backgroundColor: heat,
+                            }}
+                            title={`${slice.tag}: ${slice.weightPercent}% · ${slice.count} 銘柄 · ${poleHintJa(pole)}`}
+                          />
+                        );
+                      })}
+                      <div
+                        className="pointer-events-none absolute inset-y-0 left-[60%] z-20 w-px -translate-x-1/2 bg-amber-400/95 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
+                        aria-hidden
+                      />
+                    </div>
+                  </div>
+                  <ul className="mt-4 space-y-2">
+                    {sortedSectors.map((slice, segIndex) => {
+                      const pole = sectorPole(slice.tag);
+                      const heat = sectorHeatColor(segIndex, sortedSectors.length);
+                      const halfLabel =
+                        segIndex < Math.floor(sortedSectors.length / 2) || sortedSectors.length === 1
+                          ? "Growth 側"
+                          : "Cyclical 側";
+                      return (
+                        <li
+                          key={slice.tag}
+                          className="flex justify-between items-start gap-2 text-[10px] font-bold uppercase tracking-tighter"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-block h-2 w-2 shrink-0 rounded-full border border-white/10"
+                                style={{ backgroundColor: heat }}
+                              />
+                              <span className="text-foreground/85 truncate">{slice.tag}</span>
+                            </div>
+                            <p className="text-[9px] text-muted-foreground font-normal normal-case mt-0.5 pl-4">
+                              {poleHintJa(pole)} · {halfLabel}
+                            </p>
+                          </div>
+                          <span className="text-foreground/85 font-mono shrink-0 text-right">
+                            <span className="text-muted-foreground font-normal normal-case mr-2">{slice.count} 銘柄</span>
+                            {slice.weightPercent}%
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">セクターデータがありません。</p>
+              )}
+            </div>
+
+            <div
+              className="mt-8 lg:mt-0 border-t border-border pt-6 lg:border-t-0 lg:border-l lg:border-border lg:pt-0 lg:pl-8"
+              aria-labelledby="lynch-allocation-heading"
+            >
+              <h4
+                id="lynch-allocation-heading"
+                className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1"
+              >
+                リンチ分類（評価額）
+              </h4>
+              <p className="text-[9px] text-muted-foreground mb-3 leading-relaxed">
+                数量 &gt; 0 かつ評価額がある銘柄のみ。シェアは円ベース評価額の合計に対する比率です。
+              </p>
+              {lynchPieRows.length > 0 ? (
+                <>
+                  <div className="h-[200px] w-full max-w-[280px] mx-auto lg:mx-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={lynchPieRows}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={52}
+                          outerRadius={80}
+                          paddingAngle={1}
+                          stroke="rgba(148,163,184,0.35)"
+                          strokeWidth={1}
+                        >
+                          {lynchPieRows.map((row) => (
+                            <Cell key={row.key} fill={row.fill} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          content={({ active, payload }) => (
+                            <LynchPieTooltip
+                              active={active}
+                              payload={payload}
+                              viewCurrency={viewCurrency}
+                              convert={convert}
+                            />
+                          )}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <ul className="mt-3 space-y-1.5 max-w-[280px] mx-auto lg:mx-0">
+                    {lynchPieRows.map((row) => (
+                      <li
+                        key={row.key}
+                        className="flex justify-between gap-2 text-[10px] font-bold uppercase tracking-tighter"
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
                           <span
                             className="inline-block h-2 w-2 shrink-0 rounded-full border border-white/10"
-                            style={{ backgroundColor: heat }}
+                            style={{ backgroundColor: row.fill }}
                           />
-                          <span className="text-foreground/85 truncate">{slice.tag}</span>
-                        </div>
-                        <p className="text-[9px] text-muted-foreground font-normal normal-case mt-0.5 pl-4">
-                          {poleHintJa(pole)} · {halfLabel}
-                        </p>
-                      </div>
-                      <span className="text-foreground/85 font-mono shrink-0 text-right">
-                        <span className="text-muted-foreground font-normal normal-case mr-2">{slice.count} 銘柄</span>
-                        {slice.weightPercent}%
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">セクターデータがありません。</p>
-          )}
+                          <span className="truncate text-foreground/85">{row.name}</span>
+                        </span>
+                        <span className="font-mono text-foreground/85 shrink-0 tabular-nums">
+                          {row.pct.toFixed(1)}%
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">評価額のある保有がありません。</p>
+              )}
+            </div>
+          </div>
       </div>
 
       <div className="bg-card border border-border p-6 rounded-2xl shadow-xl">

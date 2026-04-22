@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { invalidateDashboardCacheForUser } from "@/src/lib/dashboard-api-cache";
 import { getDb, isDbConfigured } from "@/src/lib/db";
+import { parseExpectationCategory } from "@/src/lib/expectation-category";
 
 export type ToggleHoldingBookmarkResult = {
   ok: boolean;
@@ -88,6 +89,58 @@ export async function patchHoldingMemo(
       return {
         ok: false,
         message: "DB に memo 列がありません。migrations/042_investment_instrument_meta.sql を適用してください。",
+      };
+    }
+    return { ok: false, message: msg };
+  }
+}
+
+export type PatchHoldingExpectationCategoryResult = { ok: boolean; message?: string };
+
+/** `holdings.expectation_category`（リンチ分類）。空文字・null は NULL にクリア。 */
+export async function patchHoldingExpectationCategory(
+  holdingId: string,
+  expectationCategoryRaw: string | null,
+  options?: { userId?: string },
+): Promise<PatchHoldingExpectationCategoryResult> {
+  if (!isDbConfigured()) {
+    return { ok: false, message: "Database not configured." };
+  }
+  const uid = options?.userId && options.userId.length > 0 ? options.userId : defaultProfileUserId();
+  const id = String(holdingId ?? "").trim();
+  if (id.length === 0) return { ok: false, message: "holding id is required." };
+
+  const t = expectationCategoryRaw == null ? "" : String(expectationCategoryRaw).trim();
+  let dbValue: string | null;
+  if (t.length === 0) {
+    dbValue = null;
+  } else {
+    const parsed = parseExpectationCategory(t);
+    if (parsed == null) {
+      return { ok: false, message: "無効なリンチ分類です。" };
+    }
+    dbValue = parsed;
+  }
+
+  try {
+    const db = getDb();
+    const rs = await db.execute({
+      sql: `UPDATE holdings SET expectation_category = ? WHERE id = ? AND user_id = ? RETURNING id`,
+      args: [dbValue, id, uid],
+    });
+    if (rs.rows.length === 0) {
+      return { ok: false, message: "保有行が見つからないか、権限がありません。" };
+    }
+    invalidateDashboardCacheForUser(uid);
+    revalidatePath("/");
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.toLowerCase().includes("no such column") && msg.toLowerCase().includes("expectation_category")) {
+      return {
+        ok: false,
+        message:
+          "DB に expectation_category 列がありません。migrations/020_expectation_category.sql（および 049）を適用してください。",
       };
     }
     return { ok: false, message: msg };

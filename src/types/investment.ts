@@ -68,16 +68,27 @@ export function investmentMetricToneForSignedPercent(value: number | null | unde
 
 export type HoldingCategory = "Core" | "Satellite";
 
-/** 渡辺フレームワーク相当: 期待の質（`holdings.expectation_category` / `theme_ecosystem_members.expectation_category`）。 */
-export const EXPECTATION_CATEGORY_KEYS = ["Growth", "Recovery", "Quality", "Value", "Heritage"] as const;
-export type ExpectationCategory = (typeof EXPECTATION_CATEGORY_KEYS)[number];
+/**
+ * ピーター・リンチの6分類（`holdings.expectation_category` / `theme_ecosystem_members.expectation_category`）。
+ * DB 値は英語キー、UI は `LYNCH_CATEGORY_LABEL_JA`。
+ */
+export const LYNCH_CATEGORY_KEYS = [
+  "SlowGrower",
+  "Stalwart",
+  "FastGrower",
+  "AssetPlay",
+  "Cyclical",
+  "Turnaround",
+] as const;
+export type LynchCategory = (typeof LYNCH_CATEGORY_KEYS)[number];
 
-export const EXPECTATION_CATEGORY_LABEL_JA: Record<ExpectationCategory, string> = {
-  Growth: "中小型成長株",
-  Recovery: "業績回復株",
-  Quality: "優良株",
-  Value: "バリュー株",
-  Heritage: "老舗株",
+export const LYNCH_CATEGORY_LABEL_JA: Record<LynchCategory, string> = {
+  SlowGrower: "低成長株",
+  Stalwart: "優良株",
+  FastGrower: "急成長株",
+  AssetPlay: "資産株",
+  Cyclical: "市況関連株",
+  Turnaround: "業績回復株",
 };
 
 /** テーマまたはセクター軸の評価額シェア（サーバー集計、円ベース）。 */
@@ -185,8 +196,8 @@ export interface Stock {
   valuationFactor: number;
   /** Yahoo Finance 等。未設定時は `ticker` から自動変換（`price-service`）。 */
   providerSymbol?: string | null;
-  /** `holdings.expectation_category`。未設定は null */
-  expectationCategory: ExpectationCategory | null;
+  /** `holdings.expectation_category`（リンチ分類）。未設定は null */
+  expectationCategory: LynchCategory | null;
   /** `holdings.earnings_summary_note`（決算要約メモ）。未設定は null */
   earningsSummaryNote: string | null;
 
@@ -425,8 +436,8 @@ export type ThemeEcosystemWatchItem = {
   adoptionStage: AdoptionStage | null;
   /** ステージ判断の根拠（ツールチップ優先）。未設定は null */
   adoptionStageRationale: string | null;
-  /** `theme_ecosystem_members.expectation_category`。未設定は null */
-  expectationCategory: ExpectationCategory | null;
+  /** `theme_ecosystem_members.expectation_category`（リンチ分類）。未設定は null */
+  expectationCategory: LynchCategory | null;
 
   /**
    * Defensive theme extensions (stored as JSON TEXT in SQLite).

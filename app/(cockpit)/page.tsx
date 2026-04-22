@@ -21,6 +21,7 @@ export default function CockpitPortfolioPage() {
     <div className="mx-auto w-full max-w-6xl space-y-6 lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem]">
       <StrategySection
         structureBySector={structureBySector}
+        stocks={stocks}
         satelliteStockCount={satelliteStockCount}
         totalMarketValue={totalMarketValue}
         totalProfitJpy={summary.totalProfitJpy}

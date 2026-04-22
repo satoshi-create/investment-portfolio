@@ -1,4 +1,6 @@
-/** 判定エンジンへ渡す投資スタンス（期待カテゴリーからマッピング）。 */
+import type { LynchCategory } from "@/src/types/investment";
+
+/** 判定エンジンへ渡す投資スタンス（リンチ分類からマッピング）。 */
 export type InvestmentNarrative = "growth" | "recovery" | "speculative";
 
 /** 一覧・CSV 等でそのまま表示する判定ラベル。 */
@@ -111,15 +113,13 @@ export function computeInvestmentJudgment(input: JudgmentInput): JudgmentResult 
 }
 
 /**
- * DB の期待カテゴリーを判定エンジン用ナラティブへ。
+ * DB のリンチ分類（expectation_category）を判定エンジン用ナラティブへ。
  * 未設定は **growth**（ユーザー指定のデフォルト）。
  */
-export function expectationCategoryToInvestmentNarrative(
-  c: "Growth" | "Recovery" | "Quality" | "Value" | "Heritage" | null,
-): InvestmentNarrative {
+export function expectationCategoryToInvestmentNarrative(c: LynchCategory | null): InvestmentNarrative {
   if (c == null) return "growth";
-  if (c === "Growth" || c === "Quality") return "growth";
-  if (c === "Recovery" || c === "Value") return "recovery";
-  if (c === "Heritage") return "speculative";
+  if (c === "FastGrower" || c === "Stalwart") return "growth";
+  if (c === "Turnaround" || c === "AssetPlay") return "recovery";
+  if (c === "SlowGrower" || c === "Cyclical") return "speculative";
   return "growth";
 }

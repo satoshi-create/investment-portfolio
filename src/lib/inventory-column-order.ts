@@ -1,6 +1,7 @@
 export const INVENTORY_COLUMN_IDS = [
   "bookmark",
   "asset",
+  "lynch",
   "trend5d",
   "listing",
   "mktCap",
@@ -43,7 +44,17 @@ export function normalizeInventoryColumnOrder(raw: string[]): InventoryColId[] {
     out.push(mapped as InventoryColId);
   }
   for (const id of INVENTORY_COLUMN_IDS) {
-    if (!seen.has(id)) out.push(id);
+    if (seen.has(id)) continue;
+    if (id === "lynch") {
+      const ai = out.indexOf("asset");
+      if (ai >= 0) {
+        out.splice(ai + 1, 0, "lynch");
+        seen.add("lynch");
+        continue;
+      }
+    }
+    out.push(id);
+    seen.add(id);
   }
   return out;
 }

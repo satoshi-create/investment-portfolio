@@ -31,7 +31,7 @@ export type ExecuteTradeActionInput = {
   themeId?: string | null;
   /** 取引理由・反省（任意、`trade_history.reason`） */
   reason?: string;
-  /** `holdings.expectation_category`（空でクリア。省略時は買い増しで既存維持） */
+  /** `holdings.expectation_category` リンチ分類（空でクリア。省略時は買い増しで既存維持） */
   expectationCategory?: string;
   /** BUY のみ。省略時は買い増しで短期ルール列は既存維持 */
   shortTermExitRules?: ShortTermExitRulesInput;

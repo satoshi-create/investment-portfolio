@@ -5,8 +5,8 @@ import { X } from "lucide-react";
 
 import { executeTradeAction, listInvestmentThemesForUser } from "@/app/actions/trades";
 import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
-import type { ExpectationCategory } from "@/src/types/investment";
-import { EXPECTATION_CATEGORY_KEYS, EXPECTATION_CATEGORY_LABEL_JA } from "@/src/types/investment";
+import type { LynchCategory } from "@/src/types/investment";
+import { LYNCH_CATEGORY_KEYS, LYNCH_CATEGORY_LABEL_JA } from "@/src/types/investment";
 import { calculateMonexUsFee } from "@/src/lib/fees";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 
@@ -23,8 +23,8 @@ export type TradeEntryInitial = {
   unitPrice?: number | null;
   /** 数量の初期値（既定 1） */
   quantityDefault?: number;
-  /** `holdings.expectation_category` の既存値（取引ボタンから開いたとき） */
-  expectationCategory?: ExpectationCategory | null;
+  /** `holdings.expectation_category`（リンチ分類）の既存値（取引ボタンから開いたとき） */
+  expectationCategory?: LynchCategory | null;
 };
 
 type Props = {
@@ -385,7 +385,7 @@ function TradeEntryFormInner({
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
-              期待カテゴリー（渡辺フレームワーク）
+              リンチ分類（ピーター・リンチ）
             </label>
             <select
               value={expectationCategory}
@@ -393,14 +393,14 @@ function TradeEntryFormInner({
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
             >
               <option value="">— 未設定 —</option>
-              {EXPECTATION_CATEGORY_KEYS.map((k) => (
+              {LYNCH_CATEGORY_KEYS.map((k) => (
                 <option key={k} value={k}>
-                  {EXPECTATION_CATEGORY_LABEL_JA[k]}（{k}）
+                  {LYNCH_CATEGORY_LABEL_JA[k]}（{k}）
                 </option>
               ))}
             </select>
             <p className="text-[9px] text-slate-600 mt-1">
-              買い増し時もこの値が保有に保存されます。「未設定」にすると NULL に更新されます。
+              一覧の「リンチ」列・フィルタと同じ値が保存されます。「未設定」で NULL に更新されます。
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">

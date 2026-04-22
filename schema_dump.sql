@@ -96,7 +96,14 @@ CREATE TABLE "holdings" (
   `sector` text,
   `expectation_category` text CHECK (
     expectation_category IS NULL
-    OR expectation_category IN ('Growth', 'Recovery', 'Quality', 'Value', 'Heritage')
+    OR expectation_category IN (
+      'SlowGrower',
+      'Stalwart',
+      'FastGrower',
+      'AssetPlay',
+      'Cyclical',
+      'Turnaround'
+    )
   ),
   `earnings_summary_note` text,
   CONSTRAINT `fk_holdings_user_id_profiles_id_fk` FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`) ON DELETE CASCADE,
@@ -203,7 +210,14 @@ CREATE TABLE theme_ecosystem_members (
   adoption_stage_rationale TEXT,
   expectation_category TEXT CHECK (
     expectation_category IS NULL
-    OR expectation_category IN ('Growth', 'Recovery', 'Quality', 'Value', 'Heritage')
+    OR expectation_category IN (
+      'SlowGrower',
+      'Stalwart',
+      'FastGrower',
+      'AssetPlay',
+      'Cyclical',
+      'Turnaround'
+    )
   ),
   FOREIGN KEY (theme_id) REFERENCES investment_themes(id) ON DELETE CASCADE,
   UNIQUE (theme_id, ticker)

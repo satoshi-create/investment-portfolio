@@ -31,15 +31,24 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import type { ExpectationCategory, Stock } from "@/src/types/investment";
+import type { LynchCategory, Stock } from "@/src/types/investment";
 import {
-  EXPECTATION_CATEGORY_KEYS,
-  EXPECTATION_CATEGORY_LABEL_JA,
+  LYNCH_CATEGORY_KEYS,
+  LYNCH_CATEGORY_LABEL_JA,
   INVESTMENT_METRIC_TONE_TEXT_CLASS,
   investmentMetricToneForSignedPercent,
 } from "@/src/types/investment";
-import { patchHoldingMemo, toggleHoldingBookmark } from "@/app/actions/holding-meta";
-import { expectationCategoryBadgeClass, expectationCategoryBadgeShortJa } from "@/src/lib/expectation-category";
+import {
+  patchHoldingExpectationCategory,
+  patchHoldingMemo,
+  toggleHoldingBookmark,
+} from "@/app/actions/holding-meta";
+import {
+  expectationCategoryBadgeClass,
+  expectationCategoryBadgeShortJa,
+  lynchCategorySortRank,
+} from "@/src/lib/expectation-category";
+import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
@@ -77,6 +86,7 @@ import { InventoryTableColumnToolbar } from "@/src/components/dashboard/Inventor
 
 type SortKey =
   | "asset"
+  | "lynch"
   | "alpha"
   | "trend5d"
   | "position"
@@ -351,7 +361,7 @@ export function InventoryTable({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showValueCols, setShowValueCols] = useState(false);
   const [structureFilter, setStructureFilter] = useState("");
-  const [expectationFilter, setExpectationFilter] = useState<"" | "__unset__" | ExpectationCategory>("");
+  const [lynchFilter, setLynchFilter] = useState<"" | "__unset__" | LynchCategory>("");
   const [columnOrder, setColumnOrder] = useState<InventoryColId[]>(DEFAULT_COLUMN_ORDER);
   const [inventoryHiddenColumnIds, setInventoryHiddenColumnIds] = useState<InventoryColId[]>([]);
   const [inventoryTableCompact, setInventoryTableCompact] = useState(false);
@@ -361,6 +371,10 @@ export function InventoryTable({
   const [memoDraft, setMemoDraft] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
   const [memoErr, setMemoErr] = useState<string | null>(null);
+  const [lynchModalStock, setLynchModalStock] = useState<Stock | null>(null);
+  const [lynchSelectDraft, setLynchSelectDraft] = useState<string>("");
+  const [lynchSaving, setLynchSaving] = useState(false);
+  const [lynchErr, setLynchErr] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -369,6 +383,22 @@ export function InventoryTable({
       setMemoErr(null);
     }
   }, [memoModalStock]);
+
+  useEffect(() => {
+    if (lynchModalStock) {
+      setLynchSelectDraft(lynchModalStock.expectationCategory ?? "");
+      setLynchErr(null);
+    }
+  }, [lynchModalStock]);
+
+  useEffect(() => {
+    if (!lynchModalStock) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !lynchSaving) setLynchModalStock(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lynchModalStock, lynchSaving]);
 
   const [bookmarkPatch, addBookmarkPatch] = useOptimistic(
     {} as Record<string, boolean>,
@@ -444,10 +474,10 @@ export function InventoryTable({
         return hay.includes(q);
       });
     }
-    if (expectationFilter === "__unset__") {
+    if (lynchFilter === "__unset__") {
       list = list.filter((s) => s.expectationCategory == null);
-    } else if (expectationFilter !== "") {
-      list = list.filter((s) => s.expectationCategory === expectationFilter);
+    } else if (lynchFilter !== "") {
+      list = list.filter((s) => s.expectationCategory === lynchFilter);
     }
     if (bookmarksOnly) {
       list = list.filter((s) => bookmarkDisplayed(s));
@@ -456,7 +486,7 @@ export function InventoryTable({
       list = list.filter((s) => stockHasUsableQuote(s));
     }
     return list;
-  }, [stocks, structureFilter, expectationFilter, bookmarksOnly, hideIncompleteQuotes, bookmarkPatch]);
+  }, [stocks, structureFilter, lynchFilter, bookmarksOnly, hideIncompleteQuotes, bookmarkPatch]);
 
   const sortedStocks = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -474,6 +504,12 @@ export function InventoryTable({
       };
 
       if (key === "asset") return dir * cmpStr(a.ticker, b.ticker);
+      if (key === "lynch") {
+        const ra = lynchCategorySortRank(a.expectationCategory);
+        const rb = lynchCategorySortRank(b.expectationCategory);
+        if (ra !== rb) return dir * (ra - rb);
+        return dir * cmpStr(a.ticker, b.ticker);
+      }
       if (key === "earnings") return dir * cmpNum(earningsSortValue(a), earningsSortValue(b));
       if (key === "listing")
         return dir * cmpStr(listingYmdSortKey(a) ?? "\uFFFF", listingYmdSortKey(b) ?? "\uFFFF");
@@ -641,7 +677,9 @@ export function InventoryTable({
     } else {
       setSortKey(nextKey);
       setSortDir(
-        nextKey === "earnings" || nextKey === "research" || nextKey === "peg" ? "asc" : "desc",
+        nextKey === "earnings" || nextKey === "research" || nextKey === "peg" || nextKey === "lynch"
+          ? "asc"
+          : "desc",
       );
     }
   }
@@ -666,6 +704,29 @@ export function InventoryTable({
       setMemoErr(e instanceof Error ? e.message : "保存に失敗しました");
     } finally {
       setMemoSaving(false);
+    }
+  }
+
+  async function saveHoldingLynchCategory() {
+    if (!lynchModalStock) return;
+    setLynchSaving(true);
+    setLynchErr(null);
+    try {
+      const res = await patchHoldingExpectationCategory(
+        lynchModalStock.id,
+        lynchSelectDraft.trim().length > 0 ? lynchSelectDraft.trim() : null,
+        { userId },
+      );
+      if (!res.ok) {
+        setLynchErr(res.message ?? "保存に失敗しました");
+        return;
+      }
+      setLynchModalStock(null);
+      await onEarningsNoteSaved?.();
+    } catch (e) {
+      setLynchErr(e instanceof Error ? e.message : "保存に失敗しました");
+    } finally {
+      setLynchSaving(false);
     }
   }
 
@@ -836,23 +897,21 @@ export function InventoryTable({
             />
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="inventory-expectation-filter" className="sr-only">
-              期待カテゴリーで絞り込み
+            <label htmlFor="inventory-lynch-filter" className="sr-only">
+              リンチ分類で絞り込み
             </label>
             <select
-              id="inventory-expectation-filter"
-              value={expectationFilter}
-              onChange={(e) =>
-                setExpectationFilter(e.target.value as "" | "__unset__" | ExpectationCategory)
-              }
-              className="bg-background text-[10px] font-bold uppercase tracking-wide text-foreground/90 border border-border rounded-lg px-2 py-2 max-w-[11rem]"
-              aria-label="期待カテゴリーで絞り込み"
+              id="inventory-lynch-filter"
+              value={lynchFilter}
+              onChange={(e) => setLynchFilter(e.target.value as "" | "__unset__" | LynchCategory)}
+              className="bg-background text-[10px] font-bold uppercase tracking-wide text-foreground/90 border border-border rounded-lg px-2 py-2 max-w-[12rem]"
+              aria-label="リンチ分類で絞り込み"
             >
-              <option value="">期待カテゴリー: すべて</option>
+              <option value="">リンチ: すべて</option>
               <option value="__unset__">未設定のみ</option>
-              {EXPECTATION_CATEGORY_KEYS.map((k) => (
+              {LYNCH_CATEGORY_KEYS.map((k) => (
                 <option key={k} value={k}>
-                  {EXPECTATION_CATEGORY_LABEL_JA[k]}
+                  {LYNCH_CATEGORY_LABEL_JA[k]}
                 </option>
               ))}
             </select>
@@ -891,6 +950,24 @@ export function InventoryTable({
                               onClick={() => toggleSort("asset")}
                             >
                               Asset{sortMark("asset")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "lynch":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="left"
+                            className="px-3 py-4 min-w-[7.5rem] max-w-[10rem] cursor-pointer select-none"
+                            title="ピーター・リンチ6分類（①低成長〜⑥回復）"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-left font-[inherit] text-inherit"
+                              onClick={() => toggleSort("lynch")}
+                            >
+                              リンチ{sortMark("lynch")}
                             </button>
                           </SortableInventoryTh>
                         );
@@ -1282,14 +1359,6 @@ export function InventoryTable({
                                   <span className="min-w-0 truncate font-bold font-mono text-foreground group-hover:text-accent-cyan transition-colors">
                                     {stock.ticker}
                                   </span>
-                                  {stock.expectationCategory ? (
-                                    <span
-                                      className={`shrink-0 text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(stock.expectationCategory)}`}
-                                      title={EXPECTATION_CATEGORY_LABEL_JA[stock.expectationCategory]}
-                                    >
-                                      {expectationCategoryBadgeShortJa(stock.expectationCategory)}
-                                    </span>
-                                  ) : null}
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">
                                   {ecoKeep != null && onToggleEcosystemKeep != null ? (
@@ -1344,6 +1413,51 @@ export function InventoryTable({
                             </div>
                           </td>
                         );
+                      case "lynch": {
+                        const hintLines =
+                          stock.expectationCategory != null
+                            ? lynchAlignmentHintLines({
+                                lynchCategory: stock.expectationCategory,
+                                expectedGrowth: stock.expectedGrowth,
+                                trailingPe: stock.trailingPe,
+                                forwardPe: stock.forwardPe,
+                                dividendYieldPercent: stock.dividendYieldPercent,
+                              })
+                            : [];
+                        return (
+                          <td
+                            key={colId}
+                            className="px-3 py-4 align-top min-w-[7.5rem] max-w-[11rem] text-left"
+                          >
+                            <div className="flex flex-col gap-1">
+                              {stock.expectationCategory ? (
+                                <span
+                                  className={`w-fit text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(stock.expectationCategory)}`}
+                                  title={LYNCH_CATEGORY_LABEL_JA[stock.expectationCategory]}
+                                >
+                                  {expectationCategoryBadgeShortJa(stock.expectationCategory)}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground">—</span>
+                              )}
+                              {hintLines.length > 0 ? (
+                                <ul className="mt-0.5 space-y-0.5 text-[9px] leading-snug text-amber-700/90 dark:text-amber-400/85 list-disc pl-3.5">
+                                  {hintLines.map((line, hi) => (
+                                    <li key={hi}>{line}</li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => setLynchModalStock(stock)}
+                                className="mt-0.5 w-fit text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-0.5 rounded-md hover:bg-accent-cyan/10"
+                              >
+                                分類を変更
+                              </button>
+                            </div>
+                          </td>
+                        );
+                      }
                       case "bookmark":
                         return (
                           <td key={colId} className="px-2 py-4 text-center align-middle">
@@ -1803,12 +1917,13 @@ export function InventoryTable({
                       >
                         Total: {sortedStocks.length}
                         {sortedStocks.length === 1 ? " item" : " items"}
-                        {structureFilter.trim() || expectationFilter !== "" || bookmarksOnly || hideIncompleteQuotes
+                        {structureFilter.trim() || lynchFilter !== "" || bookmarksOnly || hideIncompleteQuotes
                           ? `（全 ${totalHoldings}）`
                           : ""}
                       </td>
                     );
                   case "bookmark":
+                  case "lynch":
                   case "listing":
                   case "mktCap":
                   case "perfListed":
@@ -2234,6 +2349,91 @@ export function InventoryTable({
                 className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
               >
                 {memoSaving ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {lynchModalStock ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
+          role="presentation"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
+            aria-label="モーダルを閉じる"
+            onClick={() => !lynchSaving && setLynchModalStock(null)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lynch-modal-title"
+            className="relative z-10 flex w-[min(100%,24rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <h2 id="lynch-modal-title" className="text-base font-bold text-foreground sm:text-lg">
+                  リンチ分類
+                </h2>
+                <p className="text-[11px] font-mono text-accent-cyan mt-0.5">{lynchModalStock.ticker}</p>
+                {lynchModalStock.name ? (
+                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">{lynchModalStock.name}</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                disabled={lynchSaving}
+                onClick={() => setLynchModalStock(null)}
+                className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {lynchErr ? (
+              <p className="shrink-0 px-4 pt-2 text-[10px] text-destructive font-bold sm:px-5">{lynchErr}</p>
+            ) : null}
+            <div className="px-4 py-3 sm:px-5 sm:py-4">
+              <label htmlFor="lynch-category-select" className="block text-[10px] font-bold uppercase text-muted-foreground mb-1.5">
+                分類
+              </label>
+              <select
+                id="lynch-category-select"
+                value={lynchSelectDraft}
+                onChange={(e) => setLynchSelectDraft(e.target.value)}
+                disabled={lynchSaving}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+              >
+                <option value="">— 未設定（クリア）—</option>
+                {LYNCH_CATEGORY_KEYS.map((k) => (
+                  <option key={k} value={k}>
+                    {LYNCH_CATEGORY_LABEL_JA[k]}（{k}）
+                  </option>
+                ))}
+              </select>
+              <p className="text-[9px] text-muted-foreground mt-2 leading-snug">
+                取引なしで保存できます。未設定にすると expectation_category が NULL になります。
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card/80 px-4 py-3 sm:px-5">
+              <button
+                type="button"
+                disabled={lynchSaving}
+                onClick={() => setLynchModalStock(null)}
+                className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                disabled={lynchSaving}
+                onClick={() => void saveHoldingLynchCategory()}
+                className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
+              >
+                {lynchSaving ? "保存中…" : "保存"}
               </button>
             </div>
           </div>

@@ -477,7 +477,7 @@ export async function executeTradeWithClient(db: Client, p: ExecuteTradeParams):
       return {
         ok: false,
         message:
-          "holdings に expectation_category 列がありません。migrations/020_expectation_category.sql を適用してください。",
+          "holdings に expectation_category 列がありません。migrations/020_expectation_category.sql（およびリンチ分類なら 049）を適用してください。",
       };
     }
     if (msg.toLowerCase().includes("no such column") && msg.toLowerCase().includes("stop_loss_pct")) {

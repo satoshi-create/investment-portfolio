@@ -15,6 +15,7 @@ export const INVENTORY_COLUMN_ALWAYS_VISIBLE: ReadonlySet<InventoryColId> = new 
 export const INVENTORY_COLUMN_LABEL_JA: Record<InventoryColId, string> = {
   bookmark: "ブックマーク",
   asset: "Asset",
+  lynch: "リンチ",
   trend5d: "5D",
   listing: "初取引",
   mktCap: "MCAP",
