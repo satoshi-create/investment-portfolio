@@ -1,9 +1,10 @@
 /**
  * （任意 / 有料 FMP 向け）FMP から `ticker_efficiency_metrics` へ UPSERT。
  * 通常の自動取得は **Yahoo** `npm run fetch:fundamentals`（`fetch-fundamental-metrics.ts`）を推奨。
+ * `net_cash` は Yahoo スクリプトで `financialData` / `balanceSheetHistory` から埋める想定（本スクリプトでも上書き可）。
  *
  * - Legacy の `/financial-growth/`、`/key-metrics-ttm/` は使用しない。
- * - 財務三表（年次）＋`/quote` から自前計算。
+ * - 財務三表（年次: income + cash-flow + **balance-sheet**）＋`/quote` から自前計算（含 net_cash）。
  *
  * Env:
  *   FMP_API_KEY           — required
@@ -32,6 +33,8 @@ function sleep(ms: number): Promise<void> {
 
 function fmpSymbolForApi(ticker: string): string {
   const t = ticker.trim().toUpperCase();
+  if (t.endsWith(".T")) return t;
+  if (/^\d{4}$/.test(t)) return `${t}.T`;
   return t.replace(/\./g, "-");
 }
 
@@ -89,6 +92,33 @@ function parseLatestAnnualFreeCashFlow(data: unknown): number {
   const top = rows[0];
   if (!top) return Number.NaN;
   return numOrNan(getKey(top, ["freeCashFlow", "freeCashFlows"]));
+}
+
+/**
+ * ネットキャッシュ ≈ 流動性の高い資産 − 有利子負債（FMP: cashAndShortTermInvestments 又は
+ * cash + shortTermInvestments − totalDebt）。
+ */
+function parseLatestAnnualNetCashFromBalance(data: unknown): number {
+  if (!Array.isArray(data) || data.length === 0) return Number.NaN;
+  const rows = sortRowsByDateDesc(
+    data.filter((r): r is Record<string, unknown> => r != null && typeof r === "object"),
+  );
+  const top = rows[0];
+  if (!top) return Number.NaN;
+  const totalDebt = numOrNan(getKey(top, ["totalDebt"]));
+  const csi = getKey(top, ["cashAndShortTermInvestments"]);
+  if (csi != null) {
+    const c = numOrNan(csi);
+    if (Number.isFinite(c) && Number.isFinite(totalDebt)) return c - totalDebt;
+    if (Number.isFinite(c) && !Number.isFinite(totalDebt)) return c;
+  }
+  const cce = numOrNan(getKey(top, ["cashAndCashEquivalents"]));
+  const sti = numOrNan(getKey(top, ["shortTermInvestments"]));
+  const liquid = (Number.isFinite(cce) ? cce : 0) + (Number.isFinite(sti) ? sti : 0);
+  const td = Number.isFinite(totalDebt) ? totalDebt : 0;
+  if (!Number.isFinite(liquid) && !Number.isFinite(totalDebt)) return Number.NaN;
+  if (!Number.isFinite(liquid) && totalDebt === 0) return Number.NaN;
+  return liquid - td;
 }
 
 /** `/quote` — v3 は配列、Stable は単一オブジェクトの場合あり。 */
@@ -187,19 +217,20 @@ async function main() {
     args: [userId],
   });
 
-  const usTickers: string[] = [];
+  const listedTickers: string[] = [];
   for (const r of rs.rows as { ticker?: unknown }[]) {
     const t = String(r.ticker ?? "").trim();
     if (t.length === 0) continue;
-    if (classifyTickerInstrument(t) !== "US_EQUITY") continue;
-    usTickers.push(t.toUpperCase());
+    const k = classifyTickerInstrument(t);
+    if (k !== "US_EQUITY" && k !== "JP_LISTED_EQUITY") continue;
+    listedTickers.push(t.toUpperCase());
   }
 
-  const unique = [...new Set(usTickers)].sort((a, b) => a.localeCompare(b));
+  const unique = [...new Set(listedTickers)].sort((a, b) => a.localeCompare(b));
   const batch = unique.slice(0, maxTickers);
 
   console.log(
-    `FMP: user=${userId} usHoldings=${unique.length} batch=${batch.length} delayMs=${delayMs} (income + cash-flow + quote [+stable 403 fallback]; no key-metrics-ttm)`,
+    `FMP: user=${userId} listedHoldings=${unique.length} batch=${batch.length} delayMs=${delayMs} (income + cash-flow + balance-sheet + quote [+stable 403 fallback])`,
   );
 
   let ok = 0;
@@ -218,6 +249,7 @@ async function main() {
       let fcfMarginPct = Number.NaN;
       let annualFcf: number | null = null;
       let sharesOut: number | null = null;
+      let netCash: number | null = null;
 
       /** 1) Income statement — YoY growth + latest revenue */
       let inc = await fmpJson(apiKey, `/income-statement/${encodeURIComponent(fmpSym)}?period=annual&limit=2`);
@@ -260,6 +292,27 @@ async function main() {
         if (Number.isFinite(fcf)) annualFcf = fcf;
       }
 
+      /** 2b) Balance sheet — ネットキャッシュ（年次） */
+      let bal = await fmpJson(apiKey, `/balance-sheet-statement/${encodeURIComponent(fmpSym)}?period=annual&limit=1`);
+      if (!bal.ok && shouldRetryWithStable(bal.status)) {
+        console.warn(`[warn] ${sym}: balance-sheet-statement v3 ${bal.status} — trying stable`);
+        await pause();
+        bal = await fmpStableJson(apiKey, "balance-sheet-statement", {
+          symbol: fmpSym,
+          period: "annual",
+          limit: "1",
+        });
+      }
+      await pause();
+      if (!bal.ok) {
+        console.warn(
+          `[warn] ${sym}: balance-sheet-statement failed ${bal.status} (${fmpStatusHint(bal.status)}) ${bal.snippet.slice(0, 120)}`,
+        );
+      } else {
+        const nc = parseLatestAnnualNetCashFromBalance(bal.data);
+        if (Number.isFinite(nc)) netCash = nc;
+      }
+
       /** fcf_margin = FCF / 最新売上（年次を揃える：income の直近売上を分母） */
       if (inc.ok && annualFcf != null && Number.isFinite(annualFcf)) {
         const latestRev = parseLatestAnnualRevenueFromIncome(inc.data);
@@ -292,15 +345,16 @@ async function main() {
 
       await db.execute({
         sql: `INSERT INTO ticker_efficiency_metrics
-                (ticker, revenue_growth, fcf_margin, annual_fcf, shares_outstanding, rule_of_40,
+                (ticker, revenue_growth, fcf_margin, annual_fcf, shares_outstanding, rule_of_40, net_cash,
                  source, last_updated_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
               ON CONFLICT(ticker) DO UPDATE SET
                 revenue_growth = COALESCE(excluded.revenue_growth, ticker_efficiency_metrics.revenue_growth),
                 fcf_margin = COALESCE(excluded.fcf_margin, ticker_efficiency_metrics.fcf_margin),
                 annual_fcf = COALESCE(excluded.annual_fcf, ticker_efficiency_metrics.annual_fcf),
                 shares_outstanding = COALESCE(excluded.shares_outstanding, ticker_efficiency_metrics.shares_outstanding),
                 rule_of_40 = COALESCE(excluded.rule_of_40, ticker_efficiency_metrics.rule_of_40),
+                net_cash = COALESCE(excluded.net_cash, ticker_efficiency_metrics.net_cash),
                 source = COALESCE(excluded.source, ticker_efficiency_metrics.source),
                 last_updated_at = COALESCE(excluded.last_updated_at, ticker_efficiency_metrics.last_updated_at),
                 updated_at = datetime('now')`,
@@ -311,6 +365,7 @@ async function main() {
           annualFcf != null && Number.isFinite(annualFcf) ? annualFcf : null,
           sharesOut,
           Number.isFinite(ruleOf40) ? ruleOf40 : null,
+          netCash,
           "FMP",
           isoNow,
         ],
@@ -320,7 +375,8 @@ async function main() {
         Number.isFinite(revenueGrowthPct) ||
         Number.isFinite(fcfMarginPct) ||
         (annualFcf != null && Number.isFinite(annualFcf)) ||
-        (sharesOut != null && sharesOut > 0);
+        (sharesOut != null && sharesOut > 0) ||
+        (netCash != null && Number.isFinite(netCash));
       if (hasAny) {
         ok += 1;
         const bits: string[] = [];

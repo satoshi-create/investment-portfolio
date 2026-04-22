@@ -10,6 +10,8 @@ export const INVENTORY_COLUMN_IDS = [
   "research",
   "ruleOf40",
   "fcfYield",
+  "netCash",
+  "netCps",
   "judgment",
   "deviation",
   "drawdown",

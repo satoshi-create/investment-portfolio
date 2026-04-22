@@ -795,6 +795,8 @@ export type TickerEfficiencyBundle = {
   ruleOf40: number;
   annualFcf: number | null;
   sharesOutstanding: number | null;
+  /** BS ベース ネットキャッシュ（現地通貨）。`ticker_efficiency_metrics.net_cash` */
+  netCash: number | null;
   /** 前期比較用（ACCUMULATE など）。未記録は null */
   priorRuleOf40: number | null;
 };
@@ -809,6 +811,7 @@ type EcosystemEfficiencyRow = {
   shares_outstanding?: unknown;
   rule_of_40?: unknown;
   prior_rule_of_40?: unknown;
+  net_cash?: unknown;
 };
 
 function parsePercentOrNaN(raw: unknown): number {
@@ -842,6 +845,7 @@ function ecosystemEfficiencyFromCentralThenMemberRow(
   ruleOf40: number;
   annualFcf: number | null;
   sharesOutstanding: number | null;
+  netCash: number | null;
   priorRuleOf40: number | null;
 } {
   const rgRow = parsePercentOrNaN(row["revenue_growth"]);
@@ -862,6 +866,7 @@ function ecosystemEfficiencyFromCentralThenMemberRow(
       ruleOf40: r40,
       annualFcf: null,
       sharesOutstanding: null,
+      netCash: null,
       priorRuleOf40: priorRow,
     };
   }
@@ -890,6 +895,7 @@ function ecosystemEfficiencyFromCentralThenMemberRow(
     ruleOf40,
     annualFcf: eff.annualFcf,
     sharesOutstanding: eff.sharesOutstanding,
+    netCash: eff.netCash,
     priorRuleOf40,
   };
 }
@@ -965,6 +971,12 @@ function ecosystemMissingInvestmentMetaColumns(e: unknown): boolean {
   return lower.includes("no such column") && lower.includes("listing_date");
 }
 
+function tickerEfficiencyMissingNetCashColumn(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("net_cash");
+}
+
 async function fetchEcosystemEfficiencyByTickerUpper(
   db: Client,
   tickers: string[],
@@ -975,27 +987,49 @@ async function fetchEcosystemEfficiencyByTickerUpper(
   try {
     const ph = unique.map(() => "?").join(",");
     // Prefer ticker-level table (shared across holdings + ecosystem).
-    let rs;
-    try {
-      const sqlExtendedNoPrior = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
+    const sqlFullNoNet = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
+                       annual_fcf, shares_outstanding, rule_of_40, prior_rule_of_40
+                FROM ticker_efficiency_metrics
+                WHERE ticker IN (${ph})`;
+    const sqlFullWithNet = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
+                       annual_fcf, shares_outstanding, rule_of_40, prior_rule_of_40, net_cash
+                FROM ticker_efficiency_metrics
+                WHERE ticker IN (${ph})`;
+    const sqlExtendedNoPrior = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
                        annual_fcf, shares_outstanding, rule_of_40
                 FROM ticker_efficiency_metrics
                 WHERE ticker IN (${ph})`;
-      const sqlMinimal = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
+    const sqlExtendedNoPriorWithNet = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
+                       annual_fcf, shares_outstanding, rule_of_40, net_cash
                 FROM ticker_efficiency_metrics
                 WHERE ticker IN (${ph})`;
-      try {
-        rs = await db.execute({
-          sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf,
-                       annual_fcf, shares_outstanding, rule_of_40, prior_rule_of_40
+    const sqlMinimal = `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
                 FROM ticker_efficiency_metrics
-                WHERE ticker IN (${ph})`,
-          args: unique,
-        });
+                WHERE ticker IN (${ph})`;
+    let rs;
+    try {
+      try {
+        try {
+          rs = await db.execute({ sql: sqlFullWithNet, args: unique });
+        } catch (e0) {
+          if (tickerEfficiencyMissingNetCashColumn(e0)) {
+            rs = await db.execute({ sql: sqlFullNoNet, args: unique });
+          } else {
+            throw e0;
+          }
+        }
       } catch (e1) {
         if (tickerEfficiencyMissingPriorRuleColumn(e1)) {
           try {
-            rs = await db.execute({ sql: sqlExtendedNoPrior, args: unique });
+            try {
+              rs = await db.execute({ sql: sqlExtendedNoPriorWithNet, args: unique });
+            } catch (e1n) {
+              if (tickerEfficiencyMissingNetCashColumn(e1n)) {
+                rs = await db.execute({ sql: sqlExtendedNoPrior, args: unique });
+              } else {
+                throw e1n;
+              }
+            }
           } catch (e2) {
             if (!tickerEfficiencyMissingExtendedColumns(e2)) throw e2;
             rs = await db.execute({ sql: sqlMinimal, args: unique });
@@ -1056,6 +1090,13 @@ async function fetchEcosystemEfficiencyByTickerUpper(
         if (Number.isFinite(n)) priorRuleOf40 = n;
       }
 
+      let netCash: number | null = null;
+      const rawNc = row.net_cash;
+      if (rawNc != null) {
+        const n = Number(rawNc);
+        if (Number.isFinite(n)) netCash = n;
+      }
+
       out.set(tk.toUpperCase(), {
         revenueGrowth,
         fcfMargin,
@@ -1064,6 +1105,7 @@ async function fetchEcosystemEfficiencyByTickerUpper(
         annualFcf,
         sharesOutstanding,
         priorRuleOf40,
+        netCash,
       });
     }
     return out;
@@ -1322,6 +1364,20 @@ function buildDraftsFromHoldingRows(
       storedFcfYieldPercent: storedYield,
     });
 
+    const netCash = eff?.netCash != null && Number.isFinite(eff.netCash) ? eff.netCash : null;
+    const shNc = eff?.sharesOutstanding ?? null;
+    let netCashPerShare: number | null = null;
+    if (netCash != null && shNc != null && Number.isFinite(shNc) && shNc > 0) {
+      netCashPerShare = netCash / shNc;
+    }
+    const priceMinusNetCashPerShare =
+      currentPrice != null &&
+      netCashPerShare != null &&
+      Number.isFinite(currentPrice) &&
+      Number.isFinite(netCashPerShare)
+        ? currentPrice - netCashPerShare
+        : null;
+
     const expectationCategory = parseExpectationCategory(row.expectation_category);
     const judgment = computeInvestmentJudgment({
       ruleOf40,
@@ -1402,6 +1458,9 @@ function buildDraftsFromHoldingRows(
       previousClose,
       benchmarkDayChangePercent,
       liveAlphaBenchmarkTicker,
+      netCash,
+      netCashPerShare,
+      priceMinusNetCashPerShare,
     };
   });
 }
@@ -3028,6 +3087,9 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       previousClose: null,
       benchmarkDayChangePercent: null,
       liveAlphaBenchmarkTicker: null,
+      netCash: null,
+      netCashPerShare: null,
+      priceMinusNetCashPerShare: null,
     };
   });
 }

@@ -24,6 +24,8 @@ export const INVENTORY_COLUMN_LABEL_JA: Record<InventoryColId, string> = {
   research: "Research",
   ruleOf40: "Rule of 40",
   fcfYield: "FCF Yield",
+  netCash: "ネットC",
+  netCps: "NC/株",
   judgment: "判定",
   deviation: "乖離",
   drawdown: "落率",

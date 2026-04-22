@@ -11,6 +11,7 @@
  * - **米国株**: fundamentalsTimeSeries（年次）に加え、**常に** quoteSummary 拡張（PL/CF 等）で欠損を補完し、
  *   Rule of 40・`fcf_yield`（時価総額ベースの近似）を埋める。
  * - **日本株**: 同上を試行し、不足時は quoteSummary でフォールバック。
+ * - **`net_cash`**: `financialData`（totalCash − totalDebt）を優先し、不足時は `balanceSheetHistory` 最新年次で近似。
  *   ソース列: `Yahoo_TS` / `Yahoo_JP` / `Yahoo_US_QS`。
  *
  * Env:
@@ -27,6 +28,7 @@ import path from "node:path";
 
 import dotenv from "dotenv";
 import YahooFinance from "yahoo-finance2";
+import type { QuoteSummaryModules } from "yahoo-finance2/modules/quoteSummary";
 
 import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
@@ -47,10 +49,14 @@ const QUOTE_SUMMARY_EXTENDED_MODULES = [
   "defaultKeyStatistics",
   "incomeStatementHistory",
   "cashflowStatementHistory",
+  "balanceSheetHistory",
   "financialData",
   "summaryDetail",
   "price",
 ] as const;
+
+/** quoteSummary 最小取得でも net_cash 用に付与する追加モジュール */
+const NET_CASH_QUOTE_EXTRA_MODULES = ["financialData", "balanceSheetHistory"] as const;
 
 /** `last_updated_at` がこれより古い行は再取得対象 */
 const STALE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -230,6 +236,53 @@ function sharesFromQuoteSummary(qs: unknown): number | null {
     pickNum(d, ["floatShares"]);
   if (!Number.isFinite(raw) || raw <= 0) return null;
   return raw;
+}
+
+/**
+ * ネットキャッシュ（Yahoo: `financialData` 優先、次に年次 `balanceSheetHistory` 最上行）。
+ * 定義: 流動性の高い資産 − 有利子負債（FMP スクリプトと同趣旨の近似）。
+ */
+function netCashFromYahooQuoteSummary(qs: unknown): number | null {
+  if (!qs || typeof qs !== "object") return null;
+  const o = qs as Record<string, unknown>;
+
+  const fd = o["financialData"];
+  if (fd && typeof fd === "object") {
+    const f = fd as Record<string, unknown>;
+    const tc = yahooStatementNum(f, ["totalCash"]);
+    const td = yahooStatementNum(f, ["totalDebt"]);
+    if (tc != null && Number.isFinite(tc) && td != null && Number.isFinite(td)) {
+      return tc - td;
+    }
+    if (tc != null && Number.isFinite(tc) && (td == null || !Number.isFinite(td))) {
+      return tc;
+    }
+  }
+
+  const bsh = o["balanceSheetHistory"];
+  if (!bsh || typeof bsh !== "object") return null;
+  const b = bsh as Record<string, unknown>;
+  const inner = b["balanceSheetHistory"] ?? b["balanceSheetStatements"];
+  if (!Array.isArray(inner) || inner.length === 0) return null;
+  const rows = inner.filter((r): r is Record<string, unknown> => r != null && typeof r === "object") as Record<
+    string,
+    unknown
+  >[];
+  if (rows.length === 0) return null;
+  const top = sortStatementRowsByEndDateDesc(rows)[0]!;
+  const totalDebt = yahooStatementNum(top, ["totalDebt", "shortLongTermDebt"]);
+  const cComb = yahooStatementNum(top, ["cashAndShortTermInvestments", "totalCash"]);
+  if (cComb != null && Number.isFinite(cComb) && totalDebt != null && Number.isFinite(totalDebt)) {
+    return cComb - totalDebt;
+  }
+  const cash = yahooStatementNum(top, ["cash"]) ?? 0;
+  const sti = yahooStatementNum(top, ["shortLongTermInvestments", "shortTermInvestments"]) ?? 0;
+  const liq = (Number.isFinite(cash) ? cash : 0) + (Number.isFinite(sti) ? sti : 0);
+  if (totalDebt != null && Number.isFinite(totalDebt)) {
+    return liq - totalDebt;
+  }
+  if (liq !== 0 && Number.isFinite(liq)) return liq;
+  return null;
 }
 
 function isJpListedEfficiencyKind(kind: TickerInstrumentKind): boolean {
@@ -633,14 +686,17 @@ async function main() {
       const useUsQuoteDetail = instrumentKind === "US_EQUITY";
       const needExtendedQuote = needJpQs || useUsQuoteDetail;
 
-      const quoteModules = needExtendedQuote ? QUOTE_SUMMARY_EXTENDED_MODULES : (["defaultKeyStatistics"] as const);
+      const quoteModules: QuoteSummaryModules[] = needExtendedQuote
+        ? ([...QUOTE_SUMMARY_EXTENDED_MODULES] as QuoteSummaryModules[])
+        : (["defaultKeyStatistics", ...NET_CASH_QUOTE_EXTRA_MODULES] as QuoteSummaryModules[]);
 
       const qs = await yahooFinance.quoteSummary(yahooSym, {
-        modules: [...quoteModules],
+        modules: quoteModules,
       });
       await pause(1);
 
       let sharesOut = sharesFromQuoteSummary(qs);
+      const netCash = netCashFromYahooQuoteSummary(qs);
       let fcfYieldStored: number | null = null;
       let quoteFallbackApplied = false;
 
@@ -685,8 +741,8 @@ async function main() {
       await db.execute({
         sql: `INSERT INTO ticker_efficiency_metrics
                 (ticker, revenue_growth, fcf_margin, annual_fcf, shares_outstanding, rule_of_40,
-                 fcf_yield, source, last_updated_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                 fcf_yield, net_cash, source, last_updated_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
               ON CONFLICT(ticker) DO UPDATE SET
                 revenue_growth = COALESCE(excluded.revenue_growth, ticker_efficiency_metrics.revenue_growth),
                 fcf_margin = COALESCE(excluded.fcf_margin, ticker_efficiency_metrics.fcf_margin),
@@ -694,6 +750,7 @@ async function main() {
                 shares_outstanding = COALESCE(excluded.shares_outstanding, ticker_efficiency_metrics.shares_outstanding),
                 rule_of_40 = COALESCE(excluded.rule_of_40, ticker_efficiency_metrics.rule_of_40),
                 fcf_yield = COALESCE(excluded.fcf_yield, ticker_efficiency_metrics.fcf_yield),
+                net_cash = COALESCE(excluded.net_cash, ticker_efficiency_metrics.net_cash),
                 source = COALESCE(excluded.source, ticker_efficiency_metrics.source),
                 last_updated_at = COALESCE(excluded.last_updated_at, ticker_efficiency_metrics.last_updated_at),
                 updated_at = datetime('now')`,
@@ -705,6 +762,7 @@ async function main() {
           sharesOut,
           Number.isFinite(ruleOf40) ? ruleOf40 : null,
           fcfYieldStored,
+          netCash != null && Number.isFinite(netCash) ? netCash : null,
           sourceTag,
           isoNow,
         ],
@@ -715,7 +773,8 @@ async function main() {
         Number.isFinite(fcfMarginPct) ||
         (annualFcf != null && Number.isFinite(annualFcf)) ||
         (sharesOut != null && sharesOut > 0) ||
-        (fcfYieldStored != null && Number.isFinite(fcfYieldStored));
+        (fcfYieldStored != null && Number.isFinite(fcfYieldStored)) ||
+        (netCash != null && Number.isFinite(netCash));
 
       if (hasAny) {
         ok += 1;
@@ -727,6 +786,14 @@ async function main() {
         if (Number.isFinite(ruleOf40)) bits.push(`R40=${ruleOf40.toFixed(2)}`);
         if (fcfYieldStored != null && Number.isFinite(fcfYieldStored)) {
           bits.push(`fcfY≈${fcfYieldStored.toFixed(2)}%`);
+        }
+        if (netCash != null && Number.isFinite(netCash)) {
+          const abs = Math.abs(netCash);
+          const scale =
+            abs >= 1e12 ? "T" : abs >= 1e9 ? "B" : abs >= 1e6 ? "M" : "";
+          const div = abs >= 1e12 ? 1e12 : abs >= 1e9 ? 1e9 : abs >= 1e6 ? 1e6 : 1;
+          if (scale) bits.push(`netC≈${(netCash / div).toFixed(2)}${scale}`);
+          else bits.push(`netC≈${netCash.toFixed(0)}`);
         }
         bits.push(`src=${sourceTag}`);
         console.log(`[ok] ${ticker} (${yahooSym}): ${bits.join(", ")} | periods=${merged.length}`);

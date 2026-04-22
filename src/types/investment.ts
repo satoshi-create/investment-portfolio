@@ -238,6 +238,15 @@ export interface Stock {
   /** R40×FCF Yield 判定エンジン（`computeInvestmentJudgment`） */
   judgmentStatus: JudgmentStatus;
   judgmentReason: string;
+  /**
+   * ネットキャッシュ（`ticker_efficiency_metrics.net_cash`、FMP 年次 BS: 流動性資産 − totalDebt、現地通貨）。
+   * 未取得・非対象は null。
+   */
+  netCash: number | null;
+  /** netCash ÷ 希薄化株数。欠損時は null。 */
+  netCashPerShare: number | null;
+  /** 株価 − 1株当たりネットキャッシュ（現地通貨）。いずれか欠損時は null。 */
+  priceMinusNetCashPerShare: number | null;
 }
 
 /** DB `signals.signal_type` and client-side synthetic live signals. */

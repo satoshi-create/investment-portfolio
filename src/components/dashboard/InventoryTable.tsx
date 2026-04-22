@@ -62,6 +62,8 @@ import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import {
   formatJpyValueForView,
   formatLocalPriceForView,
+  formatSignedLocalMoneyForView,
+  formatSignedLocalPerShareForView,
   nativeCurrencyForStock,
 } from "@/src/lib/format-display-currency";
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
@@ -99,6 +101,8 @@ type SortKey =
   | "drawdown"
   | "ruleOf40"
   | "fcfYield"
+  | "netCash"
+  | "netCps"
   | "judgment"
   | "pe"
   | "peg"
@@ -177,6 +181,14 @@ function ruleOf40SortValue(s: Stock): number | null {
 
 function fcfYieldSortValue(s: Stock): number | null {
   return Number.isFinite(s.fcfYield) ? s.fcfYield : null;
+}
+
+function netCashSortValue(s: Stock): number | null {
+  return s.netCash != null && Number.isFinite(s.netCash) ? s.netCash : null;
+}
+
+function netCpsSortValue(s: Stock): number | null {
+  return s.netCashPerShare != null && Number.isFinite(s.netCashPerShare) ? s.netCashPerShare : null;
 }
 
 function listingYmdSortKey(s: Stock): string | null {
@@ -531,6 +543,8 @@ export function InventoryTable({
       if (key === "eps") return dir * cmpNum(epsOf(a), epsOf(b));
       if (key === "ruleOf40") return dir * cmpNum(ruleOf40SortValue(a), ruleOf40SortValue(b));
       if (key === "fcfYield") return dir * cmpNum(fcfYieldSortValue(a), fcfYieldSortValue(b));
+      if (key === "netCash") return dir * cmpNum(netCashSortValue(a), netCashSortValue(b));
+      if (key === "netCps") return dir * cmpNum(netCpsSortValue(a), netCpsSortValue(b));
       if (key === "deviation") return dir * cmpNum(deviationOf(a), deviationOf(b));
       if (key === "drawdown") return dir * cmpNum(drawdownOf(a), drawdownOf(b));
       if (key === "research") {
@@ -1111,6 +1125,42 @@ export function InventoryTable({
                             </button>
                           </SortableInventoryTh>
                         );
+                      case "netCash":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="ネットキャッシュ（現地通貨）。FMP 年次BS: 流動性資産−totalDebt。`npm run fetch:fmp` で ticker_efficiency_metrics に保存"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("netCash")}
+                            >
+                              ネットC{sortMark("netCash")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "netCps":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            title="1株当たりネットキャッシュ = ネットC ÷ 希薄化株数（FMP quote）"
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("netCps")}
+                            >
+                              NC/株{sortMark("netCps")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
                       case "judgment":
                         return (
                           <SortableInventoryTh
@@ -1677,6 +1727,57 @@ export function InventoryTable({
                             })()}
                           </td>
                         );
+                      case "netCash":
+                        return (
+                          <td
+                            key={colId}
+                            className="px-4 py-4 text-right font-mono text-xs text-foreground/90"
+                            title={
+                              stock.netCash != null
+                                ? `P−NC/株 ギャップ: ${
+                                    stock.priceMinusNetCashPerShare != null && Number.isFinite(stock.priceMinusNetCashPerShare)
+                                      ? formatSignedLocalMoneyForView(
+                                          stock.priceMinusNetCashPerShare,
+                                          nativeCurrencyForStock(stock),
+                                          viewCurrency,
+                                          convert,
+                                        )
+                                      : "—"
+                                  }（株価−1株ネットC）`
+                                : undefined
+                            }
+                          >
+                            {stock.netCash != null && Number.isFinite(stock.netCash) ? (
+                              formatSignedLocalMoneyForView(
+                                stock.netCash,
+                                nativeCurrencyForStock(stock),
+                                viewCurrency,
+                                convert,
+                              )
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                        );
+                      case "netCps":
+                        return (
+                          <td
+                            key={colId}
+                            className="px-4 py-4 text-right font-mono text-xs text-foreground/90"
+                            title="1株当たりネットキャッシュ"
+                          >
+                            {stock.netCashPerShare != null && Number.isFinite(stock.netCashPerShare) ? (
+                              formatSignedLocalPerShareForView(
+                                stock.netCashPerShare,
+                                nativeCurrencyForStock(stock),
+                                viewCurrency,
+                                convert,
+                              )
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                        );
                       case "judgment":
                         return (
                           <td key={colId} className="px-4 py-4 text-center">
@@ -1983,6 +2084,13 @@ export function InventoryTable({
                             </div>
                           );
                         })()}
+                      </td>
+                    );
+                  case "netCash":
+                  case "netCps":
+                    return (
+                      <td key={colId} className="px-4 py-3 text-[10px] text-muted-foreground text-right">
+                        —
                       </td>
                     );
                   case "judgment":

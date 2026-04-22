@@ -58,6 +58,9 @@ export function stocksToCsvRows(stocks: Stock[]): Record<string, unknown>[] {
     avgAcquisitionPrice: s.avgAcquisitionPrice,
     pegRatio: s.pegRatio,
     expectedGrowth: s.expectedGrowth,
+    netCash: s.netCash,
+    netCashPerShare: s.netCashPerShare,
+    priceMinusNetCashPerShare: s.priceMinusNetCashPerShare,
   }));
 }
 
@@ -91,6 +94,9 @@ export const STOCK_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "avgAcquisitionPrice", header: "平均取得単価" },
   { key: "pegRatio", header: "PEG" },
   { key: "expectedGrowth", header: "予想EPS成長率（小数）" },
+  { key: "netCash", header: "ネットキャッシュ（現地通貨）" },
+  { key: "netCashPerShare", header: "1株ネットC（現地通貨）" },
+  { key: "priceMinusNetCashPerShare", header: "株価−1株NC（現地通貨）" },
 ];
 
 export function portfolioSnapshotsToCsvRows(rows: PortfolioDailySnapshotRow[]): Record<string, unknown>[] {
