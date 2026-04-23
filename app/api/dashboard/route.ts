@@ -102,6 +102,7 @@ export async function GET(request: Request) {
         coreSatellite: dash.coreSatellite as unknown,
         totalMarketValue: dash.totalMarketValue,
         summary: dash.summary as unknown,
+        ecosystemWatchlistSearch: dash.ecosystemWatchlistSearch as unknown[],
       };
     })();
 

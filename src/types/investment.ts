@@ -343,6 +343,15 @@ export type ThemeStructuralSparklineEntry = {
   cumulativeValues: number[];
 };
 
+/** グローバル検索用: テーマエコシステムの観測銘柄 1 行。 */
+export type EcosystemWatchlistSearchItem = {
+  memberId: string;
+  themeId: string;
+  themeName: string;
+  ticker: string;
+  companyName: string;
+};
+
 export type DashboardData = {
   stocks: Stock[];
   /** 保有の有無に関わらず、ユーザーが登録している全テーマ（`investment_themes`）。 */
@@ -356,6 +365,8 @@ export type DashboardData = {
   coreSatellite: CoreSatelliteBreakdown;
   totalMarketValue: number;
   summary: DashboardSummary;
+  /** 構造テーマの観測銘柄（検索・ナビ用） */
+  ecosystemWatchlistSearch: EcosystemWatchlistSearchItem[];
 };
 
 /** `investment_themes` 行（Notion 等から移行したテーマメタ）。 */

@@ -63,16 +63,21 @@ const MODAL_SAFE_PADDING: React.CSSProperties = {
   paddingLeft: "max(12px, env(safe-area-inset-left, 0px))",
 };
 
+type KoyomiTab = "owned" | "watchlist";
+
 export function EventCalendarModal({
   open,
   onOpenChange,
+  userId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  userId: string;
 }) {
   const [events, setEvents] = useState<MarketEventRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<KoyomiTab>("owned");
 
   const today = useMemo(() => utcTodayYmd(), []);
   const week = useMemo(() => isoWeekRangeUtcContaining(today), [today]);
@@ -92,8 +97,9 @@ export function EventCalendarModal({
     setLoading(true);
     setFetchErr(null);
     try {
+      const uid = userId.trim().length > 0 ? userId.trim() : "";
       const [resEvents, resDash] = await Promise.all([
-        fetch("/api/events", { cache: "no-store" }),
+        fetch(`/api/events?userId=${encodeURIComponent(uid)}`, { cache: "no-store" }),
         fetch("/api/dashboard", { cache: "no-store" }),
       ]);
 
@@ -106,7 +112,11 @@ export function EventCalendarModal({
         return;
       }
 
-      const marketEvents = Array.isArray(eventsJson.events) ? eventsJson.events : [];
+      const apiEvents = Array.isArray(eventsJson.events) ? eventsJson.events : [];
+      const normalizedApi = apiEvents.map((e) => ({
+        ...e,
+        source: e.source ?? ("macro" as const),
+      }));
 
       const stocksRaw = Array.isArray(dashJson.stocks) ? (dashJson.stocks as DashboardStockLite[]) : [];
       const holdingEvents: MarketEventRecord[] = [];
@@ -124,6 +134,7 @@ export function EventCalendarModal({
             category: "Earnings",
             importance: 3,
             description: name.length > 0 ? name : null,
+            source: "holding",
           });
         }
 
@@ -136,12 +147,13 @@ export function EventCalendarModal({
             category: "Dividend",
             importance: 2,
             description: name.length > 0 ? name : null,
+            source: "holding",
           });
         }
       }
 
       const merged = new Map<string, MarketEventRecord>();
-      for (const e of marketEvents) merged.set(e.id, e);
+      for (const e of normalizedApi) merged.set(e.id, e);
       for (const e of holdingEvents) merged.set(e.id, e);
 
       setEvents([...merged.values()]);
@@ -151,7 +163,7 @@ export function EventCalendarModal({
     } finally {
       setLoading(false);
     }
-  }, [dateWindow.end, dateWindow.start]);
+  }, [dateWindow.end, dateWindow.start, userId]);
 
   useEffect(() => {
     if (!open) return;
@@ -176,10 +188,17 @@ export function EventCalendarModal({
     };
   }, [open]);
 
+  const tabFiltered = useMemo(() => {
+    if (tab === "watchlist") {
+      return events.filter((e) => e.source === "watchlist");
+    }
+    return events.filter((e) => e.source === "macro" || e.source === "holding" || e.source === undefined);
+  }, [events, tab]);
+
   const { thisWeek, other } = useMemo(() => {
     const tw: MarketEventRecord[] = [];
     const ot: MarketEventRecord[] = [];
-    for (const e of events) {
+    for (const e of tabFiltered) {
       const d = e.event_date.slice(0, 10);
       if (d >= week.start && d <= week.end) tw.push(e);
       else ot.push(e);
@@ -189,7 +208,7 @@ export function EventCalendarModal({
     tw.sort(sortEv);
     ot.sort(sortEv);
     return { thisWeek: tw, other: ot };
-  }, [events, week.start, week.end]);
+  }, [tabFiltered, week.start, week.end]);
 
   if (!open) return null;
 
@@ -223,6 +242,40 @@ export function EventCalendarModal({
             <p className="text-xs leading-relaxed text-muted-foreground sm:text-[13px]">
               10分パトロールの最初に、今週のイベントでボラとフローを想像する。
             </p>
+            <div
+              className="flex flex-wrap gap-1.5 pt-1"
+              role="tablist"
+              aria-label="イベントの表示切替"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "owned"}
+                onClick={() => setTab("owned")}
+                className={cn(
+                  "rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
+                  tab === "owned"
+                    ? "border-cyan-500/45 bg-cyan-500/15 text-cyan-100"
+                    : "border-border bg-muted/30 text-muted-foreground hover:bg-muted/50",
+                )}
+              >
+                Owned
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "watchlist"}
+                onClick={() => setTab("watchlist")}
+                className={cn(
+                  "rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
+                  tab === "watchlist"
+                    ? "border-violet-500/40 bg-violet-500/10 text-violet-100"
+                    : "border-border bg-muted/30 text-muted-foreground hover:bg-muted/50",
+                )}
+              >
+                Watchlist
+              </button>
+            </div>
           </div>
           <button
             type="button"
@@ -239,10 +292,13 @@ export function EventCalendarModal({
             <p className="text-muted-foreground">読み込み中…</p>
           ) : fetchErr ? (
             <p className="text-sm text-destructive">{fetchErr}</p>
-          ) : events.length === 0 ? (
+          ) : tabFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground leading-relaxed">
-              イベントがまだありません。管理者は{" "}
-              <span className="font-mono text-xs">migrations/023_market_events.sql</span> を適用してください。
+              {tab === "watchlist"
+                ? "このウィンドウ内にウォッチリストの決算予定はありません。"
+                : events.length === 0
+                  ? "イベントがまだありません。管理者は migrations/023_market_events.sql を適用してください。"
+                  : "このタブに表示するイベントはありません（マクロ・保有の予定がウィンドウ外の可能性があります）。"}
             </p>
           ) : (
             <div className="space-y-6">
@@ -291,17 +347,38 @@ export function EventCalendarModal({
 }
 
 function EventRow({ e }: { e: MarketEventRecord }) {
+  const src = e.source ?? "macro";
   const hi = e.importance >= 3;
   const d = e.event_date.slice(0, 10);
+
+  const shellClass =
+    src === "holding"
+      ? cn(
+          "rounded-lg border px-3 py-2.5 transition-colors",
+          hi
+            ? "border-cyan-400/55 bg-cyan-500/12 shadow-[0_0_0_1px_rgba(34,211,238,0.12)]"
+            : "border-cyan-500/35 bg-cyan-500/8",
+        )
+      : src === "watchlist"
+        ? cn(
+            "rounded-lg border px-3 py-2.5 transition-colors border-border/80 bg-muted/25 text-foreground/90",
+            hi ? "border-violet-500/25 bg-violet-500/5" : "",
+          )
+        : cn(
+            "rounded-lg border px-3 py-2.5 transition-colors",
+            hi ? "border-rose-500/40 bg-rose-500/5" : "border-border bg-card/50",
+          );
+
   return (
-    <li
-      className={cn(
-        "rounded-lg border px-3 py-2.5 transition-colors",
-        hi ? "border-rose-500/40 bg-rose-500/5" : "border-border bg-card/50",
-      )}
-    >
+    <li className={shellClass}>
       <div className="flex flex-wrap items-center gap-2 gap-y-1">
-        <time dateTime={d} className={cn("font-mono text-[11px] tabular-nums shrink-0", hi ? "text-rose-200 font-bold" : "text-muted-foreground")}>
+        <time
+          dateTime={d}
+          className={cn(
+            "font-mono text-[11px] tabular-nums shrink-0",
+            hi && src !== "watchlist" ? "text-rose-200 font-bold" : "text-muted-foreground",
+          )}
+        >
           {d}
         </time>
         <span
@@ -312,6 +389,11 @@ function EventRow({ e }: { e: MarketEventRecord }) {
         >
           {e.category}
         </span>
+        {src === "holding" ? (
+          <span className="text-[9px] font-bold uppercase tracking-wide text-cyan-300/90">Owned</span>
+        ) : src === "watchlist" ? (
+          <span className="text-[9px] font-bold uppercase tracking-wide text-violet-300/80">Watch</span>
+        ) : null}
         {hi ? (
           <span className="inline-flex items-center gap-0.5 text-rose-400" title="高重要度">
             <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -323,7 +405,9 @@ function EventRow({ e }: { e: MarketEventRecord }) {
           <span className="text-[9px] text-muted-foreground/80 uppercase">Low</span>
         )}
       </div>
-      <p className={cn("mt-1 text-sm leading-snug", hi ? "font-bold text-foreground" : "text-foreground/90")}>{e.title}</p>
+      <p className={cn("mt-1 text-sm leading-snug", hi && src !== "watchlist" ? "font-bold text-foreground" : "text-foreground/90")}>
+        {e.title}
+      </p>
       {e.description ? (
         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{e.description}</p>
       ) : null}

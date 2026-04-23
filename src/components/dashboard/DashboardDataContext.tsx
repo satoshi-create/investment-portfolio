@@ -17,6 +17,7 @@ import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
 import type {
   DashboardSummary,
+  EcosystemWatchlistSearchItem,
   InvestmentThemeRecord,
   Signal,
   Stock,
@@ -66,6 +67,7 @@ export type DashboardPayload = {
   structureBySector: StructureTagSlice[];
   totalMarketValue: number;
   summary: DashboardSummary;
+  ecosystemWatchlistSearch: EcosystemWatchlistSearchItem[];
 };
 
 type DashboardContextValue = {
@@ -81,6 +83,9 @@ type DashboardContextValue = {
   pending: boolean;
   tradeFormOpen: boolean;
   tradeInitial: TradeEntryInitial | null;
+  /** ホームの保有テーブルでハイライト・スクロールするティッカー（大文字キー） */
+  focusedTicker: string | null;
+  setFocusedTicker: (ticker: string | null) => void;
   loadDashboard: () => Promise<void>;
   onGenerateSignals: () => void;
   onRefresh: () => void;
@@ -107,6 +112,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [snapshotPending, startSnapshotTransition] = useTransition();
   const [tradeFormOpen, setTradeFormOpen] = useState(false);
   const [tradeInitial, setTradeInitial] = useState<TradeEntryInitial | null>(null);
+  const [focusedTicker, setFocusedTicker] = useState<string | null>(null);
   const { setFxRateFromQuote } = useCurrencyConverter();
 
   const loadDashboard = useCallback(async () => {
@@ -134,6 +140,9 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         structureBySector: json.structureBySector ?? [],
         totalMarketValue: json.totalMarketValue ?? 0,
         summary: { ...EMPTY_SUMMARY, ...(json.summary ?? {}) },
+        ecosystemWatchlistSearch: Array.isArray(json.ecosystemWatchlistSearch)
+          ? (json.ecosystemWatchlistSearch as EcosystemWatchlistSearchItem[])
+          : [],
       });
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
@@ -258,6 +267,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       pending,
       tradeFormOpen,
       tradeInitial,
+      focusedTicker,
+      setFocusedTicker,
       loadDashboard,
       onGenerateSignals,
       onRefresh,
@@ -281,6 +292,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       pending,
       tradeFormOpen,
       tradeInitial,
+      focusedTicker,
       loadDashboard,
       onGenerateSignals,
       onRefresh,

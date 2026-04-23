@@ -291,6 +291,7 @@ export function InventoryTable({
   onToggleEcosystemKeep,
   livePricePollIntervalMs,
   onLivePricePoll,
+  highlightTicker,
 }: {
   stocks: Stock[];
   totalHoldings: number;
@@ -311,6 +312,8 @@ export function InventoryTable({
   /** 設定時、間隔ごとに `onLivePricePoll` で株価・ベンチを再取得（ライブ Alpha の更新用） */
   livePricePollIntervalMs?: number;
   onLivePricePoll?: () => void | Promise<void>;
+  /** ホーム検索など: 一致する行を強調しスクロール（大文字キー推奨） */
+  highlightTicker?: string | null;
 }) {
   const { convert, viewCurrency, alphaDisplayMode } = useCurrencyConverter();
 
@@ -556,6 +559,16 @@ export function InventoryTable({
     });
     return arr;
   }, [filteredStocks, sortDir, sortKey]);
+
+  useEffect(() => {
+    const raw = highlightTicker?.trim();
+    if (!raw) return;
+    const id = `inventory-row-${raw.toUpperCase()}`;
+    const t = window.setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [highlightTicker, sortedStocks.length]);
 
   const footerStats = useMemo(() => {
     const rows = sortedStocks;
@@ -1378,8 +1391,19 @@ export function InventoryTable({
               const dd = drawdownOf(stock);
               const ecoKeep =
                 resolveEcosystemKeep != null ? resolveEcosystemKeep(stock.ticker) : null;
+              const rowHi =
+                highlightTicker != null &&
+                highlightTicker.trim().length > 0 &&
+                stock.ticker.trim().toUpperCase() === highlightTicker.trim().toUpperCase();
               return (
-                <tr key={stock.id} className="group hover:bg-muted/60 transition-all">
+                <tr
+                  key={stock.id}
+                  id={`inventory-row-${stock.ticker.trim().toUpperCase()}`}
+                  className={cn(
+                    "group hover:bg-muted/60 transition-all scroll-mt-24",
+                    rowHi ? "bg-cyan-500/12 ring-1 ring-cyan-500/40" : "",
+                  )}
+                >
                   {visibleColumnIds.map((colId, idx) => {
                     const isFirst = idx === 0;
                     const stickyFirst = isFirst ? stickyTdFirst : "";

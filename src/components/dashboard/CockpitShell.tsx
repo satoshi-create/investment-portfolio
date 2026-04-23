@@ -5,6 +5,7 @@ import { Camera, LineChart, Menu, RefreshCw, ScrollText, X, Zap } from "lucide-r
 import { usePathname } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 
+import { CockpitStockSearch } from "@/src/components/dashboard/CockpitStockSearch";
 import { DashboardHeader } from "@/src/components/dashboard/DashboardHeader";
 import { EventCalendarModal } from "@/src/components/dashboard/EventCalendarModal";
 import { MarketBar } from "@/src/components/dashboard/MarketBar";
@@ -68,7 +69,12 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
     openTradeForm,
     closeTradeForm,
     resolveSignalOptimistic,
+    setFocusedTicker,
   } = useDashboardData();
+
+  useEffect(() => {
+    if (pathname !== "/") setFocusedTicker(null);
+  }, [pathname, setFocusedTicker]);
 
   const summary = data?.summary ?? EMPTY_SUMMARY;
   const signals = data?.signals ?? [];
@@ -199,23 +205,34 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
               />
             </div>
           ) : (
-            <div className="shrink-0 border-b border-border bg-background/92 backdrop-blur-sm px-4 py-2 md:hidden">
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMobileSidebarOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2 text-xs font-bold text-foreground/80 hover:bg-muted"
-                  aria-label="Open navigation"
-                >
-                  <Menu className="h-4 w-4" aria-hidden />
-                  Menu
-                </button>
-                <Link
-                  href="/"
-                  className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground/80"
-                >
-                  Cockpit
-                </Link>
+            <div className="shrink-0 border-b border-border bg-background/92 backdrop-blur-sm px-4 py-2 md:px-6">
+              <div className="flex flex-wrap items-center gap-3 justify-between">
+                <div className="flex items-center gap-3 md:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setMobileSidebarOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2 text-xs font-bold text-foreground/80 hover:bg-muted"
+                    aria-label="Open navigation"
+                  >
+                    <Menu className="h-4 w-4" aria-hidden />
+                    Menu
+                  </button>
+                  <Link
+                    href="/"
+                    className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground/80"
+                  >
+                    Cockpit
+                  </Link>
+                </div>
+                <div className="flex min-w-0 flex-1 items-center gap-3 justify-end md:justify-between">
+                  <Link
+                    href="/"
+                    className="hidden md:inline text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground/80"
+                  >
+                    ホーム
+                  </Link>
+                  <CockpitStockSearch className="w-full max-w-md md:w-auto md:min-w-[16rem]" compact />
+                </div>
               </div>
             </div>
           )}
@@ -415,7 +432,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
             </div>
           ) : null}
 
-          <EventCalendarModal open={koyomiOpen} onOpenChange={setKoyomiOpen} />
+          <EventCalendarModal open={koyomiOpen} onOpenChange={setKoyomiOpen} userId={userId} />
 
           <div
             className={`${COCKPIT_MAIN_SCROLL_CLASS} cockpit-main-surface`}

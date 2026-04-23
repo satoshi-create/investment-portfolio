@@ -11,6 +11,7 @@ export type DashboardResponseJson = {
   coreSatellite: unknown;
   totalMarketValue: number;
   summary: unknown;
+  ecosystemWatchlistSearch?: unknown[];
   stale?: boolean;
 };
 

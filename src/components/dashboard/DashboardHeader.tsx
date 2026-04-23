@@ -1,8 +1,10 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { Target } from "lucide-react";
 
+import { CockpitStockSearch } from "@/src/components/dashboard/CockpitStockSearch";
 import { RiskRegimeGauge } from "@/src/components/dashboard/RiskRegimeGauge";
 import type { MarketIndicator } from "@/src/types/investment";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
@@ -107,14 +109,24 @@ export function DashboardHeader({
               <span>Satoshi&apos;s Investment OS</span>
             </div>
           ) : null}
-          <h1
-            className={`font-bold tracking-tight text-foreground flex items-center gap-2 ${
+          <Link
+            href="/"
+            className={`group inline-flex font-bold tracking-tight text-foreground items-center gap-2 transition-colors hover:text-accent-cyan ${
               compact ? "text-xl" : "text-3xl"
             }`}
           >
-            <Target className="text-accent-cyan shrink-0" size={compact ? 20 : 28} />
+            <Target className="text-accent-cyan shrink-0 group-hover:text-accent-cyan" size={compact ? 20 : 28} />
             Structural Cockpit
-          </h1>
+          </Link>
+          {!compact ? (
+            <div className="mt-3 w-full max-w-md">
+              <CockpitStockSearch />
+            </div>
+          ) : (
+            <div className="mt-2 w-full max-w-[14rem]">
+              <CockpitStockSearch compact />
+            </div>
+          )}
         </div>
 
         {/* Same line block: Total α + Pulse + vs VOO */}

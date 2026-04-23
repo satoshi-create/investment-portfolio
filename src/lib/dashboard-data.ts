@@ -12,6 +12,7 @@ import type {
   StructureTagSlice,
   ThemeDetailData,
   EcosystemCrossThemeBookmarkItem,
+  EcosystemWatchlistSearchItem,
   ThemeEcosystemWatchItem,
   ThemeStructuralSparklineEntry,
   TickerInstrumentKind,
@@ -203,6 +204,35 @@ async function fetchAllInvestmentThemes(db: Client, userId: string): Promise<Inv
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg.includes("no such table") || msg.toLowerCase().includes("investment_themes")) {
+      return [];
+    }
+    throw e;
+  }
+}
+
+async function fetchEcosystemWatchlistSearchIndex(db: Client, userId: string): Promise<EcosystemWatchlistSearchItem[]> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT m.id AS member_id, m.theme_id, m.ticker, m.company_name, t.name AS theme_name
+            FROM theme_ecosystem_members m
+            INNER JOIN investment_themes t ON m.theme_id = t.id
+            WHERE t.user_id = ?
+            ORDER BY t.name ASC, m.ticker ASC`,
+      args: [userId],
+    });
+    return (rs.rows as Record<string, unknown>[])
+      .map((row) => ({
+        memberId: String(row["member_id"] ?? "").trim(),
+        themeId: String(row["theme_id"] ?? "").trim(),
+        themeName: row["theme_name"] != null ? String(row["theme_name"]).trim() : "",
+        ticker: String(row["ticker"] ?? "").trim(),
+        companyName: row["company_name"] != null ? String(row["company_name"]).trim() : "",
+      }))
+      .filter((x) => x.memberId.length > 0 && x.ticker.length > 0);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const low = msg.toLowerCase();
+    if (low.includes("no such table") || low.includes("theme_ecosystem_members") || low.includes("investment_themes")) {
       return [];
     }
     throw e;
@@ -2979,13 +3009,15 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   const h = await fetchHoldingsRowsWithInvestmentMeta(db, userId);
 
   if (h.rows.length === 0) {
-    const [allThemes, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators] = await Promise.all([
-      fetchAllInvestmentThemes(db, userId),
-      resolveBenchmarkSnapshot(),
-      resolveFxUsdJpyRate(),
-      fetchTotalRealizedPnlJpy(db, userId),
-      fetchGlobalMarketIndicators(),
-    ]);
+    const [allThemes, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators, ecosystemWatchlistSearch] =
+      await Promise.all([
+        fetchAllInvestmentThemes(db, userId),
+        resolveBenchmarkSnapshot(),
+        resolveFxUsdJpyRate(),
+        fetchTotalRealizedPnlJpy(db, userId),
+        fetchGlobalMarketIndicators(),
+        fetchEcosystemWatchlistSearchIndex(db, userId),
+      ]);
     const financial = computeFinancialTotals([], totalRealizedPnlJpy);
     const indicatorValueOrNull = (label: string): number | null => {
       const m = marketIndicators.find((x) => x.label === label);
@@ -3007,6 +3039,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       structureBySector: [],
       coreSatellite: computeCoreSatellite([]),
       totalMarketValue: 0,
+      ecosystemWatchlistSearch,
       summary: {
         portfolioAverageAlpha: 0,
         portfolioAverageFxNeutralAlpha: 0,
@@ -3031,17 +3064,27 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   }
 
   const tickers = [...new Set(h.rows.map((r) => String(r.ticker)))];
-  const [allThemes, alphaRows, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators, liveAlphaCtx, snapshotReturnRows] =
-    await Promise.all([
-      fetchAllInvestmentThemes(db, userId),
-      fetchAlphaHistoryRowsForTickers(db, userId, tickers),
-      resolveBenchmarkSnapshot(),
-      resolveFxUsdJpyRate(),
-      fetchTotalRealizedPnlJpy(db, userId),
-      fetchGlobalMarketIndicators(),
-      resolveLiveAlphaBenchmarkContext(),
-      fetchPortfolioSnapshotReturnRows(db, userId),
-    ]);
+  const [
+    allThemes,
+    alphaRows,
+    benchmarkSnap,
+    fxMaybe,
+    totalRealizedPnlJpy,
+    marketIndicators,
+    liveAlphaCtx,
+    snapshotReturnRows,
+    ecosystemWatchlistSearch,
+  ] = await Promise.all([
+    fetchAllInvestmentThemes(db, userId),
+    fetchAlphaHistoryRowsForTickers(db, userId, tickers),
+    resolveBenchmarkSnapshot(),
+    resolveFxUsdJpyRate(),
+    fetchTotalRealizedPnlJpy(db, userId),
+    fetchGlobalMarketIndicators(),
+    resolveLiveAlphaBenchmarkContext(),
+    fetchPortfolioSnapshotReturnRows(db, userId),
+    fetchEcosystemWatchlistSearchIndex(db, userId),
+  ]);
 
   const byTicker = buildByTickerFromAlphaRows(alphaRows);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
@@ -3144,6 +3187,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     coreSatellite,
     totalMarketValue,
     summary,
+    ecosystemWatchlistSearch,
   };
 }
 

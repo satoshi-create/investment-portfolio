@@ -50,10 +50,10 @@ export function Sidebar({
     <aside className="flex h-full w-[13.5rem] shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur-sm">
       <div className="shrink-0 border-b border-border px-4 py-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          <Link href="/" prefetch className="min-w-0 text-left hover:opacity-90" onClick={onNavigate}>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Cockpit</p>
             <p className="mt-1 text-sm font-semibold text-foreground">Portfolio OS</p>
-          </div>
+          </Link>
           {onToggleCollapse ? (
             <button
               type="button"
