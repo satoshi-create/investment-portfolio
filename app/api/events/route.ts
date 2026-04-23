@@ -54,6 +54,12 @@ export async function GET(request: Request) {
   const userIdRaw = searchParams.get("userId");
   const userId =
     typeof userIdRaw === "string" && userIdRaw.trim().length > 0 ? userIdRaw.trim() : defaultProfileUserId();
+  /**
+   * `watchResearch=0` のときテーマウォッチは DB の `next_earnings_date` のみ（Yahoo 省略）。
+   * カレンダー初回表示を速くし、フルはクライアントが後続フェッチする。
+   */
+  const watchResearch =
+    searchParams.get("watchResearch") !== "0" && searchParams.get("watchResearch") !== "false";
 
   try {
     const db = getDb();
@@ -101,10 +107,12 @@ export async function GET(request: Request) {
       }
 
       let researchMap = new Map<string, EquityResearchSnapshot>();
-      try {
-        researchMap = await fetchEquityResearchSnapshots(researchInputs, { concurrency: 6, batchDelayMs: 40 });
-      } catch {
-        researchMap = new Map();
+      if (watchResearch && researchInputs.length > 0) {
+        try {
+          researchMap = await fetchEquityResearchSnapshots(researchInputs, { concurrency: 6, batchDelayMs: 40 });
+        } catch {
+          researchMap = new Map();
+        }
       }
 
       const winStart = ymdAddDaysUtc(utcTodayYmd(), -5);

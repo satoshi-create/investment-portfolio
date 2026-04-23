@@ -12,6 +12,7 @@ import {
   dailyReturnPercent,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
+  utcTodayYmd,
   type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
 import { MARKET_GLANCE_MACRO_DEFS } from "@/src/lib/market-glance-macros";
@@ -305,6 +306,101 @@ function daysUntilYmd(ymd: string): number | null {
   return Math.round(diffMs / (24 * 60 * 60 * 1000));
 }
 
+type YahooEarningsDateLike = { raw?: unknown; fmt?: unknown };
+type YahooQuoteSummaryResearchShape = {
+  calendarEvents?: {
+    earnings?: {
+      earningsDate?: unknown;
+    };
+    dividends?: {
+      recordDate?: unknown;
+      dividendDate?: unknown;
+    };
+  };
+  summaryDetail?: {
+    dividendRate?: unknown;
+    dividendYield?: unknown;
+    trailingPE?: unknown;
+    forwardPE?: unknown;
+    exDividendDate?: unknown;
+  };
+  defaultKeyStatistics?: {
+    trailingEps?: unknown;
+    forwardEps?: unknown;
+    pegRatio?: unknown;
+  };
+  financialData?: { earningsGrowth?: unknown };
+  earningsTrend?: { trend?: YahooEarningsTrendRow[] };
+};
+
+/**
+ * `quoteSummary` の結果から Koyomi / リサーチ用スナップショットを組み立てる（サーバー専用）。
+ * 四半期 PL/CF モジュールを同じレスポンスに含めてもよい。
+ */
+export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper: string): EquityResearchSnapshot {
+  const qss = qs as YahooQuoteSummaryResearchShape;
+
+  const earningsArr = qss.calendarEvents?.earnings?.earningsDate ?? null;
+  const firstE =
+    Array.isArray(earningsArr) && earningsArr.length > 0 ? earningsArr[0] : earningsArr ?? null;
+  const nextEarningsDate =
+    ymdFromYahooDateLike(
+      (typeof firstE === "object" && firstE != null
+        ? ((firstE as YahooEarningsDateLike).raw ?? (firstE as YahooEarningsDateLike).fmt ?? firstE)
+        : firstE) as unknown,
+    ) ?? null;
+
+  const annualDividendRateRaw = qss.summaryDetail?.dividendRate;
+  const annualDividendRate =
+    typeof annualDividendRateRaw === "number" && Number.isFinite(annualDividendRateRaw) && annualDividendRateRaw > 0
+      ? annualDividendRateRaw
+      : null;
+
+  const dividendYieldPercent = parseDividendYieldPercent(qss.summaryDetail?.dividendYield);
+  const exDividendDate = ymdFromYahooDateLike(qss.summaryDetail?.exDividendDate as unknown) ?? null;
+  const recordDate = pickRecordDateFromQuoteSummary(qss);
+
+  const trailingPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.trailingPE);
+  const forwardPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.forwardPE);
+  const trailingEps0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.trailingEps);
+  const forwardEps0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.forwardEps);
+  const expectedGrowth = pickExpectedEarningsGrowthDecimalFromQuoteSummary(qss);
+  const yahooPeg0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.pegRatio);
+  const yahooPegRatio = yahooPeg0 != null && yahooPeg0 > 0 ? yahooPeg0 : null;
+
+  return {
+    ticker: tickerUpper,
+    nextEarningsDate,
+    exDividendDate,
+    recordDate,
+    annualDividendRate,
+    dividendYieldPercent,
+    trailingPe: trailingPe0 != null && trailingPe0 > 0 ? trailingPe0 : null,
+    forwardPe: forwardPe0 != null && forwardPe0 > 0 ? forwardPe0 : null,
+    trailingEps: trailingEps0,
+    forwardEps: forwardEps0,
+    expectedGrowth,
+    yahooPegRatio,
+  } satisfies EquityResearchSnapshot;
+}
+
+/**
+ * `quoteSummary` の `price` モジュールから、当日セッションの騰落率（%）を取り出す。
+ * Yahoo の typicalValue 形式（`{ raw, fmt }`）に対応。
+ */
+export function regularMarketChangePercentFromQuoteSummary(qs: unknown): number | null {
+  const p = (qs as { price?: Record<string, unknown> }).price;
+  if (p == null || typeof p !== "object") return null;
+  const v = p["regularMarketChangePercent"] as unknown;
+  if (v == null) return null;
+  if (typeof v === "object" && v !== null && "raw" in (v as object)) {
+    const n = Number((v as { raw: unknown }).raw);
+    if (Number.isFinite(n)) return roundAlphaMetric(n);
+  }
+  if (typeof v === "number" && Number.isFinite(v)) return roundAlphaMetric(v);
+  return null;
+}
+
 /**
  * Yahoo から「次回決算日」「配当（年率/利回り）」を取得（軽量な quoteSummary）。
  * 失敗した銘柄は null（ログのみ）で継続。
@@ -326,77 +422,7 @@ export async function fetchEquityResearchSnapshots(
         modules: ["calendarEvents", "summaryDetail", "defaultKeyStatistics", "financialData", "earningsTrend"],
       });
 
-      type YahooEarningsDateLike = { raw?: unknown; fmt?: unknown };
-      type YahooQuoteSummaryShape = {
-        calendarEvents?: {
-          earnings?: {
-            earningsDate?: unknown;
-          };
-          dividends?: {
-            recordDate?: unknown;
-            dividendDate?: unknown;
-          };
-        };
-        summaryDetail?: {
-          dividendRate?: unknown;
-          dividendYield?: unknown;
-          trailingPE?: unknown;
-          forwardPE?: unknown;
-          exDividendDate?: unknown;
-        };
-        defaultKeyStatistics?: {
-          trailingEps?: unknown;
-          forwardEps?: unknown;
-          pegRatio?: unknown;
-        };
-        financialData?: { earningsGrowth?: unknown };
-        earningsTrend?: { trend?: YahooEarningsTrendRow[] };
-      };
-      const qss = qs as unknown as YahooQuoteSummaryShape;
-
-      // calendarEvents.earnings.earningsDate: array of { raw, fmt } or Date-like
-      const earningsArr = qss.calendarEvents?.earnings?.earningsDate ?? null;
-      const firstE =
-        Array.isArray(earningsArr) && earningsArr.length > 0 ? earningsArr[0] : earningsArr ?? null;
-      const nextEarningsDate =
-        ymdFromYahooDateLike(
-          (typeof firstE === "object" && firstE != null
-            ? ((firstE as YahooEarningsDateLike).raw ?? (firstE as YahooEarningsDateLike).fmt ?? firstE)
-            : firstE) as unknown,
-        ) ?? null;
-
-      const annualDividendRateRaw = qss.summaryDetail?.dividendRate;
-      const annualDividendRate =
-        typeof annualDividendRateRaw === "number" && Number.isFinite(annualDividendRateRaw) && annualDividendRateRaw > 0
-          ? annualDividendRateRaw
-          : null;
-
-      const dividendYieldPercent = parseDividendYieldPercent(qss.summaryDetail?.dividendYield);
-      const exDividendDate = ymdFromYahooDateLike(qss.summaryDetail?.exDividendDate as unknown) ?? null;
-      const recordDate = pickRecordDateFromQuoteSummary(qss);
-
-      const trailingPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.trailingPE);
-      const forwardPe0 = parseFiniteNumberOrNull(qss.summaryDetail?.forwardPE);
-      const trailingEps0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.trailingEps);
-      const forwardEps0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.forwardEps);
-      const expectedGrowth = pickExpectedEarningsGrowthDecimalFromQuoteSummary(qss);
-      const yahooPeg0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.pegRatio);
-      const yahooPegRatio = yahooPeg0 != null && yahooPeg0 > 0 ? yahooPeg0 : null;
-
-      return {
-        ticker: ticker.toUpperCase(),
-        nextEarningsDate,
-        exDividendDate,
-        recordDate,
-        annualDividendRate,
-        dividendYieldPercent,
-        trailingPe: trailingPe0 != null && trailingPe0 > 0 ? trailingPe0 : null,
-        forwardPe: forwardPe0 != null && forwardPe0 > 0 ? forwardPe0 : null,
-        trailingEps: trailingEps0,
-        forwardEps: forwardEps0,
-        expectedGrowth,
-        yahooPegRatio,
-      } satisfies EquityResearchSnapshot;
+      return equityResearchSnapshotFromQuoteSummary(qs, ticker.toUpperCase());
     } catch (e) {
       logSkip(sym, "quoteSummary failed (research snapshot)", e);
       return null;
@@ -618,6 +644,67 @@ export async function fetchChartTotalReturnPercentSinceFirstDailyBar(
     }
   }
   if (lastErr !== undefined) logSkip(sym, "chart total return since first daily bar", lastErr);
+  return null;
+}
+
+/**
+ * イベント暦日（決算日など）**以降の最初の取引日**の終値から、**直近の日足**までの累積リターン（%）。
+ * 調整後終値が初日・末日ともに取れるときは adj で揃える（`totalReturnPercentFromSortedDailyBars` と同じ）。
+ */
+export async function fetchChartCumulativeReturnPercentSinceEventYmd(
+  ticker: string,
+  providerSymbol: string | null | undefined,
+  eventYmd: string,
+): Promise<number | null> {
+  const anchor = eventYmd.trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return null;
+  if (anchor > utcTodayYmd()) return null;
+
+  const t = ticker.trim();
+  if (t.length === 0) return null;
+
+  const runChart = async (sym: string): Promise<number | null> => {
+    const start = new Date(`${anchor}T12:00:00.000Z`);
+    start.setUTCDate(start.getUTCDate() - 14);
+    const period1 = formatDateYmd(start);
+    const result = (await yahooFinance.chart(
+      sym,
+      {
+        period1,
+        period2: new Date(),
+        interval: "1d",
+        return: "array",
+      },
+      { validateResult: false },
+    )) as { quotes?: ChartArrayQuote[] };
+    const bars = collectSortedDailyBarsFromChartQuotes(result.quotes ?? []);
+    const fromEvent = bars.filter((b) => b.ymd >= anchor);
+    if (fromEvent.length < 2) return null;
+    return totalReturnPercentFromSortedDailyBars(fromEvent);
+  };
+
+  const manual = trimProvider(providerSymbol);
+  if (manual != null) {
+    try {
+      return await runChart(manual);
+    } catch (e) {
+      logSkip(manual, "chart cumulative since event ymd", e);
+      return null;
+    }
+  }
+
+  const sym = toYahooFinanceSymbol(t, null);
+  if (!sym) return null;
+  let lastErr: unknown;
+  for (const cand of yahooSymbolFallbacks(sym, t)) {
+    try {
+      const pct = await runChart(cand);
+      if (pct != null) return pct;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr !== undefined) logSkip(sym, "chart cumulative since event ymd", lastErr);
   return null;
 }
 

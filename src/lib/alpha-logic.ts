@@ -830,3 +830,300 @@ export function computeRegionalMomentum(inputs: RegionMomentumInput[], temperatu
   out.sort((a, b) => b.gravityWeight - a.gravityWeight);
   return out;
 }
+
+/**
+ * ===== Koyomi 2.0: earnings quality (no LLM) =====
+ *
+ * Uses EPS / revenue surprise vs consensus and post-announcement `price_impact_pct`
+ * to label print quality. Thresholds are deterministic and tunable in one place.
+ */
+
+/** surprise % vs consensus: positive = beat. */
+const EARNINGS_INLINE_ABS_EPS_PCT = 0.35;
+const EARNINGS_INLINE_ABS_REV_PCT = 0.5;
+/** "Sell the news" style: print beats consensus but price tanks. */
+const EARNINGS_STRONG_POSITIVE_REACTION_PCT = 0.6;
+const EARNINGS_STRONG_NEGATIVE_REACTION_PCT = -1.0;
+const EARNINGS_SEVERE_NEGATIVE_REACTION_PCT = -2.5;
+
+export type SurpriseKind = "beat" | "inline" | "miss" | "unknown";
+
+export function classifySurprisePercent(value: number | null | undefined, inlineAbsPct: number): SurpriseKind {
+  if (value == null || !Number.isFinite(value)) return "unknown";
+  if (value > inlineAbsPct) return "beat";
+  if (value < -inlineAbsPct) return "miss";
+  return "inline";
+}
+
+/**
+ * 決算の「品質」カテゴリ。LLM なしのルール分類（表示・色・爆心地の根拠）。
+ */
+export type EarningsQualityKind =
+  | "UPCOMING"
+  | "INSUFFICIENT_DATA"
+  | "STRONG_POSITIVE" /** beat/inline かつ価格も明確に前向き */
+  | "CONFIRMED_OK" /** 悪化なし＋価格おおむね前向き */
+  | "SELL_THE_NEWS" /** 数値は beat 系だが価格が大きく悪い */
+  | "CLASSIC_NEGATIVE" /** miss ＋ 価格悪化 */
+  | "RELIEF_RALLY" /** miss だが価格は前向き */
+  | "MIXED" /** その他（例: 片方 miss・反応小） */;
+
+export type EarningsQualityResult = {
+  kind: EarningsQualityKind;
+  /** -2 強い悪 〜 +2 強い良（ヒート用の単純スコア） */
+  score: number;
+  epsSide: SurpriseKind;
+  revSide: SurpriseKind;
+};
+
+/**
+ * 確定数字と価格反応から品質を付与。`hasOutcome` が false のときは UPCOMING。
+ */
+export function computeEarningsQuality(input: {
+  hasOutcome: boolean;
+  epsSurprisePct: number | null | undefined;
+  revenueSurprisePct: number | null | undefined;
+  priceImpactPct: number | null | undefined;
+}): EarningsQualityResult {
+  if (!input.hasOutcome) {
+    return { kind: "UPCOMING", score: 0, epsSide: "unknown", revSide: "unknown" };
+  }
+
+  const pi = input.priceImpactPct;
+  const hasPrice = pi != null && Number.isFinite(pi);
+  if (!hasPrice) {
+    return { kind: "INSUFFICIENT_DATA", score: 0, epsSide: "unknown", revSide: "unknown" };
+  }
+
+  const epsSide = classifySurprisePercent(input.epsSurprisePct, EARNINGS_INLINE_ABS_EPS_PCT);
+  const revSide = classifySurprisePercent(input.revenueSurprisePct, EARNINGS_INLINE_ABS_REV_PCT);
+
+  if (epsSide === "unknown" && revSide === "unknown") {
+    if (pi >= EARNINGS_STRONG_POSITIVE_REACTION_PCT) {
+      return { kind: "MIXED", score: 1, epsSide, revSide };
+    }
+    if (pi <= EARNINGS_SEVERE_NEGATIVE_REACTION_PCT) {
+      return { kind: "MIXED", score: -1, epsSide, revSide };
+    }
+    return { kind: "INSUFFICIENT_DATA", score: 0, epsSide, revSide };
+  }
+
+  if (epsSide === "miss" || revSide === "miss") {
+    if (pi >= EARNINGS_STRONG_POSITIVE_REACTION_PCT) {
+      return { kind: "RELIEF_RALLY", score: 0, epsSide, revSide };
+    }
+    if (pi <= EARNINGS_STRONG_NEGATIVE_REACTION_PCT) {
+      return { kind: "CLASSIC_NEGATIVE", score: -2, epsSide, revSide };
+    }
+    return { kind: "MIXED", score: -0.5, epsSide, revSide };
+  }
+
+  if (epsSide === "beat") {
+    if (pi <= EARNINGS_STRONG_NEGATIVE_REACTION_PCT) {
+      return { kind: "SELL_THE_NEWS", score: -1.5, epsSide, revSide };
+    }
+    if (pi >= EARNINGS_STRONG_POSITIVE_REACTION_PCT) {
+      return { kind: "STRONG_POSITIVE", score: 2, epsSide, revSide };
+    }
+    return { kind: "CONFIRMED_OK", score: 0.5, epsSide, revSide };
+  }
+
+  if (revSide === "beat") {
+    if (pi <= EARNINGS_STRONG_NEGATIVE_REACTION_PCT) {
+      return { kind: "SELL_THE_NEWS", score: -1, epsSide, revSide };
+    }
+    if (pi >= EARNINGS_STRONG_POSITIVE_REACTION_PCT) {
+      return { kind: "STRONG_POSITIVE", score: 1.5, epsSide, revSide };
+    }
+  }
+
+  if (epsSide === "inline" && revSide === "inline" && pi >= EARNINGS_STRONG_POSITIVE_REACTION_PCT) {
+    return { kind: "STRONG_POSITIVE", score: 1, epsSide, revSide };
+  }
+  if (pi <= EARNINGS_SEVERE_NEGATIVE_REACTION_PCT) {
+    return { kind: "CLASSIC_NEGATIVE", score: -1.5, epsSide, revSide };
+  }
+  if (pi <= EARNINGS_STRONG_NEGATIVE_REACTION_PCT) {
+    return { kind: "MIXED", score: -0.5, epsSide, revSide };
+  }
+  return { kind: "CONFIRMED_OK", score: 0, epsSide, revSide };
+}
+
+/** 同テーマ内の「爆心地」候補: 明確にネガ（先行悪化で連れ安の起点になりうる） */
+export function isEpicenterCandidate(quality: EarningsQualityResult): boolean {
+  if (quality.kind === "CLASSIC_NEGATIVE" || quality.kind === "SELL_THE_NEWS") return true;
+  return false;
+}
+
+export type EarningsEpicenterInput = {
+  id: string;
+  ymd: string;
+  /** 同一日の並び: 小さいほど先（市場先発を模擬。未指定は 0） */
+  dayOrder: number;
+  hasOutcome: boolean;
+  quality: EarningsQualityResult;
+  priceImpactPct: number | null;
+};
+
+/**
+ * テーマ内のイベント列（日付昇順にソート済み）に、爆心地フラグと重力汚染 0..1 を付与。
+ * 同じ日は `dayOrder` で先行を決定。
+ */
+export function applyThemeEpicenterGravity(events: EarningsEpicenterInput[]): Map<string, { isEpicenter: boolean; gravityTaint: number }> {
+  const out = new Map<string, { isEpicenter: boolean; gravityTaint: number }>();
+
+  const sorted = [...events].sort(
+    (a, b) => a.ymd.localeCompare(b.ymd) || a.dayOrder - b.dayOrder || a.id.localeCompare(b.id),
+  );
+
+  let epicenterIdx: number | null = null;
+  let epicenterStrength = 0;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const e = sorted[i]!;
+    if (!e.hasOutcome || !isEpicenterCandidate(e.quality)) continue;
+    const pi = e.priceImpactPct;
+    if (pi == null || !Number.isFinite(pi) || pi > EARNINGS_STRONG_NEGATIVE_REACTION_PCT) continue;
+    epicenterIdx = i;
+    epicenterStrength = Math.min(1, Math.abs(pi) / 8);
+    break;
+  }
+
+  for (const e of sorted) {
+    out.set(e.id, { isEpicenter: false, gravityTaint: 0 });
+  }
+
+  if (epicenterIdx == null) return out;
+
+  const ep = sorted[epicenterIdx]!;
+  out.set(ep.id, { isEpicenter: true, gravityTaint: 0 });
+
+  for (let j = epicenterIdx + 1; j < sorted.length; j++) {
+    const e = sorted[j]!;
+    const dayDiff = ymdDayDiff(ep.ymd, e.ymd);
+    if (dayDiff < 0) continue;
+    let decay = Math.exp(-0.4 * dayDiff);
+    if (dayDiff === 0 && e.dayOrder > ep.dayOrder) decay *= 0.88; // 同一セッション内の後発
+    const taint = roundAlphaMetric(Math.min(1, epicenterStrength * decay));
+    out.set(e.id, { isEpicenter: false, gravityTaint: taint });
+  }
+
+  return out;
+}
+
+function ymdDayDiff(a: string, b: string): number {
+  const as = a.trim().slice(0, 10);
+  const bs = b.trim().slice(0, 10);
+  if (as.length !== 10 || bs.length !== 10) return 0;
+  const ta = new Date(`${as}T12:00:00Z`).getTime();
+  const tb = new Date(`${bs}T12:00:00Z`).getTime();
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return 0;
+  return Math.round((tb - ta) / 86_400_000);
+}
+
+/**
+ * ===== Rule of 40（既存定義）=====
+ *
+ * ダッシュボードと同系: **売上成長率（%） + FCF マージン（%）**。
+ * Yahoo 四半期系列から算出した 2 点の差分に `positive` / `negative` / `flat` / `unknown` を付与。
+ */
+
+export function computeRuleOf40FromGrowthAndMargin(
+  revenueGrowthPct: number | null | undefined,
+  fcfMarginPct: number | null | undefined,
+): number | null {
+  if (revenueGrowthPct == null || fcfMarginPct == null) return null;
+  if (!Number.isFinite(revenueGrowthPct) || !Number.isFinite(fcfMarginPct)) return null;
+  return roundAlphaMetric(revenueGrowthPct + fcfMarginPct);
+}
+
+/**
+ * 隣接する前四半期との売上成長率（%）と当四半期の FCF マージン（%）から Rule of 40 を算出。
+ * `priorRevenue` は比較基準となる直前四半期の売上（正の有限値必須）。
+ */
+export function computeQuarterlyRuleOf40FromAdjacent(
+  currentRevenue: number,
+  priorRevenue: number,
+  currentFreeCashFlow: number,
+): number | null {
+  if (!Number.isFinite(currentRevenue) || !Number.isFinite(priorRevenue) || !Number.isFinite(currentFreeCashFlow)) {
+    return null;
+  }
+  if (priorRevenue <= 0 || currentRevenue <= 0) return null;
+  const revenueGrowthPct = ((currentRevenue - priorRevenue) / priorRevenue) * 100;
+  const fcfMarginPct = (currentFreeCashFlow / currentRevenue) * 100;
+  return computeRuleOf40FromGrowthAndMargin(revenueGrowthPct, fcfMarginPct);
+}
+
+export type RuleOf40DeltaStatus = "positive" | "negative" | "flat" | "unknown";
+
+/**
+ * 直近四半期の Rule of 40 とその 1 四半期前の Rule of 40 の差分。
+ * `epsilonPct` 未満の差は `flat`（ノイズ抑制）。
+ */
+export function computeRuleOf40DeltaStatus(
+  priorRuleOf40: number | null | undefined,
+  currentRuleOf40: number | null | undefined,
+  options?: { epsilonPct?: number },
+): { delta: number | null; status: RuleOf40DeltaStatus } {
+  const eps = options?.epsilonPct ?? 0.35;
+  if (currentRuleOf40 == null || priorRuleOf40 == null) {
+    return { delta: null, status: "unknown" };
+  }
+  if (!Number.isFinite(currentRuleOf40) || !Number.isFinite(priorRuleOf40)) {
+    return { delta: null, status: "unknown" };
+  }
+  const delta = roundAlphaMetric(currentRuleOf40 - priorRuleOf40);
+  if (!Number.isFinite(delta)) return { delta: null, status: "unknown" };
+  if (Math.abs(delta) < eps) return { delta, status: "flat" };
+  if (delta > 0) return { delta, status: "positive" };
+  return { delta, status: "negative" };
+}
+
+/**
+ * 四半期「筋肉」スコア: **直前四半期比売上成長率（%） + 当四半期営業利益率（%）**。
+ * 営業利益が欠損または非有限のときは null。
+ */
+export function computeQuarterlyMuscleScoreFromAdjacent(
+  currentRevenue: number,
+  priorRevenue: number,
+  currentOperatingIncome: number | null | undefined,
+): number | null {
+  if (!Number.isFinite(currentRevenue) || !Number.isFinite(priorRevenue)) return null;
+  if (priorRevenue <= 0 || currentRevenue <= 0) return null;
+  const oi = currentOperatingIncome;
+  if (oi == null || !Number.isFinite(oi)) return null;
+  const revenueGrowthPct = ((currentRevenue - priorRevenue) / priorRevenue) * 100;
+  const operatingMarginPct = (oi / currentRevenue) * 100;
+  if (!Number.isFinite(revenueGrowthPct) || !Number.isFinite(operatingMarginPct)) return null;
+  return roundAlphaMetric(revenueGrowthPct + operatingMarginPct);
+}
+
+export type FundamentalMuscleDeltaStatus = RuleOf40DeltaStatus;
+
+/**
+ * 直近四半期の筋肉スコアとその 1 四半期前のスコアから Delta / ステータスを付与。
+ */
+export function computeFundamentalMuscleDeltaStatus(
+  priorScore: number | null | undefined,
+  currentScore: number | null | undefined,
+  options?: { epsilonPct?: number },
+): { delta: number | null; status: FundamentalMuscleDeltaStatus } {
+  return computeRuleOf40DeltaStatus(priorScore, currentScore, options);
+}
+
+/** 筋肉（売上成長+営業利益率）が前四半期比で改善なのに、株価が一定以上下げている場合（例: 市場の連れ安） */
+export const MISPRICED_SESSION_DROP_PCT = 3;
+
+export function isMispricedPositiveMuscleWithSessionDrop(input: {
+  muscleDeltaStatus: FundamentalMuscleDeltaStatus;
+  regularMarketChangePercent: number | null | undefined;
+  /** デフォルト 3（= 株価 -3% 以上下落） */
+  minDropAbsPct?: number;
+}): boolean {
+  if (input.muscleDeltaStatus !== "positive") return false;
+  const p = input.regularMarketChangePercent;
+  if (p == null || !Number.isFinite(p)) return false;
+  const minAbs = input.minDropAbsPct ?? MISPRICED_SESSION_DROP_PCT;
+  return p <= -minAbs;
+}
