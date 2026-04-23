@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 
 import type { MarketIndicator } from "@/src/types/investment";
+import { cn } from "@/src/lib/cn";
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
@@ -10,6 +11,12 @@ function formatPct(pct: number): string {
   if (!Number.isFinite(pct)) return "—";
   const sign = pct > 0 ? "+" : "";
   return `${sign}${pct.toFixed(2)}%`;
+}
+
+function formatDeltaPts(delta: number): string {
+  if (!Number.isFinite(delta)) return "—";
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta.toFixed(2)}`;
 }
 
 type Regime = "Risk-on" | "Neutral" | "Risk-off";
@@ -31,6 +38,19 @@ function regimeColor(regime: Regime): { text: string; accent: string } {
   return { text: "text-muted-foreground", accent: "bg-slate-300/60 dark:bg-slate-500/50" };
 }
 
+/**
+ * 日次変動の強調（changePct・Δpt は Yahoo 終値ベースの近似に依存）:
+ * - Spike: changePct ≥ 10 または Δ ≥ 1.5 → 警告色 + pulse
+ * - Calm: 上記以外で changePct ≤ −5 または Δ ≤ −0.75 → 落ち着きアクセント
+ */
+function vixDayMoveFlags(pct: number, deltaPts: number | null): { spike: boolean; calm: boolean } {
+  const spike = pct >= 10 || (deltaPts != null && Number.isFinite(deltaPts) && deltaPts >= 1.5);
+  if (spike) return { spike: true, calm: false };
+  const calm =
+    pct <= -5 || (deltaPts != null && Number.isFinite(deltaPts) && deltaPts <= -0.75);
+  return { spike: false, calm };
+}
+
 export function RiskRegimeGauge({ indicators }: { indicators: MarketIndicator[] }) {
   const vix = useMemo(() => indicators.find((x) => x.label === "VIX") ?? null, [indicators]);
 
@@ -41,11 +61,36 @@ export function RiskRegimeGauge({ indicators }: { indicators: MarketIndicator[] 
     return { regime, score, posPct };
   }, [vix]);
 
+  const dayMove = useMemo(() => {
+    if (!vix || !Number.isFinite(vix.value) || vix.value <= 0) return null;
+    const val = vix.value;
+    const pct = vix.changePct;
+    if (!Number.isFinite(pct)) return { prior: null as number | null, deltaPts: null as number | null, pct };
+    if (pct <= -100) return { prior: null, deltaPts: null, pct };
+    const prior = val / (1 + pct / 100);
+    if (!Number.isFinite(prior) || prior <= 0) return { prior: null, deltaPts: null, pct };
+    const deltaPts = val - prior;
+    return {
+      prior,
+      deltaPts: Number.isFinite(deltaPts) ? deltaPts : null,
+      pct,
+    };
+  }, [vix]);
+
+  const moveStyle = useMemo(() => {
+    if (!dayMove) return { spike: false, calm: false };
+    return vixDayMoveFlags(dayMove.pct, dayMove.deltaPts);
+  }, [dayMove]);
+
   const meta = derived ? regimeColor(derived.regime) : { text: "text-muted-foreground", accent: "bg-slate-300/60" };
 
   return (
     <section
-      className="rounded-2xl border border-border bg-card/60 px-4 py-3 shadow-inner min-w-[14.5rem]"
+      className={cn(
+        "rounded-2xl border border-border bg-card/60 px-4 py-3 shadow-inner min-w-[14.5rem] transition-colors",
+        moveStyle.spike && "border-amber-500/55 bg-amber-500/[0.07]",
+        moveStyle.calm && !moveStyle.spike && "border-emerald-500/35 bg-emerald-500/[0.06]",
+      )}
       aria-label="Risk regime (VIX)"
     >
       <div className="flex items-baseline justify-between gap-3">
@@ -71,15 +116,49 @@ export function RiskRegimeGauge({ indicators }: { indicators: MarketIndicator[] 
           ) : null}
         </div>
 
-        <div className="mt-2 flex items-center justify-between gap-3 text-[11px]">
+        <div
+          className={cn(
+            "mt-2 flex flex-col gap-1 text-[11px] sm:flex-row sm:items-center sm:justify-between sm:gap-3",
+            moveStyle.spike && "motion-safe:animate-pulse",
+          )}
+        >
           <span className="text-muted-foreground">
             VIX{" "}
             <span className="font-mono font-semibold text-foreground/90 tabular-nums">
               {vix && vix.value > 0 && Number.isFinite(vix.value) ? vix.value.toFixed(2) : "—"}
             </span>
+            {dayMove?.prior != null && Number.isFinite(dayMove.prior) ? (
+              <span
+                className="ml-1.5 text-[10px] font-mono tabular-nums text-muted-foreground/85"
+                title="前日終値の近似: 現在値 ÷ (1 + 騰落率/100)"
+              >
+                (前日≈{dayMove.prior.toFixed(2)})
+              </span>
+            ) : null}
           </span>
-          <span className="font-mono font-bold tabular-nums text-muted-foreground" title="VIX 1D change %">
-            {vix && vix.value > 0 ? formatPct(vix.changePct) : "—"}
+          <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 font-mono font-bold tabular-nums">
+            {dayMove?.deltaPts != null && Number.isFinite(dayMove.deltaPts) ? (
+              <span
+                className={cn(
+                  "text-foreground/90",
+                  moveStyle.spike && "text-amber-200",
+                  moveStyle.calm && !moveStyle.spike && "text-emerald-200/95",
+                )}
+                title="VIX のポイント変化（現在 − 前日近似）"
+              >
+                Δ{formatDeltaPts(dayMove.deltaPts)}pt
+              </span>
+            ) : null}
+            <span
+              className={cn(
+                "text-muted-foreground",
+                moveStyle.spike && "text-amber-200/95",
+                moveStyle.calm && !moveStyle.spike && "text-emerald-200/90",
+              )}
+              title="VIX 1D change %"
+            >
+              {vix && vix.value > 0 ? formatPct(vix.changePct) : "—"}
+            </span>
           </span>
         </div>
 
@@ -90,4 +169,3 @@ export function RiskRegimeGauge({ indicators }: { indicators: MarketIndicator[] 
     </section>
   );
 }
-

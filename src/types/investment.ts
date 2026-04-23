@@ -122,11 +122,11 @@ export interface Stock {
   nextEarningsDate: string | null;
   /** 次回決算までの日数（今日基準）。取得できない場合は null */
   daysToEarnings: number | null;
-  /** 権利落ち日（ex-dividend date, YYYY-MM-DD）。取得できない場合は null */
+  /** 権利落ち日（ex-dividend date, YYYY-MM-DD）。取得できない場合は null。Inventory の配当カレンダーでは月次バケットに「X」表示 */
   exDividendDate: string | null;
   /** 権利落ちまでの日数（今日基準）。取得できない場合は null */
   daysToExDividend: number | null;
-  /** 権利確定日（record date, YYYY-MM-DD）。取得できない場合は null */
+  /** 権利確定日（record date, YYYY-MM-DD）。取得できない場合は null。配当カレンダーでは月次バケットに「R」表示 */
   recordDate: string | null;
   /** 権利確定までの日数（今日基準）。取得できない場合は null */
   daysToRecordDate: number | null;

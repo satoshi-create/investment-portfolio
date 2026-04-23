@@ -233,6 +233,259 @@ function stockHasUsableQuote(s: Stock): boolean {
   return s.currentPrice != null && Number.isFinite(s.currentPrice) && s.currentPrice > 0;
 }
 
+type UtcYearMonth = { y: number; m: number };
+
+function utcAddMonths(base: UtcYearMonth, delta: number): UtcYearMonth {
+  const d = new Date(Date.UTC(base.y, base.m - 1 + delta, 1));
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 };
+}
+
+function utcMonthKey(ym: UtcYearMonth): string {
+  return `${ym.y}-${String(ym.m).padStart(2, "0")}`;
+}
+
+function parseStockYmd(ymd: string | null): string | null {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  return ymd;
+}
+
+type DividendCalendarMark = { ticker: string; x: boolean; r: boolean };
+
+/** 1 日セル用: 月曜始まり・UTC（先頭は空セル）。 */
+function utcMonthGridCells(ym: UtcYearMonth): ({ dayNum: null } | { dayNum: number; ymd: string })[] {
+  const dim = new Date(Date.UTC(ym.y, ym.m, 0)).getUTCDate();
+  const d1 = new Date(Date.UTC(ym.y, ym.m - 1, 1));
+  const dowSun0 = d1.getUTCDay();
+  const leadMon0 = (dowSun0 + 6) % 7;
+  const cells: ({ dayNum: null } | { dayNum: number; ymd: string })[] = [];
+  for (let i = 0; i < leadMon0; i++) cells.push({ dayNum: null });
+  for (let d = 1; d <= dim; d++) {
+    const ymd = `${ym.y}-${String(ym.m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    cells.push({ dayNum: d, ymd });
+  }
+  while (cells.length % 7 !== 0) cells.push({ dayNum: null });
+  return cells;
+}
+
+/** UTC で「今月の前月」〜「今月+6ヶ月」の範囲に、日付ごとに ex(X) / record(R) をバケット（sortedStocks 基準）。 */
+function buildDividendCalendarData(sortedStocks: Stock[]): {
+  months: UtcYearMonth[];
+  byDay: Map<string, DividendCalendarMark[]>;
+} {
+  const now = new Date();
+  const thisMonth: UtcYearMonth = { y: now.getUTCFullYear(), m: now.getUTCMonth() + 1 };
+  const start = utcAddMonths(thisMonth, -1);
+  const months: UtcYearMonth[] = [];
+  for (let i = 0; i < 8; i++) {
+    months.push(utcAddMonths(start, i));
+  }
+  const monthKeys = new Set(months.map(utcMonthKey));
+  const byDay = new Map<string, DividendCalendarMark[]>();
+  for (const s of sortedStocks) {
+    const t = s.ticker.trim().toUpperCase();
+    const bumpDay = (ymdRaw: string | null, kind: "x" | "r") => {
+      const ymd = parseStockYmd(ymdRaw);
+      if (!ymd) return;
+      if (!monthKeys.has(ymd.slice(0, 7))) return;
+      const list = byDay.get(ymd) ?? [];
+      const exists = list.find((c) => c.ticker === t);
+      if (exists) {
+        if (kind === "x") exists.x = true;
+        else exists.r = true;
+      } else {
+        list.push({ ticker: t, x: kind === "x", r: kind === "r" });
+      }
+      byDay.set(ymd, list);
+    };
+    bumpDay(s.exDividendDate, "x");
+    bumpDay(s.recordDate, "r");
+  }
+  for (const list of byDay.values()) {
+    list.sort((a, b) => a.ticker.localeCompare(b.ticker, "ja"));
+  }
+  return { months, byDay };
+}
+
+const UTC_WEEKDAY_HEAD_JA = ["月", "火", "水", "木", "金", "土", "日"] as const;
+const DIVIDEND_CELL_TICKER_CAP = 3;
+
+function DividendCalendarModal({
+  open,
+  onClose,
+  data,
+}: {
+  open: boolean;
+  onClose: () => void;
+  data: { months: UtcYearMonth[]; byDay: Map<string, DividendCalendarMark[]> };
+}) {
+  if (!open) return null;
+  const now = new Date();
+  const todayUtcYmd = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
+      role="presentation"
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
+        aria-label="モーダルを閉じる"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dividend-calendar-title"
+        className="relative z-10 flex max-h-[min(92dvh,56rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl min-h-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+          <div className="min-w-0 space-y-1">
+            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Inventory</p>
+            <h2 id="dividend-calendar-title" className="text-base font-bold tracking-tight text-foreground sm:text-lg">
+              配当カレンダー
+            </h2>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              表示中の銘柄 · UTC · 前月〜今月+6 ヶ月 · 週は月曜始まり
+            </p>
+            <div className="flex flex-wrap items-center gap-3 pt-1 text-[10px]">
+              <span className="inline-flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400">
+                <span aria-hidden>X</span>
+                <span className="font-normal text-muted-foreground">権利落ち（ex-dividend）</span>
+              </span>
+              <span className="inline-flex items-center gap-1 font-bold text-sky-600 dark:text-sky-400">
+                <span aria-hidden>R</span>
+                <span className="font-normal text-muted-foreground">権利確定（record）</span>
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation"
+            aria-label="閉じる"
+          >
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-2">
+            {data.months.map((mon) => {
+              const key = utcMonthKey(mon);
+              const cells = utcMonthGridCells(mon);
+              return (
+                <div
+                  key={key}
+                  className="rounded-xl border border-border/90 bg-background/50 p-3 shadow-inner sm:p-3.5"
+                >
+                  <p className="mb-2 text-center text-xs font-bold tabular-nums text-foreground/90 sm:text-sm">
+                    {mon.y}年{mon.m}月
+                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">UTC</span>
+                  </p>
+                  <div className="grid grid-cols-7 gap-px rounded-lg border border-border/60 bg-border/80 overflow-hidden text-[10px]">
+                    {UTC_WEEKDAY_HEAD_JA.map((w) => (
+                      <div
+                        key={`${key}-h-${w}`}
+                        className="bg-muted/70 py-1 text-center font-bold text-muted-foreground"
+                      >
+                        {w}
+                      </div>
+                    ))}
+                    {cells.map((cell, idx) => {
+                      if (cell.dayNum == null) {
+                        return (
+                          <div
+                            key={`${key}-e-${idx}`}
+                            className="min-h-[4.5rem] bg-muted/25 sm:min-h-[5rem]"
+                            aria-hidden
+                          />
+                        );
+                      }
+                      const ymd = cell.ymd;
+                      const marks = data.byDay.get(ymd) ?? [];
+                      const isToday = ymd === todayUtcYmd;
+                      const hasX = marks.some((m) => m.x);
+                      const hasR = marks.some((m) => m.r);
+                      const title = marks
+                        .map((m) => `${m.ticker}${m.x ? " X" : ""}${m.r ? " R" : ""}`)
+                        .join(", ");
+                      return (
+                        <div
+                          key={ymd}
+                          title={marks.length ? title : undefined}
+                          className={cn(
+                            "flex min-h-[4.5rem] flex-col gap-0.5 border-t border-l border-border/40 bg-card/90 p-1 sm:min-h-[5rem] sm:p-1.5",
+                            isToday && "ring-2 ring-accent-cyan/70 ring-inset z-[1]",
+                            !marks.length && "bg-card/95",
+                            marks.length > 0 &&
+                              hasX &&
+                              hasR &&
+                              "bg-gradient-to-br from-amber-500/12 to-sky-500/12",
+                            marks.length > 0 && hasX && !hasR && "bg-amber-500/10",
+                            marks.length > 0 && hasR && !hasX && "bg-sky-500/10",
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-0.5">
+                            <span
+                              className={cn(
+                                "font-mono text-[11px] font-bold tabular-nums leading-none sm:text-xs",
+                                isToday ? "text-accent-cyan" : "text-foreground/85",
+                              )}
+                            >
+                              {cell.dayNum}
+                            </span>
+                            {marks.length > 0 ? (
+                              <span className="flex shrink-0 gap-0.5">
+                                {hasX ? (
+                                  <span className="text-[8px] font-black leading-none text-amber-600 dark:text-amber-400">
+                                    X
+                                  </span>
+                                ) : null}
+                                {hasR ? (
+                                  <span className="text-[8px] font-black leading-none text-sky-600 dark:text-sky-400">
+                                    R
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
+                          </div>
+                          {marks.length > 0 ? (
+                            <ul className="mt-0.5 min-w-0 flex-1 space-y-0.5">
+                              {marks.slice(0, DIVIDEND_CELL_TICKER_CAP).map((mk) => (
+                                <li
+                                  key={`${ymd}-${mk.ticker}`}
+                                  className="truncate font-mono text-[8px] leading-tight text-foreground/90 sm:text-[9px]"
+                                >
+                                  <span className="font-semibold">{mk.ticker}</span>
+                                  <span className="text-muted-foreground">
+                                    {mk.x ? "·X" : ""}
+                                    {mk.r ? "·R" : ""}
+                                  </span>
+                                </li>
+                              ))}
+                              {marks.length > DIVIDEND_CELL_TICKER_CAP ? (
+                                <li className="text-[8px] font-bold text-muted-foreground">
+                                  他 {marks.length - DIVIDEND_CELL_TICKER_CAP}
+                                </li>
+                              ) : null}
+                            </ul>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SortableInventoryTh({
   id,
   className,
@@ -382,6 +635,7 @@ export function InventoryTable({
   const [inventoryTableCompact, setInventoryTableCompact] = useState(false);
   const [bookmarksOnly, setBookmarksOnly] = useState(false);
   const [hideIncompleteQuotes, setHideIncompleteQuotes] = useState(false);
+  const [dividendCalendarModalOpen, setDividendCalendarModalOpen] = useState(false);
   const [memoModalStock, setMemoModalStock] = useState<Stock | null>(null);
   const [memoDraft, setMemoDraft] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
@@ -414,6 +668,15 @@ export function InventoryTable({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [lynchModalStock, lynchSaving]);
+
+  useEffect(() => {
+    if (!dividendCalendarModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDividendCalendarModalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dividendCalendarModalOpen]);
 
   const [bookmarkPatch, addBookmarkPatch] = useOptimistic(
     {} as Record<string, boolean>,
@@ -559,6 +822,8 @@ export function InventoryTable({
     });
     return arr;
   }, [filteredStocks, sortDir, sortKey]);
+
+  const dividendCalendarData = useMemo(() => buildDividendCalendarData(sortedStocks), [sortedStocks]);
 
   useEffect(() => {
     const raw = highlightTicker?.trim();
@@ -895,6 +1160,19 @@ export function InventoryTable({
             title="Alpha 乖離（Z）と 90 日高値からの落ち率を表示"
           >
             乖離・落率
+          </button>
+          <button
+            type="button"
+            onClick={() => setDividendCalendarModalOpen(true)}
+            className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
+              dividendCalendarModalOpen
+                ? "text-sky-300 border-sky-500/45 bg-sky-500/10"
+                : "text-muted-foreground border-border hover:bg-muted/50"
+            }`}
+            title="配当カレンダー（モーダル・UTC・前月〜+6 ヶ月）。権利落ち X・権利確定 R"
+          >
+            <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            配当カレンダー
           </button>
           <InventoryTableColumnToolbar
             baseVisibleColumnIds={inventoryBaseVisibleColumnIds}
@@ -1369,7 +1647,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right whitespace-nowrap"
-                            title="現在値（Price）"
+                            title="上段: 現在値 · 下段: 平均取得（あれば）· 現在と取得が有効なとき含み損益%（dashboard-data 由来）"
                           >
                             <span className="pointer-events-none">Price</span>
                           </SortableInventoryTh>
@@ -1987,20 +2265,51 @@ export function InventoryTable({
                             {fmtEps(epsOf(stock))}
                           </td>
                         );
-                      case "price":
+                      case "price": {
+                        const curOk =
+                          stock.currentPrice != null &&
+                          Number.isFinite(stock.currentPrice) &&
+                          stock.currentPrice > 0;
+                        const avg = stock.avgAcquisitionPrice;
+                        const avgOk = avg != null && Number.isFinite(avg) && avg > 0;
+                        const pctForTone = curOk && avgOk ? stock.unrealizedPnlPercent : null;
+                        const pctTone = investmentMetricToneForSignedPercent(pctForTone);
+                        const pctCls =
+                          pctForTone == null || !Number.isFinite(pctForTone)
+                            ? "text-muted-foreground"
+                            : INVESTMENT_METRIC_TONE_TEXT_CLASS[pctTone];
+                        const pctStr =
+                          pctForTone != null && Number.isFinite(pctForTone)
+                            ? `${pctForTone > 0 ? "+" : ""}${pctForTone.toFixed(2)}%`
+                            : null;
                         return (
                           <td key={colId} className="px-4 py-4 text-right group-hover:bg-muted/60">
-                            <div className="flex flex-col items-end gap-0.5 min-w-[5.75rem]">
+                            <div className="flex flex-col items-end gap-0.5 min-w-[6.5rem]">
                               <span className="font-mono text-foreground/90 font-bold tabular-nums">
-                                {stock.currentPrice != null && stock.currentPrice > 0
+                                {curOk
                                   ? formatLocalPriceForView(
-                                      stock.currentPrice,
+                                      stock.currentPrice!,
                                       nativeCurrencyForStock(stock),
                                       viewCurrency,
                                       convert,
                                     )
                                   : "—"}
                               </span>
+                              {avgOk ? (
+                                <span className="text-[10px] font-mono tabular-nums text-muted-foreground">
+                                  {formatLocalPriceForView(
+                                    avg!,
+                                    nativeCurrencyForStock(stock),
+                                    viewCurrency,
+                                    convert,
+                                  )}
+                                  {pctStr != null ? (
+                                    <span className={`ml-1.5 font-semibold ${pctCls}`} title="含み損益%（平均取得比）">
+                                      {pctStr}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              ) : null}
                               {stock.priceSource === "live" && stock.lastUpdatedAt ? (
                                 <span
                                   className="inline-flex items-center gap-1 text-[9px] text-muted-foreground font-mono"
@@ -2018,6 +2327,7 @@ export function InventoryTable({
                             </div>
                           </td>
                         );
+                      }
                       default: {
                         const _exhaustive: never = colId;
                         return _exhaustive;
@@ -2270,6 +2580,12 @@ export function InventoryTable({
         </table>
         </DndContext>
       </div>
+
+      <DividendCalendarModal
+        open={dividendCalendarModalOpen}
+        onClose={() => setDividendCalendarModalOpen(false)}
+        data={dividendCalendarData}
+      />
 
       {noteModalStock ? (
         <div
