@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 import {
   addMemberToEcosystem,
@@ -11,8 +12,31 @@ import {
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { getDb, isDbConfigured } from "@/src/lib/db";
 import { fetchCompanyNameForTicker } from "@/src/lib/price-service";
+import { normalizeEcosystemMemberField } from "@/src/lib/ecosystem-field-meta";
+import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 
 export const dynamic = "force-dynamic";
+
+function revalidateThemeRelatedPaths(themeSlugForRevalidate: unknown) {
+  revalidatePath("/");
+  revalidatePath("/themes", "layout");
+  const slug =
+    typeof themeSlugForRevalidate === "string" && themeSlugForRevalidate.trim().length > 0
+      ? themeSlugForRevalidate.trim()
+      : "";
+  if (slug.length > 0) {
+    revalidatePath(`/themes/${slug}`);
+  }
+}
+
+function normalizeEarningsSummaryNoteBody(raw: unknown): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw == null) return null;
+  if (typeof raw !== "string") return undefined;
+  const t = raw.trim();
+  if (t.length === 0) return null;
+  return t.slice(0, EARNINGS_SUMMARY_NOTE_MAX_LEN);
+}
 
 function parseOptionalObservationDate(raw: unknown): string | null | "invalid" {
   if (raw == null) return null;
@@ -37,6 +61,12 @@ type Body = {
   memo?: string | null;
   /** 銘柄投入日（観測開始）YYYY-MM-DD */
   observationStartedAt?: string | null;
+  /** 分類タグ（DB `field`）。空・未送信は NULL 扱い */
+  ecosystemField?: string | null;
+  /** 決算要約メモ（Markdown）。PATCH でのみ送る場合あり */
+  earningsSummaryNote?: string | null;
+  /** `revalidatePath` 用（URL のテーマスラッグ・`themeLabel` と同じ） */
+  themeSlugForRevalidate?: string | null;
   memberId?: string;
   /** DB `listing_date`（上場日・YYYY-MM-DD） */
   listingDate?: string | null;
@@ -83,6 +113,7 @@ export async function POST(request: Request) {
 
   try {
     const resolvedName = companyName && companyName.length > 0 ? companyName : await fetchCompanyNameForTicker(ticker);
+    const ecosystemField = normalizeEcosystemMemberField(body.ecosystemField);
     await addMemberToEcosystem(getDb(), {
       userId,
       themeId,
@@ -91,7 +122,9 @@ export async function POST(request: Request) {
       isMajorPlayer,
       companyName: resolvedName,
       observationStartedAt: parsedObs,
+      ecosystemField,
     });
+    revalidateThemeRelatedPaths(body.themeSlugForRevalidate);
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof EcosystemMemberAuthError) {
@@ -101,6 +134,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: e.message, code: e.code }, { status: 409 });
     }
     const message = e instanceof Error ? e.message : "Unknown error";
+    const lower = message.toLowerCase();
+    if (lower.includes("no such column") && lower.includes("earnings_summary_note")) {
+      return NextResponse.json(
+        {
+          error:
+            "DB に earnings_summary_note 列がありません。migrations/052_theme_ecosystem_category_earnings_summary.sql を適用してください。",
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -187,6 +230,22 @@ export async function PATCH(request: Request) {
     }
   }
 
+  let ecosystemFieldPatch: string | null | undefined = undefined;
+  if (body.ecosystemField !== undefined) {
+    if (body.ecosystemField === null) {
+      ecosystemFieldPatch = null;
+    } else if (typeof body.ecosystemField === "string") {
+      ecosystemFieldPatch = normalizeEcosystemMemberField(body.ecosystemField);
+    } else {
+      return NextResponse.json({ error: "ecosystemField は文字列または null です" }, { status: 400 });
+    }
+  }
+
+  if (body.earningsSummaryNote !== undefined && body.earningsSummaryNote != null && typeof body.earningsSummaryNote !== "string") {
+    return NextResponse.json({ error: "earningsSummaryNote は文字列または null です" }, { status: 400 });
+  }
+  const earningsNotePatch = normalizeEarningsSummaryNoteBody(body.earningsSummaryNote);
+
   try {
     await updateEcosystemMember(getDb(), {
       userId,
@@ -199,7 +258,10 @@ export async function PATCH(request: Request) {
       listingDate: listingDatePatch,
       marketCap: marketCapPatch,
       listingPrice: listingPricePatch,
+      ecosystemField: ecosystemFieldPatch,
+      earningsSummaryNote: earningsNotePatch,
     });
+    revalidateThemeRelatedPaths(body.themeSlugForRevalidate);
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof EcosystemMemberAuthError) {
@@ -209,6 +271,16 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: e.message, code: e.code }, { status: 404 });
     }
     const message = e instanceof Error ? e.message : "Unknown error";
+    const lower = message.toLowerCase();
+    if (lower.includes("no such column") && lower.includes("earnings_summary_note")) {
+      return NextResponse.json(
+        {
+          error:
+            "DB に earnings_summary_note 列がありません。migrations/052_theme_ecosystem_category_earnings_summary.sql を適用してください。",
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -237,6 +309,7 @@ export async function DELETE(request: Request) {
 
   try {
     await deleteEcosystemMember(getDb(), { userId, themeId, memberId });
+    revalidateThemeRelatedPaths(body.themeSlugForRevalidate);
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof EcosystemMemberAuthError) {

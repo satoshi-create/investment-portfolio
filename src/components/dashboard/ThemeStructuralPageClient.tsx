@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   CircleSlash,
@@ -46,6 +47,7 @@ import {
   ecoRuleOf40SortValue,
   ecoRuleOf40Tone,
 } from "@/src/components/dashboard/eco-efficiency-display";
+import { ECOSYSTEM_MEMBER_FIELD_MAX_LEN } from "@/src/lib/ecosystem-field-meta";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
 import {
   ADOPTION_STAGE_META,
@@ -64,6 +66,7 @@ import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { parseAlphaDailyHistoryJson } from "@/src/lib/eco-trend-daily";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
+import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { formatJpyValueForView, formatLocalPriceForView } from "@/src/lib/format-display-currency";
@@ -502,6 +505,13 @@ function normalizeThemeDetailResponse(
             const s = typeof a === "string" ? a.trim() : "";
             return s.length > 0 ? s : null;
           })(),
+          earningsSummaryNote: (() => {
+            const a = (item as Record<string, unknown>).earningsSummaryNote;
+            const b = (item as Record<string, unknown>).earnings_summary_note;
+            const s = typeof a === "string" ? a : typeof b === "string" ? b : "";
+            const t = s.trim();
+            return t.length > 0 ? t : null;
+          })(),
           isBookmarked:
             typeof item.isBookmarked === "boolean"
               ? item.isBookmarked
@@ -657,6 +667,7 @@ export function ThemePageClient({
   /** 半導体サプライチェーン: サーバーで CSV を読み込んだカタログ（任意） */
   supplyChainCatalogRows?: SemiconductorSupplyChainCatalogRow[] | null;
 }) {
+  const router = useRouter();
   const { query: themeQueryName, display: themeDisplayName } = useMemo(
     () => mapThemeLabelForQuery(themeLabel),
     [themeLabel],
@@ -710,6 +721,7 @@ export function ThemePageClient({
   const [addCompanyName, setAddCompanyName] = useState<string | null>(null);
   const [addCompanyNameLoading, setAddCompanyNameLoading] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
+  const [addEcosystemField, setAddEcosystemField] = useState("");
   const [ecoEditingId, setEcoEditingId] = useState<string | null>(null);
   const [ecoEditCompanyName, setEcoEditCompanyName] = useState("");
   const [ecoEditRole, setEcoEditRole] = useState("");
@@ -717,6 +729,8 @@ export function ThemePageClient({
   const [ecoEditListingDate, setEcoEditListingDate] = useState("");
   const [ecoEditMarketCap, setEcoEditMarketCap] = useState("");
   const [ecoEditListingPrice, setEcoEditListingPrice] = useState("");
+  const [ecoEditField, setEcoEditField] = useState("");
+  const [ecoEditEarningsSummaryNote, setEcoEditEarningsSummaryNote] = useState("");
   const [ecoEditSaving, setEcoEditSaving] = useState(false);
   const [ecoBookmarksOnly, setEcoBookmarksOnly] = useState(false);
   const [ecoHideIncompleteQuotes, setEcoHideIncompleteQuotes] = useState(false);
@@ -731,6 +745,10 @@ export function ThemePageClient({
   const [ecoMemoDraft, setEcoMemoDraft] = useState("");
   const [ecoMemoSaving, setEcoMemoSaving] = useState(false);
   const [ecoMemoModalTab, setEcoMemoModalTab] = useState<"edit" | "preview">("edit");
+  const [ecoEarningsSummaryTarget, setEcoEarningsSummaryTarget] = useState<ThemeEcosystemWatchItem | null>(null);
+  const [ecoEarningsSummaryDraft, setEcoEarningsSummaryDraft] = useState("");
+  const [ecoEarningsSummarySaving, setEcoEarningsSummarySaving] = useState(false);
+  const [ecoEarningsSummaryModalTab, setEcoEarningsSummaryModalTab] = useState<"edit" | "preview">("edit");
   /** Asset 列のカテゴリ（`field`）による複数選択フィルター */
   const [ecoFieldFilter, setEcoFieldFilter] = useState<string[]>([]);
   const [btcStructuralGlance, setBtcStructuralGlance] = useState<StructuralBtcGlancePayload | null>(
@@ -915,6 +933,15 @@ export function ThemePageClient({
 
   const theme = data?.theme ?? null;
   const ecosystem = data?.ecosystem ?? [];
+
+  const ecosystemFieldSuggestions = useMemo(() => {
+    const s = new Set<string>();
+    for (const row of ecosystem) {
+      const f = String(row.field ?? "").trim();
+      if (f.length > 0) s.add(f);
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [ecosystem]);
   const themeStructuralTrendSeries = data?.themeStructuralTrendSeries ?? [];
   const themeStructuralTrendUp = useMemo(
     () => isThemeStructuralTrendPositiveUp(themeStructuralTrendSeries),
@@ -1198,6 +1225,11 @@ export function ThemePageClient({
       if (!theme?.id || addSubmitting) return;
       const t = addTicker.trim();
       if (!t || addTickerDuplicate) return;
+      const addFieldTrim = addEcosystemField.trim();
+      if (addFieldTrim.length > ECOSYSTEM_MEMBER_FIELD_MAX_LEN) {
+        toast.error(`分類タグは最大 ${ECOSYSTEM_MEMBER_FIELD_MAX_LEN} 文字です`);
+        return;
+      }
       setAddSubmitting(true);
       const ac = new AbortController();
       try {
@@ -1211,6 +1243,8 @@ export function ThemePageClient({
             isMajorPlayer: addImportance === "major",
             role: addRole.trim() || null,
             companyName: addCompanyName,
+            ecosystemField: addFieldTrim.length > 0 ? addFieldTrim : null,
+            themeSlugForRevalidate: themeLabel,
             observationStartedAt:
               addObservationStartedAt.trim().length >= 10
                 ? addObservationStartedAt.trim().slice(0, 10)
@@ -1235,8 +1269,10 @@ export function ThemePageClient({
         setAddTicker("");
         setAddRole("");
         setAddImportance("standard");
+        setAddEcosystemField("");
         setAddObservationStartedAt(localCalendarIsoDate());
         setAddCompanyName(null);
+        router.refresh();
         await refetchThemeDetailQuiet(ac.signal);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
@@ -1247,14 +1283,17 @@ export function ThemePageClient({
     },
     [
       theme?.id,
+      themeLabel,
       addTicker,
       addRole,
       addImportance,
+      addEcosystemField,
       addObservationStartedAt,
       addCompanyName,
       addTickerDuplicate,
       addSubmitting,
       refetchThemeDetailQuiet,
+      router,
     ],
   );
 
@@ -1268,6 +1307,10 @@ export function ThemePageClient({
     );
     setEcoEditMarketCap(e.marketCap != null && Number.isFinite(e.marketCap) ? String(e.marketCap) : "");
     setEcoEditListingPrice(e.listingPrice != null && Number.isFinite(e.listingPrice) ? String(e.listingPrice) : "");
+    setEcoEditField(String(e.field ?? "").trim());
+    setEcoEditEarningsSummaryNote(
+      e.earningsSummaryNote != null && e.earningsSummaryNote.length > 0 ? e.earningsSummaryNote : "",
+    );
   }, []);
 
   const cancelEditEcosystem = useCallback(() => {
@@ -1278,6 +1321,8 @@ export function ThemePageClient({
     setEcoEditListingDate("");
     setEcoEditMarketCap("");
     setEcoEditListingPrice("");
+    setEcoEditField("");
+    setEcoEditEarningsSummaryNote("");
     setEcoEditSaving(false);
   }, []);
 
@@ -1313,6 +1358,16 @@ export function ThemePageClient({
         }
         listingPricePayload = n;
       }
+      const earnTrim = ecoEditEarningsSummaryNote.trim();
+      if (earnTrim.length > EARNINGS_SUMMARY_NOTE_MAX_LEN) {
+        toast.error(`決算要約メモは最大 ${EARNINGS_SUMMARY_NOTE_MAX_LEN} 文字です`);
+        return;
+      }
+      const ecoFieldTrim = ecoEditField.trim();
+      if (ecoFieldTrim.length > ECOSYSTEM_MEMBER_FIELD_MAX_LEN) {
+        toast.error(`分類タグは最大 ${ECOSYSTEM_MEMBER_FIELD_MAX_LEN} 文字です`);
+        return;
+      }
       setEcoEditSaving(true);
       const ac = new AbortController();
       try {
@@ -1329,6 +1384,9 @@ export function ThemePageClient({
             listingDate: fd === "" ? null : fd,
             marketCap: marketCapPayload,
             listingPrice: listingPricePayload,
+            ecosystemField: ecoFieldTrim.length > 0 ? ecoFieldTrim : null,
+            earningsSummaryNote: earnTrim.length > 0 ? earnTrim : null,
+            themeSlugForRevalidate: themeLabel,
           }),
         });
         let json: { error?: string } = {};
@@ -1343,6 +1401,7 @@ export function ThemePageClient({
         }
         toast.success("更新しました");
         cancelEditEcosystem();
+        router.refresh();
         await refetchThemeDetailQuiet(ac.signal);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
@@ -1354,14 +1413,18 @@ export function ThemePageClient({
     [
       cancelEditEcosystem,
       ecoEditCompanyName,
+      ecoEditEarningsSummaryNote,
       ecoEditListingDate,
       ecoEditListingPrice,
       ecoEditMajor,
       ecoEditMarketCap,
+      ecoEditField,
       ecoEditRole,
       ecoEditSaving,
       refetchThemeDetailQuiet,
+      router,
       theme?.id,
+      themeLabel,
     ],
   );
 
@@ -1378,6 +1441,7 @@ export function ThemePageClient({
             userId: DEFAULT_USER_ID,
             themeId: theme.id,
             memberId,
+            themeSlugForRevalidate: themeLabel,
           }),
         });
         let json: { error?: string } = {};
@@ -1392,13 +1456,14 @@ export function ThemePageClient({
         }
         toast.success("削除しました");
         if (ecoEditingId === memberId) cancelEditEcosystem();
+        router.refresh();
         await refetchThemeDetailQuiet(ac.signal);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
         toast.error(e instanceof Error ? e.message : "削除に失敗しました");
       }
     },
-    [cancelEditEcosystem, ecoEditingId, refetchThemeDetailQuiet, theme?.id],
+    [cancelEditEcosystem, ecoEditingId, refetchThemeDetailQuiet, router, theme?.id, themeLabel],
   );
 
   useEffect(() => {
@@ -1407,6 +1472,13 @@ export function ThemePageClient({
       setEcoMemoModalTab("edit");
     }
   }, [ecoMemoTarget]);
+
+  useEffect(() => {
+    if (ecoEarningsSummaryTarget) {
+      setEcoEarningsSummaryDraft(ecoEarningsSummaryTarget.earningsSummaryNote ?? "");
+      setEcoEarningsSummaryModalTab("edit");
+    }
+  }, [ecoEarningsSummaryTarget]);
 
   const saveEcoMemberMemo = useCallback(
     async () => {
@@ -1422,6 +1494,7 @@ export function ThemePageClient({
             themeId: theme.id,
             memberId: ecoMemoTarget.id,
             memo: ecoMemoDraft.trim().length > 0 ? ecoMemoDraft.trim() : null,
+            themeSlugForRevalidate: themeLabel,
           }),
         });
         let json: { error?: string } = {};
@@ -1449,6 +1522,7 @@ export function ThemePageClient({
         toast.success("メモを保存しました");
         setEcoMemoTarget(null);
         setEcoMemoSaving(false);
+        router.refresh();
         await refetchThemeDetailQuiet(ac.signal);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
@@ -1457,7 +1531,72 @@ export function ThemePageClient({
         setEcoMemoSaving(false);
       }
     },
-    [ecoMemoDraft, ecoMemoSaving, ecoMemoTarget, refetchThemeDetailQuiet, theme?.id],
+    [ecoMemoDraft, ecoMemoSaving, ecoMemoTarget, refetchThemeDetailQuiet, router, theme?.id, themeLabel],
+  );
+
+  const saveEcoEarningsSummaryNote = useCallback(
+    async () => {
+      if (!theme?.id || !ecoEarningsSummaryTarget || ecoEarningsSummarySaving) return;
+      const trimmed = ecoEarningsSummaryDraft.trim();
+      if (trimmed.length > EARNINGS_SUMMARY_NOTE_MAX_LEN) {
+        toast.error(`決算要約は最大 ${EARNINGS_SUMMARY_NOTE_MAX_LEN} 文字です`);
+        return;
+      }
+      setEcoEarningsSummarySaving(true);
+      const ac = new AbortController();
+      try {
+        const res = await fetch("/api/theme-ecosystem/member", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: DEFAULT_USER_ID,
+            themeId: theme.id,
+            memberId: ecoEarningsSummaryTarget.id,
+            earningsSummaryNote: trimmed.length > 0 ? trimmed : null,
+            themeSlugForRevalidate: themeLabel,
+          }),
+        });
+        let json: { error?: string } = {};
+        try {
+          json = (await res.json()) as { error?: string };
+        } catch {
+          /* ignore */
+        }
+        if (!res.ok) {
+          toast.error(json.error ?? "保存に失敗しました");
+          return;
+        }
+        const memberId = ecoEarningsSummaryTarget.id;
+        const nextNote: string | null = trimmed.length > 0 ? trimmed : null;
+        setData((cur) => {
+          if (!cur) return cur;
+          return {
+            ...cur,
+            ecosystem: cur.ecosystem.map((row) =>
+              row.id === memberId ? { ...row, earningsSummaryNote: nextNote } : row,
+            ),
+          };
+        });
+        toast.success("決算要約を保存しました");
+        setEcoEarningsSummaryTarget(null);
+        router.refresh();
+        await refetchThemeDetailQuiet(ac.signal);
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        toast.error(e instanceof Error ? e.message : "保存に失敗しました");
+      } finally {
+        setEcoEarningsSummarySaving(false);
+      }
+    },
+    [
+      ecoEarningsSummaryDraft,
+      ecoEarningsSummarySaving,
+      ecoEarningsSummaryTarget,
+      refetchThemeDetailQuiet,
+      router,
+      theme?.id,
+      themeLabel,
+    ],
   );
 
   useEffect(() => {
@@ -2158,7 +2297,7 @@ export function ThemePageClient({
                       Ecosystem · 銘柄を追加
                     </h2>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Ticker・追加日（観測開始）・Importance・Role
+                      Ticker・追加日・Importance・カテゴリ（Core/Satellite）・Role
                       を登録してウォッチリストへ追加します（同一テーマ内の
                       ticker 重複は不可）
                     </p>
@@ -2168,7 +2307,7 @@ export function ThemePageClient({
                   onSubmit={handleAddEcosystemMember}
                   className="flex flex-col gap-4"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[7.5rem_10.5rem_11rem_1fr_auto] gap-4 items-end">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[7.5rem_10.5rem_11rem_9rem_1fr_auto] gap-4 items-end">
                     <div className="space-y-1.5 min-w-0">
                       <label
                         htmlFor="eco-add-ticker"
@@ -2229,6 +2368,31 @@ export function ThemePageClient({
                         <option value="standard">通常</option>
                         <option value="major">メジャー（Major）</option>
                       </select>
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <label
+                        htmlFor="eco-add-field"
+                        className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
+                      >
+                        分類タグ（field）
+                      </label>
+                      <Input
+                        id="eco-add-field"
+                        list="eco-add-field-datalist"
+                        value={addEcosystemField}
+                        onChange={(e) => setAddEcosystemField(e.target.value)}
+                        placeholder="例: IT / サービス"
+                        maxLength={ECOSYSTEM_MEMBER_FIELD_MAX_LEN}
+                        autoComplete="off"
+                        className="font-mono text-sm"
+                      />
+                      {ecosystemFieldSuggestions.length > 0 ? (
+                        <datalist id="eco-add-field-datalist">
+                          {ecosystemFieldSuggestions.map((opt) => (
+                            <option key={opt} value={opt} />
+                          ))}
+                        </datalist>
+                      ) : null}
                     </div>
                     <div className="space-y-1.5 min-w-0">
                       <label
@@ -2968,6 +3132,11 @@ export function ThemePageClient({
                                   setEcoEditMarketCap={setEcoEditMarketCap}
                                   ecoEditListingPrice={ecoEditListingPrice}
                                   setEcoEditListingPrice={setEcoEditListingPrice}
+                                  ecoEditField={ecoEditField}
+                                  setEcoEditField={setEcoEditField}
+                                  ecosystemFieldSuggestions={ecosystemFieldSuggestions}
+                                  ecoEditEarningsSummaryNote={ecoEditEarningsSummaryNote}
+                                  setEcoEditEarningsSummaryNote={setEcoEditEarningsSummaryNote}
                                   ecoEditSaving={ecoEditSaving}
                                   showEcoMemoButton
                                   ecoResearchIncludeEarnings={false}
@@ -2980,6 +3149,7 @@ export function ThemePageClient({
                                   saveEditEcosystem={saveEditEcosystem}
                                   cancelEditEcosystem={cancelEditEcosystem}
                                   setEcoMemoTarget={setEcoMemoTarget}
+                                  setEcoEarningsSummaryTarget={setEcoEarningsSummaryTarget}
                                   holderBadgeClass={holderBadgeClass}
                                   dividendCalendar={dividendCalendar}
                                   defensiveZClass={defensiveZClass}
@@ -3128,6 +3298,131 @@ export function ThemePageClient({
                     className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
                   >
                     {ecoMemoSaving ? "保存中…" : "保存"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {ecoEarningsSummaryTarget ? (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
+            role="presentation"
+          >
+            <button
+              type="button"
+              className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
+              aria-label="閉じる"
+              onClick={() => !ecoEarningsSummarySaving && setEcoEarningsSummaryTarget(null)}
+            />
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="relative z-10 flex max-h-[min(92dvh,52rem)] w-[min(100%,36rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-w-2xl"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    決算要約メモ
+                  </p>
+                  <p className="text-base font-bold text-foreground mt-1 font-mono sm:text-lg">
+                    {ecoEarningsSummaryTarget.ticker}
+                  </p>
+                  {ecoEarningsSummaryTarget.companyName ? (
+                    <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">
+                      {ecoEarningsSummaryTarget.companyName}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  disabled={ecoEarningsSummarySaving}
+                  onClick={() => setEcoEarningsSummaryTarget(null)}
+                  className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
+                  aria-label="閉じる"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div
+                className="inline-flex shrink-0 gap-0 border-b border-border px-3 sm:px-4 pt-2"
+                role="tablist"
+                aria-label="決算要約の表示"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={ecoEarningsSummaryModalTab === "edit"}
+                  disabled={ecoEarningsSummarySaving}
+                  onClick={() => setEcoEarningsSummaryModalTab("edit")}
+                  className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
+                    ecoEarningsSummaryModalTab === "edit"
+                      ? "bg-background text-foreground border border-b-0 border-border -mb-px"
+                      : "text-muted-foreground hover:text-foreground/90"
+                  }`}
+                >
+                  編集
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={ecoEarningsSummaryModalTab === "preview"}
+                  disabled={ecoEarningsSummarySaving}
+                  onClick={() => setEcoEarningsSummaryModalTab("preview")}
+                  className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
+                    ecoEarningsSummaryModalTab === "preview"
+                      ? "bg-background text-foreground border border-b-0 border-border -mb-px"
+                      : "text-muted-foreground hover:text-foreground/90"
+                  }`}
+                >
+                  プレビュー（Markdown）
+                </button>
+              </div>
+              <div className="min-h-0 flex flex-1 flex-col bg-background">
+                {ecoEarningsSummaryModalTab === "edit" ? (
+                  <label htmlFor="eco-earnings-ta" className="sr-only">
+                    決算要約
+                  </label>
+                ) : null}
+                {ecoEarningsSummaryModalTab === "edit" ? (
+                  <textarea
+                    id="eco-earnings-ta"
+                    value={ecoEarningsSummaryDraft}
+                    onChange={(ev) => setEcoEarningsSummaryDraft(ev.target.value)}
+                    disabled={ecoEarningsSummarySaving}
+                    maxLength={EARNINGS_SUMMARY_NOTE_MAX_LEN}
+                    rows={16}
+                    className="min-h-[16rem] flex-1 resize-y border-0 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-violet-500/35 disabled:opacity-50 sm:px-5 sm:py-4"
+                    placeholder="Markdown 可。空にして保存でクリア（theme_ecosystem_members.earnings_summary_note）"
+                  />
+                ) : (
+                  <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 py-3 sm:px-5 sm:py-4">
+                    <p className="shrink-0 text-[10px] text-muted-foreground">
+                      入力中の内容を Markdown として表示します（未保存の編集も反映）。
+                    </p>
+                    <div className="min-h-[12rem] flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
+                      <EarningsNoteMarkdownPreview markdown={ecoEarningsSummaryDraft} />
+                    </div>
+                  </div>
+                )}
+                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card/80 px-4 py-3 sm:px-5">
+                  <button
+                    type="button"
+                    disabled={ecoEarningsSummarySaving}
+                    onClick={() => setEcoEarningsSummaryTarget(null)}
+                    className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    disabled={ecoEarningsSummarySaving}
+                    onClick={() => void saveEcoEarningsSummaryNote()}
+                    className="text-[11px] font-bold uppercase tracking-wide text-background bg-violet-600 px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
+                  >
+                    {ecoEarningsSummarySaving ? "保存中…" : "保存"}
                   </button>
                 </div>
               </div>

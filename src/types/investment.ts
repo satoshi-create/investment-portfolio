@@ -391,6 +391,7 @@ export type ThemeEcosystemWatchItem = {
   /** 企業特徴・リスク要因（ツールチップ等で表示） */
   observationNotes: string | null;
   companyName: string;
+  /** ウォッチ上の分類タグ（Watchlist Asset の field と同系。例: 「IT / サービス」）。DB `theme_ecosystem_members.field` */
   field: string;
   role: string;
   isMajorPlayer: boolean;
@@ -480,6 +481,8 @@ export type ThemeEcosystemWatchItem = {
   listingPrice: number | null;
   /** DB `theme_ecosystem_members.memo`（`observation_notes` とは別）。未設定は null */
   memo: string | null;
+  /** DB `theme_ecosystem_members.earnings_summary_note`（決算要約・Markdown）。`memo` とは別 */
+  earningsSummaryNote: string | null;
   /** DB `theme_ecosystem_members.is_bookmarked`（`is_kept` とは別フラグ） */
   isBookmarked: boolean;
   /**

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { CalendarClock, MessageSquare, Star } from "lucide-react";
+import { CalendarClock, FileText, MessageSquare, Star } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
@@ -18,6 +18,8 @@ import {
   ecosystemDividendPayoutPercent,
   formatDividendPayoutPercent,
 } from "@/src/lib/eco-dividend-payout";
+import { ECOSYSTEM_MEMBER_FIELD_MAX_LEN } from "@/src/lib/ecosystem-field-meta";
+import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
@@ -179,6 +181,13 @@ export type EcosystemThemeTableMappedRowProps = {
   setEcoEditMarketCap: (v: string) => void;
   ecoEditListingPrice: string;
   setEcoEditListingPrice: (v: string) => void;
+  /** 未指定時は分類タグ（field）のインライン編集を出さない（ThemePageClient 等） */
+  ecoEditField?: string;
+  setEcoEditField?: (v: string) => void;
+  /** テーマ内の既存 field 候補（datalist） */
+  ecosystemFieldSuggestions?: string[];
+  ecoEditEarningsSummaryNote?: string;
+  setEcoEditEarningsSummaryNote?: (v: string) => void;
   ecoEditSaving: boolean;
   /** 構造テーマ表: Asset 内にメモボタンを出す */
   showEcoMemoButton?: boolean;
@@ -195,6 +204,7 @@ export type EcosystemThemeTableMappedRowProps = {
   saveEditEcosystem: (memberId: string) => void | Promise<void>;
   cancelEditEcosystem: () => void;
   setEcoMemoTarget?: (e: ThemeEcosystemWatchItem | null) => void;
+  setEcoEarningsSummaryTarget?: (e: ThemeEcosystemWatchItem | null) => void;
   holderBadgeClass: (holder: string) => string;
   dividendCalendar: (months: number[]) => React.ReactNode;
   defensiveZClass: (z: number | null) => string;
@@ -223,6 +233,11 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
     setEcoEditMarketCap,
     ecoEditListingPrice,
     setEcoEditListingPrice,
+    ecoEditField,
+    setEcoEditField,
+    ecosystemFieldSuggestions = [],
+    ecoEditEarningsSummaryNote,
+    setEcoEditEarningsSummaryNote,
     ecoEditSaving,
     showEcoMemoButton = false,
     ecoResearchIncludeEarnings = false,
@@ -236,6 +251,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
     saveEditEcosystem,
     cancelEditEcosystem,
     setEcoMemoTarget,
+    setEcoEarningsSummaryTarget,
     holderBadgeClass,
     dividendCalendar,
     defensiveZClass,
@@ -305,6 +321,14 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         In portfolio
                       </span>
                     ) : null}
+                    {e.field.trim().length > 0 ? (
+                      <span
+                        className="shrink-0 text-[8px] font-bold tracking-wide px-1.5 py-0.5 rounded border text-muted-foreground border-border/60"
+                        title="分類タグ（field）"
+                      >
+                        {e.field.trim()}
+                      </span>
+                    ) : null}
                   </div>
                   {e.isUnlisted ? (
                     <div className="flex flex-wrap items-center gap-1">
@@ -353,6 +377,47 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         />
                         Major
                       </label>
+                      {setEcoEditField != null ? (
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                            分類タグ（field）
+                          </p>
+                          <Input
+                            list="eco-inline-field-datalist"
+                            value={ecoEditField ?? ""}
+                            onChange={(ev) => setEcoEditField(ev.target.value)}
+                            placeholder="未設定でクリア"
+                            maxLength={ECOSYSTEM_MEMBER_FIELD_MAX_LEN}
+                            className="h-8 text-xs font-mono max-w-xs"
+                            autoComplete="off"
+                          />
+                          {ecosystemFieldSuggestions.length > 0 ? (
+                            <datalist id="eco-inline-field-datalist">
+                              {ecosystemFieldSuggestions.map((opt) => (
+                                <option key={opt} value={opt} />
+                              ))}
+                            </datalist>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {setEcoEditEarningsSummaryNote != null ? (
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                            決算要約（Markdown・保存で更新）
+                          </p>
+                          <textarea
+                            value={ecoEditEarningsSummaryNote ?? ""}
+                            onChange={(ev) => setEcoEditEarningsSummaryNote(ev.target.value)}
+                            rows={4}
+                            maxLength={EARNINGS_SUMMARY_NOTE_MAX_LEN}
+                            placeholder="決算サマリー（memo とは別）"
+                            className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground"
+                          />
+                          <p className="text-[9px] text-muted-foreground">
+                            {(ecoEditEarningsSummaryNote ?? "").length} / {EARNINGS_SUMMARY_NOTE_MAX_LEN}
+                          </p>
+                        </div>
+                      ) : null}
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                         <div className="space-y-1">
                           <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -467,6 +532,22 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         <MessageSquare size={11} className="shrink-0" aria-hidden />
                         メモ
                       </button>
+                      {setEcoEarningsSummaryTarget ? (
+                        <button
+                          type="button"
+                          onClick={() => setEcoEarningsSummaryTarget(e)}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-colors",
+                            e.earningsSummaryNote != null && e.earningsSummaryNote.trim().length > 0
+                              ? "border-violet-500/45 bg-violet-500/10 text-violet-200"
+                              : "border-border text-muted-foreground hover:bg-muted/70",
+                          )}
+                          title="決算要約メモ（Markdown）を表示・編集"
+                        >
+                          <FileText size={11} className="shrink-0" aria-hidden />
+                          決算要約
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

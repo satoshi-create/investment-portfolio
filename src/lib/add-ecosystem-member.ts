@@ -2,6 +2,8 @@ import { randomUUID } from "crypto";
 
 import type { Client } from "@libsql/client";
 
+import { normalizeEcosystemMemberField } from "@/src/lib/ecosystem-field-meta";
+import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import { ecosystemTickerShouldBeUnlisted } from "@/src/lib/ecosystem-ticker-hygiene";
 
 export class EcosystemMemberAuthError extends Error {
@@ -25,6 +27,8 @@ export type AddEcosystemMemberInput = {
   companyName?: string | null;
   /** `theme_ecosystem_members.observation_started_at`（YYYY-MM-DD）。未指定は NULL */
   observationStartedAt?: string | null;
+  /** DB `field`（分類タグ）。未指定・空は NULL */
+  ecosystemField?: string | null;
 };
 
 export type UpdateEcosystemMemberInput = {
@@ -42,6 +46,10 @@ export type UpdateEcosystemMemberInput = {
   marketCap?: number | null;
   /** DB `listing_price`（創業来％算出用）。undefined=変更なし null=クリア */
   listingPrice?: number | null;
+  /** DB `field`（分類タグ）。undefined=変更なし null=クリア */
+  ecosystemField?: string | null;
+  /** DB `earnings_summary_note`。undefined=変更なし null=クリア */
+  earningsSummaryNote?: string | null;
 };
 
 /**
@@ -69,6 +77,8 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
       ? String(input.observationStartedAt).trim()
       : null;
 
+  const fieldDb = normalizeEcosystemMemberField(input.ecosystemField);
+
   const isUnlisted = ecosystemTickerShouldBeUnlisted(ticker) ? 1 : 0;
 
   try {
@@ -76,11 +86,13 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
       sql: `INSERT INTO theme_ecosystem_members (
         id, theme_id, ticker,
         is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation, observation_notes,
-        company_name, field, role, is_major_player, observation_started_at
+        company_name, field, role, is_major_player, observation_started_at,
+        earnings_summary_note
       ) VALUES (
         ?, ?, ?,
         ?, NULL, NULL, NULL, NULL,
-        ?, NULL, ?, ?, ?
+        ?, ?, ?, ?, ?,
+        NULL
       )`,
       args: [
         randomUUID(),
@@ -88,6 +100,7 @@ export async function addMemberToEcosystem(db: Client, input: AddEcosystemMember
         ticker,
         isUnlisted,
         companyName,
+        fieldDb,
         role,
         input.isMajorPlayer ? 1 : 0,
         observationStartedAt,
@@ -160,6 +173,16 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
         ? input.listingPrice
         : null;
 
+  const nextField =
+    input.ecosystemField === undefined ? undefined : normalizeEcosystemMemberField(input.ecosystemField);
+
+  const nextEarningsSummary =
+    input.earningsSummaryNote === undefined
+      ? undefined
+      : input.earningsSummaryNote != null && String(input.earningsSummaryNote).trim().length > 0
+        ? String(input.earningsSummaryNote).trim().slice(0, EARNINGS_SUMMARY_NOTE_MAX_LEN)
+        : null;
+
   // Only update the fields that were provided.
   const sets: string[] = [];
   const args: (string | number | null)[] = [];
@@ -190,6 +213,14 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
   if (nextListingPrice !== undefined) {
     sets.push(`listing_price = ?`);
     args.push(nextListingPrice);
+  }
+  if (nextField !== undefined) {
+    sets.push(`field = ?`);
+    args.push(nextField);
+  }
+  if (nextEarningsSummary !== undefined) {
+    sets.push(`earnings_summary_note = ?`);
+    args.push(nextEarningsSummary);
   }
   if (sets.length === 0) return;
 

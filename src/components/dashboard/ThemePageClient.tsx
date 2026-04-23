@@ -418,6 +418,13 @@ function normalizeThemeDetailResponse(
             (item as Record<string, unknown>).alphaDailyHistory ??
               (item as Record<string, unknown>).alpha_daily_history,
           ),
+          earningsSummaryNote: (() => {
+            const a = (item as Record<string, unknown>).earningsSummaryNote;
+            const b = (item as Record<string, unknown>).earnings_summary_note;
+            const s = typeof a === "string" ? a : typeof b === "string" ? b : "";
+            const t = s.trim();
+            return t.length > 0 ? t : null;
+          })(),
           listingDate: (() => {
             const lit =
               (item as Record<string, unknown>).listingDate ??
