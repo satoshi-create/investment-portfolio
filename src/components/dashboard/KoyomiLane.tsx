@@ -102,8 +102,9 @@ export function KoyomiLane({
   loading,
   error,
   className,
-  labelColClass = "w-[7.5rem] sm:w-36",
-  density = "default",
+  labelColClass = "w-[7.5rem] sm:w-40 lg:w-48",
+  /** Tactical view: チップと日付列を大きくし、ラベルをホバーなしで読める */
+  density = "comfortable",
 }: KoyomiLaneProps) {
   const isComfort = density === "comfortable";
   const days = useMemo(
@@ -191,9 +192,9 @@ export function KoyomiLane({
       ) : null}
 
       <p className="shrink-0 text-[10px] font-mono text-muted-foreground leading-relaxed">
-        タクティカル掲載: {data.startYmd} … {data.endYmd}（今週±7 日・計 21 日 · 今日 {data.todayYmd} UTC） · 決算品質は EPS/売上サプライズ +
-        価格反応。R40 は Yahoo 四半期の売上成長% + FCF マージン%。筋肉は売上成長% + 営業利益率%の四半期比。累積%と Mispriced（決算後累積 ≤ -3%）
-        はクエリ charts=1 のときのみ算出し、既定表示では省略して読み込みを速めています。同一端末ではフル取得は 24 時間に 1 回まで（localStorage）。
+        タクティカル掲載: {data.startYmd} … {data.endYmd}（前後 2 週間 · 今日 {data.todayYmd} UTC） · 決算品質は EPS/売上サプライズ + 価格反応。R40
+        は Yahoo 四半期の売上成長% + FCF マージン%。筋肉は売上成長% + 営業利益率%の四半期比。Mispriced は筋肉改善かつ当日騰落率 ≤ -3%（Yahoo
+        セッション%）。横スクロールは「今日」列を中央に近づけます。
       </p>
 
       <div
@@ -266,9 +267,9 @@ export function KoyomiLane({
           <span aria-hidden>💪</span>
           筋肉 Delta 改善
         </span>
-        <span className="inline-flex items-center gap-1 opacity-70" title="charts=1 取得時のみ表示">
+        <span className="inline-flex items-center gap-1" title="筋肉改善なのに当日 -3% 以上の下げ">
           <span className="inline-block w-2 h-2 rounded-sm border-2 border-amber-400/80" aria-hidden />
-          Mispriced（累積算出時）
+          Mispriced（連れ安）
         </span>
       </div>
     </div>
@@ -347,7 +348,7 @@ function muscleDeltaOverlayStyle(it: KoyomiLaneItem): React.CSSProperties | unde
   if (d == null || !Number.isFinite(d)) return undefined;
   const mag = Math.min(1, Math.abs(d) / 12);
   if (it.muscleDeltaStatus === "positive") {
-    return { backgroundColor: `rgba(16, 185, 129, ${0.28 + mag * 0.45})` };
+    return { backgroundColor: `rgba(22, 163, 74, ${0.35 + mag * 0.45})` };
   }
   if (it.muscleDeltaStatus === "negative") {
     return { backgroundColor: `rgba(244, 63, 94, ${0.18 + mag * 0.32})` };
@@ -362,7 +363,7 @@ function LaneChip({ it, comfortable }: { it: KoyomiLaneItem; comfortable: boolea
   const muscleLine = `筋 ${formatRuleOf40Display(it.muscleScoreCurrent)}`;
   const deltaOverlay = muscleDeltaOverlayStyle(it);
   const showFlex = it.muscleDeltaStatus === "positive";
-  const retSince = it.returnPctSinceEarnings;
+  const dayChg = it.regularMarketChangePercent;
 
   return (
     <li
@@ -372,9 +373,9 @@ function LaneChip({ it, comfortable }: { it: KoyomiLaneItem; comfortable: boolea
         comfortable ? "text-[10px] sm:text-[11px]" : "text-[8px] sm:text-[9px]",
         qualityChipClass(it.qualityKind, it.hasOutcome),
         epic && "ring-2 ring-rose-400/70 shadow-[0_0_10px_rgba(244,63,94,0.35)]",
-        it.isMispriced && "ring-2 ring-amber-400/85 ring-offset-0 shadow-[0_0_0_1px_rgba(251,191,36,0.35)]",
+        it.isMispriced && "ring-2 ring-amber-400/90 ring-offset-0 shadow-[0_0_0_2px_rgba(251,191,36,0.45)]",
       )}
-      title={`${it.displayTicker} · ${r40Line} · ${muscleLine} · 決算後累積 ${retSince != null ? `${retSince > 0 ? "+" : ""}${formatRuleOf40Display(retSince)}%` : "—"} · ${it.qualityKind}${taint > 0.02 ? ` · 負の波及 ${(taint * 100).toFixed(0)}%` : ""}`}
+      title={`${it.displayTicker} · ${r40Line} · ${muscleLine} · 当日 ${dayChg != null ? `${dayChg > 0 ? "+" : ""}${formatRuleOf40Display(dayChg)}%` : "—"} · ${it.qualityKind}${taint > 0.02 ? ` · 負の波及 ${(taint * 100).toFixed(0)}%` : ""}`}
     >
       {deltaOverlay ? (
         <div className="pointer-events-none absolute inset-0 z-[1]" style={deltaOverlay} aria-hidden />
@@ -415,16 +416,16 @@ function LaneChip({ it, comfortable }: { it: KoyomiLaneItem; comfortable: boolea
       >
         {muscleLine}
       </span>
-      {retSince != null && Number.isFinite(retSince) ? (
+      {dayChg != null && Number.isFinite(dayChg) ? (
         <span
           className={cn(
-            "relative z-[3] min-w-0 font-mono tabular-nums break-words [overflow-wrap:anywhere]",
-            comfortable ? "text-[9px] sm:text-[10px]" : "text-[6px] sm:text-[7px]",
-            retSince <= -3 ? "text-amber-200/95 font-semibold" : "text-muted-foreground/90",
+            "relative z-[3] min-w-0 font-mono font-semibold tabular-nums break-words [overflow-wrap:anywhere]",
+            comfortable ? "text-[10px] sm:text-[11px]" : "text-[7px] sm:text-[8px]",
+            dayChg <= -3 ? "text-amber-200/95" : dayChg >= 0 ? "text-emerald-100/90" : "text-muted-foreground/90",
           )}
         >
-          累積 {retSince > 0 ? "+" : ""}
-          {formatRuleOf40Display(retSince)}%
+          当日 {dayChg > 0 ? "+" : ""}
+          {formatRuleOf40Display(dayChg)}%
         </span>
       ) : null}
       <span

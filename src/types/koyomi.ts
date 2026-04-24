@@ -44,8 +44,6 @@ export type KoyomiLaneItem = {
    * 株価が `MISPRICED_SESSION_DROP_PCT` % 以上下げている場合。
    */
   isMispriced: boolean;
-  /** 決算日（暦日）以降の累積リターン（%）。`charts=0` では多くの場合 null */
-  returnPctSinceEarnings: number | null;
 };
 
 export type KoyomiThemeLane = {

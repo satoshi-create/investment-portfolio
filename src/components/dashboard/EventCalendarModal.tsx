@@ -359,7 +359,7 @@ export function EventCalendarModal({
     setKoyomiLoading(true);
     setKoyomiErr(null);
 
-    const baseKoyomi = `/api/koyomi-lane?userId=${encodeURIComponent(uid)}&charts=0`;
+    const baseKoyomi = `/api/koyomi-lane?userId=${encodeURIComponent(uid)}`;
 
     void (async () => {
       const parseLane = (raw: KoyomiLaneResponse & { error?: string }): KoyomiLaneResponse | null => {

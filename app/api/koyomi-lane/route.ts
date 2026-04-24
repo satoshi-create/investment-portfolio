@@ -2,22 +2,18 @@ import { NextResponse } from "next/server";
 
 import {
   applyThemeEpicenterGravity,
-  classifyTickerInstrument,
   computeEarningsQuality,
+  isMispricedPositiveMuscleWithSessionDrop,
   type EarningsEpicenterInput,
 } from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { getDb, isDbConfigured } from "@/src/lib/db";
 import {
-  fetchKoyomiCalendarProbeMap,
   fetchKoyomiResearchAndRule40Map,
   type KoyomiTickerMuscle,
   type KoyomiTickerQuarterlyR40,
 } from "@/src/lib/koyomi-yahoo-rule40";
-import {
-  fetchChartCumulativeReturnPercentSinceEventYmd,
-  type EquityResearchSnapshot,
-} from "@/src/lib/price-service";
+import { type EquityResearchSnapshot } from "@/src/lib/price-service";
 import type { KoyomiLaneItem, KoyomiLaneResponse, KoyomiThemeLane } from "@/src/types/koyomi";
 
 export const dynamic = "force-dynamic";
@@ -72,128 +68,12 @@ type OutcomeRow = {
   price: number | null;
 };
 
-/** 筋肉改善なのに、決算日以降の累積リターンがこの値以下なら Mispriced */
-const MISPRICED_CUM_RETURN_SINCE_EARNINGS_PCT = -3;
-/** Mispriced 用チャート並列の上限（Yahoo chart が積み上がって 60s+ になりやすいため抑止） */
-const MAX_CUM_CHART_TASKS = 16;
-/**
- * null 決算日のウォッチが膨大な場合のセーフティ（保有・DB ウィンドウ内は対象外）。
- * 米国/JP はラウンドロビンで公平に埋める。保有（owned / holdings）はこの上限に含めない。
- */
-const MAX_NON_OWNED_CALENDAR_PROBES = 400;
+type TickerIn = { ticker: string; providerSymbol: string | null };
 
 function isSqliteNoSuchColumn(err: unknown, columnHint: string): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   const low = msg.toLowerCase();
   return low.includes("no such column") && low.includes(columnHint.toLowerCase());
-}
-
-function isUsEquityTicker(ticker: string): boolean {
-  return classifyTickerInstrument(ticker) === "US_EQUITY";
-}
-
-/** UTC 月曜始まりの週（該当暦日を含む） */
-function isoWeekRangeUtcContaining(ymd: string): { start: string; end: string } {
-  const base = ymd.length >= 10 ? ymd.slice(0, 10) : utcTodayYmd();
-  const d = new Date(`${base}T12:00:00.000Z`);
-  const dow = d.getUTCDay();
-  const mondayOffset = dow === 0 ? -6 : 1 - dow;
-  d.setUTCDate(d.getUTCDate() + mondayOffset);
-  const y = d.getUTCFullYear();
-  const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  const start = `${y}-${mo}-${day}`;
-  const d2 = new Date(`${start}T12:00:00.000Z`);
-  d2.setUTCDate(d2.getUTCDate() + 6);
-  const y2 = d2.getUTCFullYear();
-  const mo2 = String(d2.getUTCMonth() + 1).padStart(2, "0");
-  const day2 = String(d2.getUTCDate()).padStart(2, "0");
-  const end = `${y2}-${mo2}-${day2}`;
-  return { start, end };
-}
-
-type TickerIn = { ticker: string; providerSymbol: string | null };
-
-function mergeRoundRobinCap(us: TickerIn[], jp: TickerIn[], max: number): TickerIn[] {
-  const out: TickerIn[] = [];
-  let i = 0;
-  let j = 0;
-  while (out.length < max && (i < us.length || j < jp.length)) {
-    if (i < us.length) {
-      out.push(us[i]!);
-      i += 1;
-      if (out.length >= max) break;
-    }
-    if (j < jp.length) {
-      out.push(jp[j]!);
-      j += 1;
-    }
-  }
-  return out;
-}
-
-/** 保有は全件プローブ。それ以外は米国/JP を交互にしつつ上限 */
-function buildFairCalendarProbeCandidates(
-  nullProbeByUpper: Map<
-    string,
-    { ticker: string; providerSymbol: string | null; owned: boolean }
-  >,
-  inWindowHeavyKeys: Set<string>,
-): TickerIn[] {
-  const pool = [...nullProbeByUpper.values()].filter((x) => !inWindowHeavyKeys.has(x.ticker.toUpperCase()));
-  const owned = pool.filter((x) => x.owned);
-  const nonOwned = pool.filter((x) => !x.owned);
-
-  const ownedUs = owned.filter((x) => isUsEquityTicker(x.ticker));
-  const ownedJp = owned.filter((x) => !isUsEquityTicker(x.ticker));
-  ownedUs.sort((a, b) => a.ticker.localeCompare(b.ticker, "en"));
-  ownedJp.sort((a, b) => a.ticker.localeCompare(b.ticker, "en"));
-
-  const ownedOut: TickerIn[] = [];
-  let iu = 0;
-  let ij = 0;
-  while (iu < ownedUs.length || ij < ownedJp.length) {
-    if (iu < ownedUs.length) {
-      ownedOut.push({ ticker: ownedUs[iu]!.ticker, providerSymbol: ownedUs[iu]!.providerSymbol });
-      iu += 1;
-    }
-    if (ij < ownedJp.length) {
-      ownedOut.push({ ticker: ownedJp[ij]!.ticker, providerSymbol: ownedJp[ij]!.providerSymbol });
-      ij += 1;
-    }
-  }
-
-  const nonOwnedUs = nonOwned.filter((x) => isUsEquityTicker(x.ticker));
-  const nonOwnedJp = nonOwned.filter((x) => !isUsEquityTicker(x.ticker));
-  nonOwnedUs.sort((a, b) => a.ticker.localeCompare(b.ticker, "en"));
-  nonOwnedJp.sort((a, b) => a.ticker.localeCompare(b.ticker, "en"));
-
-  const nonOwnedOut = mergeRoundRobinCap(
-    nonOwnedUs.map((x) => ({ ticker: x.ticker, providerSymbol: x.providerSymbol })),
-    nonOwnedJp.map((x) => ({ ticker: x.ticker, providerSymbol: x.providerSymbol })),
-    MAX_NON_OWNED_CALENDAR_PROBES,
-  );
-
-  return [...ownedOut, ...nonOwnedOut];
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const c = Math.max(1, Math.floor(concurrency));
-  const out: R[] = new Array(items.length);
-  let i = 0;
-  async function worker(): Promise<void> {
-    for (;;) {
-      const j = i++;
-      if (j >= items.length) return;
-      out[j] = await fn(items[j]!);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(c, items.length) }, () => worker()));
-  return out;
 }
 
 /**
@@ -213,19 +93,15 @@ export async function GET(request: Request) {
   const userId =
     typeof userIdRaw === "string" && userIdRaw.trim().length > 0 ? userIdRaw.trim() : defaultProfileUserId();
 
-  /** `charts=0` で決算日以降の累積リターン取得を省略（Mispriced は無効化、応答が短くなる） */
-  const includeCumCharts = searchParams.get("charts") !== "0";
-
   /** `yahoo=minimal` で Yahoo を呼ばず DB の `next_earnings_date` のみ（クライアントが 24h キャッシュヒット時に使用） */
   const useYahooFull = searchParams.get("yahoo") !== "minimal";
 
   const today = utcTodayYmd();
-  /** タクティカル・ウィンドウ: 今週（UTC）を中央に据えた 21 日（前後各 7 日 + 当該週 7 日） */
-  const week = isoWeekRangeUtcContaining(today);
-  const startYmd = ymdAddDaysUtc(week.start, -7);
-  const endYmd = ymdAddDaysUtc(week.end, 7);
+  /** 決算日前後 2 週間ずつ（計おおよそ 1 ヶ月、UTC） */
+  const startYmd = ymdAddDaysUtc(today, -14);
+  const endYmd = ymdAddDaysUtc(today, 14);
 
-  const laneCacheKey = `${userId}\t${startYmd}\t${endYmd}\t${includeCumCharts ? "1" : "0"}\t${useYahooFull ? "full" : "min"}`;
+  const laneCacheKey = `${userId}\t${startYmd}\t${endYmd}\t${useYahooFull ? "full" : "min"}`;
   const cachedLane = laneCacheGet(laneCacheKey);
   if (cachedLane != null) {
     return NextResponse.json(cachedLane);
@@ -238,14 +114,19 @@ export async function GET(request: Request) {
 
   try {
     const holdingTickerSet = new Set<string>();
+    const holdingProviderByUpper = new Map<string, string | null>();
     try {
       const hr = await db.execute({
-        sql: `SELECT DISTINCT UPPER(TRIM(ticker)) AS u FROM holdings WHERE user_id = ? AND quantity > 0`,
+        sql: `SELECT UPPER(TRIM(ticker)) AS u, provider_symbol FROM holdings WHERE user_id = ? AND quantity > 0`,
         args: [userId],
       });
       for (const row of hr.rows as Record<string, unknown>[]) {
         const u = String(row["u"] ?? "").trim();
-        if (u.length > 0) holdingTickerSet.add(u);
+        if (u.length === 0) continue;
+        holdingTickerSet.add(u);
+        const ps = row["provider_symbol"];
+        const prov = ps != null && String(ps).trim().length > 0 ? String(ps).trim() : null;
+        if (!holdingProviderByUpper.has(u)) holdingProviderByUpper.set(u, prov);
       }
     } catch {
       /* holdings 未作成時は空集合 */
@@ -280,12 +161,11 @@ export async function GET(request: Request) {
     }
 
     /**
-     * 重い Yahoo は次の銘柄のみ（`yahoo=minimal` ではスキップ）:
-     * - DB の次回決算が掲載ウィンドウ内
-     * - DB が null だが calendar プローブでウィンドウ内（保有はプローブ対象から欠かさない／その他は米国・JP 公平にサンプル）
+     * Yahoo フル取得（`yahoo=minimal` ではスキップ）:
+     * - 掲載ウィンドウ内の次回決算（DB）
+     * - 日付未設定かつ保有銘柄（DB / member_status=owned / holdings）— 未保有の null は取得しない
      */
     const inWindowDbHeavy = new Map<string, TickerIn>();
-    const nullDbForProbe = new Map<string, { ticker: string; providerSymbol: string | null; owned: boolean }>();
     for (const row of rows) {
       const isUnlisted = Number(row["is_unlisted"]) === 1;
       const ticker = String(row["ticker"] ?? "").trim();
@@ -294,45 +174,19 @@ export async function GET(request: Request) {
       if (eff.length === 0) continue;
       const dbYmd = ymdOrNull(row["next_earnings_date"]);
       const u = eff.toUpperCase();
-      const entry: TickerIn = { ticker: eff, providerSymbol: null };
+      const prov = holdingProviderByUpper.get(u) ?? null;
+      const entry: TickerIn = { ticker: eff, providerSymbol: prov };
       const statusRaw = row["member_status"];
       const statusNorm = typeof statusRaw === "string" ? statusRaw.trim().toLowerCase() : "";
       const isOwnedRow = statusNorm === "owned" || holdingTickerSet.has(u);
       if (dbYmd != null && dbYmd >= startYmd && dbYmd <= endYmd) {
         if (!inWindowDbHeavy.has(u)) inWindowDbHeavy.set(u, entry);
-      } else if (dbYmd == null) {
-        const prev = nullDbForProbe.get(u);
-        nullDbForProbe.set(u, {
-          ticker: eff,
-          providerSymbol: null,
-          owned: Boolean(prev?.owned) || isOwnedRow,
-        });
+      } else if (dbYmd == null && isOwnedRow) {
+        if (!inWindowDbHeavy.has(u)) inWindowDbHeavy.set(u, entry);
       }
     }
 
-    let probeCandidates: TickerIn[] = [];
-    if (useYahooFull) {
-      probeCandidates = buildFairCalendarProbeCandidates(nullDbForProbe, new Set(inWindowDbHeavy.keys()));
-    }
-
-    let probeByUpper = new Map<string, string | null>();
-    if (useYahooFull && probeCandidates.length > 0) {
-      probeByUpper = await fetchKoyomiCalendarProbeMap(probeCandidates, { concurrency: 18, delayMs: 0 });
-    }
-
-    const heavySeen = new Set<string>(inWindowDbHeavy.keys());
     const researchInputs: TickerIn[] = [...inWindowDbHeavy.values()];
-    if (useYahooFull) {
-      for (const it of probeCandidates) {
-        const u = it.ticker.toUpperCase();
-        if (heavySeen.has(u)) continue;
-        const ny = probeByUpper.get(u) ?? null;
-        if (ny != null && ny >= startYmd && ny <= endYmd) {
-          heavySeen.add(u);
-          researchInputs.push(it);
-        }
-      }
-    }
 
     const allEffTickers = researchInputs.map((x) => x.ticker);
 
@@ -470,27 +324,6 @@ export async function GET(request: Request) {
       muscleDeltaStatus: "unknown",
     };
 
-    const cumByKey = new Map<string, number | null>();
-    if (includeCumCharts) {
-      const cumSeen = new Set<string>();
-      const cumTasks: { key: string; ticker: string; ymd: string }[] = [];
-      for (const d of drafts) {
-        if (d.ymd >= today) continue;
-        const mu = muscleByTickerUpper.get(d.displayTicker.toUpperCase());
-        if (!mu || mu.muscleDeltaStatus !== "positive") continue;
-        const key = `${d.displayTicker.toUpperCase()}|${d.ymd}`;
-        if (cumSeen.has(key)) continue;
-        cumSeen.add(key);
-        cumTasks.push({ key, ticker: d.displayTicker, ymd: d.ymd });
-      }
-      const cumRun = cumTasks.length > MAX_CUM_CHART_TASKS ? cumTasks.slice(0, MAX_CUM_CHART_TASKS) : cumTasks;
-      const cumPairs = await mapWithConcurrency(cumRun, 16, async (t) => {
-        const pct = await fetchChartCumulativeReturnPercentSinceEventYmd(t.ticker, null, t.ymd);
-        return { key: t.key, pct };
-      });
-      for (const p of cumPairs) cumByKey.set(p.key, p.pct);
-    }
-
     const themeMap = new Map<string, { themeName: string; items: KoyomiLaneItem[] }>();
 
     for (const d of drafts) {
@@ -532,13 +365,11 @@ export async function GET(request: Request) {
         ruleOf40DeltaStatus: "unknown" as const,
       };
       const muscle = muscleByTickerUpper.get(tkU) ?? defaultMuscle;
-      const retKey = `${tkU}|${d.ymd}`;
-      const returnPctSinceEarnings = cumByKey.get(retKey) ?? null;
-      const isMispriced =
-        muscle.muscleDeltaStatus === "positive" &&
-        returnPctSinceEarnings != null &&
-        Number.isFinite(returnPctSinceEarnings) &&
-        returnPctSinceEarnings <= MISPRICED_CUM_RETURN_SINCE_EARNINGS_PCT;
+      const dayChg = regularMarketChangeByUpper.get(tkU) ?? null;
+      const isMispriced = isMispricedPositiveMuscleWithSessionDrop({
+        muscleDeltaStatus: muscle.muscleDeltaStatus,
+        regularMarketChangePercent: dayChg,
+      });
       tEntry.items.push({
         id: d.id,
         memberId: d.memberId,
@@ -568,8 +399,7 @@ export async function GET(request: Request) {
         muscleScorePrior: muscle.musclePrior,
         muscleDelta: muscle.muscleDelta,
         muscleDeltaStatus: muscle.muscleDeltaStatus,
-        regularMarketChangePercent: regularMarketChangeByUpper.get(tkU) ?? null,
-        returnPctSinceEarnings,
+        regularMarketChangePercent: dayChg,
         isMispriced,
       });
     }
