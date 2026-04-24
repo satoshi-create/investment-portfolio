@@ -23,6 +23,7 @@ export type StructuralEcoSortKey =
   | "eps"
   | "alpha"
   | "cumTrend"
+  | "volRatio"
   | "price"
   | "deviation"
   | "drawdown"
@@ -404,6 +405,20 @@ export function StructuralEcosystemThead({
                   className={`px-6 py-4 cursor-pointer select-none ${sfirst}`}
                   title="Sort"
                   label="Cumulative trend"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                />
+              );
+            case "volRatio":
+              return (
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="volRatio"
+                  align="right"
+                  className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  title="本日出来高 / 10 日平均出来高"
+                  label="Vol 比"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                 />

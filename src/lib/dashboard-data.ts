@@ -1493,6 +1493,9 @@ function buildDraftsFromHoldingRows(
       netCash,
       netCashPerShare,
       priceMinusNetCashPerShare,
+      regularMarketVolume: fromHybrid?.regularMarketVolume ?? null,
+      averageDailyVolume10Day: fromHybrid?.averageDailyVolume10Day ?? null,
+      volumeRatio: fromHybrid?.volumeRatio ?? null,
     };
   });
 }
@@ -1728,6 +1731,7 @@ async function enrichEcosystemMemberRow(
   themeCreatedAt: string | null,
   researchByTicker: Map<string, EquityResearchSnapshot>,
   efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
+  liveAlphaCtx: LiveAlphaBenchmarkContext,
   options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem> {
   const id = String(row["id"]);
@@ -1904,10 +1908,20 @@ async function enrichEcosystemMemberRow(
    * fast スケルトンでは外部 I/O を避け、DB/既存 Alpha 由来の lastClose のみ（大量ティッカーでタイムアウトしにくくする）。
    */
   let displayPrice: number | null = lastClose;
+  let priceSourceEco: "live" | "close" = "close";
+  let previousCloseEco: number | null = null;
+  let regularMarketVolumeEco: number | null = null;
+  let averageDailyVolume10DayEco: number | null = null;
+  let volumeRatioEco: number | null = null;
   if (effectiveTicker.length > 0 && !fast) {
     const ql = await fetchLiveQuoteSnapshot(effectiveTicker, null);
     if (ql != null && Number.isFinite(ql.price) && ql.price > 0) {
       displayPrice = ql.price;
+      priceSourceEco = "live";
+      previousCloseEco = ql.previousClose;
+      regularMarketVolumeEco = ql.regularMarketVolume;
+      averageDailyVolume10DayEco = ql.averageDailyVolume10Day;
+      volumeRatioEco = ql.volumeRatio;
     } else {
       const day = await fetchLatestPrice(effectiveTicker, null);
       if (day != null && Number.isFinite(day.close) && day.close > 0) {
@@ -1915,6 +1929,12 @@ async function enrichEcosystemMemberRow(
       }
     }
   }
+
+  const latestDailyAlphaObservationYmd = datedRows.length > 0 ? toYmd(datedRows[datedRows.length - 1]!.recordedAt) : null;
+  const benchPctEco =
+    instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkChangePct : liveAlphaCtx.jpBenchmarkChangePct;
+  const benchTickerEco =
+    instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkTicker : liveAlphaCtx.jpBenchmarkTicker;
 
   const dailyAlphas = datedRows.map((d) => d.alphaValue);
   const alphaDeviationZ = computeAlphaDeviationZScore(dailyAlphas);
@@ -2073,6 +2093,14 @@ async function enrichEcosystemMemberRow(
     ruleOf40,
     judgmentStatus: judgmentEco.status,
     judgmentReason: judgmentEco.reason,
+    latestDailyAlphaObservationYmd,
+    priceSource: priceSourceEco,
+    previousClose: previousCloseEco,
+    benchmarkDayChangePercent: benchPctEco,
+    liveAlphaBenchmarkTicker: benchTickerEco,
+    regularMarketVolume: regularMarketVolumeEco,
+    averageDailyVolume10Day: averageDailyVolume10DayEco,
+    volumeRatio: volumeRatioEco,
   };
 }
 
@@ -2112,6 +2140,7 @@ async function fetchEnrichedThemeEcosystem(
   themeId: string,
   portfolioTickerSet: Set<string>,
   themeCreatedAt: string | null,
+  liveAlphaCtx: LiveAlphaBenchmarkContext,
   perf?: { enabled: boolean; requestId?: string | null },
   options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem[]> {
@@ -2433,6 +2462,7 @@ async function fetchEnrichedThemeEcosystem(
             themeCreatedAt,
             researchByTicker,
             efficiencyByTickerUpper,
+            liveAlphaCtx,
             { fast },
           );
         } catch {
@@ -2545,6 +2575,8 @@ export async function getEcosystemCrossThemeBookmarks(
 
   if (rows.length === 0) return [];
 
+  const liveAlphaCtx = await resolveLiveAlphaBenchmarkContext();
+
   const byTheme = new Map<string, Record<string, unknown>[]>();
   for (const r of rows) {
     const tid = String(r.theme_id);
@@ -2597,6 +2629,7 @@ export async function getEcosystemCrossThemeBookmarks(
           themeCreatedAt,
           researchByTicker,
           efficiencyByTickerUpper,
+          liveAlphaCtx,
           { fast },
         );
         results[i] = { ...enriched, themeName: themeName.length > 0 ? themeName : "（無題）" };
@@ -2702,6 +2735,7 @@ export async function getThemeDetailData(
       theme.id,
       portfolioTickerSet,
       theme.createdAt != null ? String(theme.createdAt) : null,
+      liveAlphaCtx,
       perf,
       { fast },
     );
@@ -3292,6 +3326,9 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       netCash: null,
       netCashPerShare: null,
       priceMinusNetCashPerShare: null,
+      regularMarketVolume: null,
+      averageDailyVolume10Day: null,
+      volumeRatio: null,
     };
   });
 }

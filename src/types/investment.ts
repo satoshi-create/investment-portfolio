@@ -247,6 +247,12 @@ export interface Stock {
   netCashPerShare: number | null;
   /** 株価 − 1株当たりネットキャッシュ（現地通貨）。いずれか欠損時は null。 */
   priceMinusNetCashPerShare: number | null;
+  /** 当日（セッション）出来高（Yahoo `regularMarketVolume`、ライブ取得時） */
+  regularMarketVolume: number | null;
+  /** 10 日平均出来高。 */
+  averageDailyVolume10Day: number | null;
+  /** 出来高 / 10 日平均。商い急増の目安。 */
+  volumeRatio: number | null;
 }
 
 /** DB `signals.signal_type` and client-side synthetic live signals. */
@@ -500,6 +506,16 @@ export type ThemeEcosystemWatchItem = {
    * 上場来騰落率。可能なら日足初日〜末日の同一基準リターン、それ以外は `listing_price` と表示価格の比。
    */
   performanceSinceFoundation: number | null;
+
+  /** `alpha_history` 由来の日次系列の直近観測日（5D Pulse）。 */
+  latestDailyAlphaObservationYmd: string | null;
+  priceSource: "live" | "close";
+  previousClose: number | null;
+  benchmarkDayChangePercent: number | null;
+  liveAlphaBenchmarkTicker: string | null;
+  regularMarketVolume: number | null;
+  averageDailyVolume10Day: number | null;
+  volumeRatio: number | null;
 };
 
 /** 全テーマ横断のウォッチブックマーク 1 行（`getEcosystemCrossThemeBookmarks` 用） */

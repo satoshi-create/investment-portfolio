@@ -27,6 +27,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_IDS = [
   "eps",
   "alpha",
   "cumTrend",
+  "volRatio",
   "price",
 ] as const;
 

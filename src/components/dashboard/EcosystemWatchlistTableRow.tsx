@@ -60,6 +60,19 @@ function pctClass(v: number): string {
   return "text-muted-foreground";
 }
 
+function fmtVolumeRatioCell(r: number | null): string {
+  if (r == null || !Number.isFinite(r)) return "—";
+  return `${r.toFixed(2)}×`;
+}
+
+function volumeRatioToneClass(r: number | null): string {
+  if (r == null || !Number.isFinite(r)) return "text-muted-foreground";
+  if (r >= 2) return "text-amber-400 font-bold";
+  if (r >= 1.2) return "text-cyan-300/90";
+  if (r >= 0.8) return "text-foreground/90";
+  return "text-slate-500";
+}
+
 function extractGeopoliticalPotential(observationNotes: string | null | undefined): string | null {
   if (observationNotes == null) return null;
   const s = observationNotes.trim();
@@ -559,6 +572,16 @@ export function EcosystemWatchlistTableRow({
                   ) : null}
                   <EcosystemCumulativeSparkline history={e.alphaHistory} />
                 </div>
+              </td>
+            );
+          case "volRatio":
+            return (
+              <td
+                key={colId}
+                title={e.volumeRatio != null ? `本日出来高 / 10 日平均: ${e.volumeRatio.toFixed(2)}×` : undefined}
+                className={cn("px-4 py-4 text-right font-mono text-xs tabular-nums", volumeRatioToneClass(e.volumeRatio), stickyFirst)}
+              >
+                {fmtVolumeRatioCell(e.volumeRatio)}
               </td>
             );
           case "price":

@@ -1,5 +1,6 @@
 import { ecoFcfYieldSortValue, ecoRuleOf40SortValue } from "@/src/components/dashboard/eco-efficiency-display";
 import type { StructuralEcoSortKey } from "@/src/components/dashboard/StructuralEcosystemThead";
+import { lastDailyAlphaForTrendSort } from "@/src/lib/eco-trend-daily";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
 import type { ThemeEcosystemWatchItem } from "@/src/types/investment";
@@ -68,7 +69,7 @@ export function sortStructuralEcosystemWatchlist<T extends ThemeEcosystemWatchIt
     return ax < by ? -1 : ax > by ? 1 : 0;
   };
   const dir = ecoSortDir === "asc" ? 1 : -1;
-  const lastAlpha = (e: ThemeEcosystemWatchItem) =>
+  const lastCumulativeAlpha = (e: ThemeEcosystemWatchItem) =>
     e.alphaHistory.length > 0 ? e.alphaHistory[e.alphaHistory.length - 1]! : null;
   const devZ = (e: ThemeEcosystemWatchItem) =>
     e.alphaDeviationZ != null && Number.isFinite(e.alphaDeviationZ) ? e.alphaDeviationZ : null;
@@ -125,8 +126,9 @@ export function sortStructuralEcosystemWatchlist<T extends ThemeEcosystemWatchIt
     if (ecoSortKey === "egrowth") return dir * cmpNum(ecoExpectedGrowthOf(a), ecoExpectedGrowthOf(b));
     if (ecoSortKey === "eps") return dir * cmpNum(ecoEpsOf(a), ecoEpsOf(b));
     if (ecoSortKey === "alpha") return dir * cmpNum(a.latestAlpha, b.latestAlpha);
-    if (ecoSortKey === "trend5d") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
-    if (ecoSortKey === "cumTrend") return dir * cmpNum(lastAlpha(a), lastAlpha(b));
+    if (ecoSortKey === "trend5d") return dir * cmpNum(lastDailyAlphaForTrendSort(a), lastDailyAlphaForTrendSort(b));
+    if (ecoSortKey === "cumTrend") return dir * cmpNum(lastCumulativeAlpha(a), lastCumulativeAlpha(b));
+    if (ecoSortKey === "volRatio") return dir * cmpNum(a.volumeRatio, b.volumeRatio);
     if (ecoSortKey === "price") return dir * cmpNum(a.currentPrice, b.currentPrice);
     if (ecoSortKey === "deviation") return dir * cmpNum(devZ(a), devZ(b));
     if (ecoSortKey === "drawdown") return dir * cmpNum(ddOf(a), ddOf(b));

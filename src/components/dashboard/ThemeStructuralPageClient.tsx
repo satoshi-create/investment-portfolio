@@ -59,6 +59,7 @@ import {
 } from "@/src/lib/adoption-stage";
 import {
   classifyTickerInstrument,
+  fiveDayPulseForHoldingRow,
   isThemeStructuralTrendPositiveUp,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
 } from "@/src/lib/alpha-logic";
@@ -524,6 +525,46 @@ function normalizeThemeDetailResponse(
             (item as Record<string, unknown>).alphaDailyHistory ??
               (item as Record<string, unknown>).alpha_daily_history,
           ),
+          latestDailyAlphaObservationYmd: (() => {
+            const a = (item as Record<string, unknown>).latestDailyAlphaObservationYmd;
+            const b = (item as Record<string, unknown>).latest_daily_alpha_observation_ymd;
+            const s = typeof a === "string" ? a : typeof b === "string" ? b : "";
+            return s.trim().length >= 10 ? s.trim().slice(0, 10) : null;
+          })(),
+          priceSource:
+            (item as Record<string, unknown>).priceSource === "live" || (item as Record<string, unknown>).price_source === "live"
+              ? "live"
+              : "close",
+          previousClose: (() => {
+            const v = (item as Record<string, unknown>).previousClose ?? (item as Record<string, unknown>).previous_close;
+            return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+          })(),
+          benchmarkDayChangePercent: (() => {
+            const v =
+              (item as Record<string, unknown>).benchmarkDayChangePercent ??
+              (item as Record<string, unknown>).benchmark_day_change_percent;
+            return typeof v === "number" && Number.isFinite(v) ? v : null;
+          })(),
+          liveAlphaBenchmarkTicker: (() => {
+            const a = (item as Record<string, unknown>).liveAlphaBenchmarkTicker;
+            const b = (item as Record<string, unknown>).live_alpha_benchmark_ticker;
+            const s = typeof a === "string" ? a : typeof b === "string" ? b : "";
+            return s.length > 0 ? s : null;
+          })(),
+          regularMarketVolume: (() => {
+            const v = (item as Record<string, unknown>).regularMarketVolume ?? (item as Record<string, unknown>).regular_market_volume;
+            return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+          })(),
+          averageDailyVolume10Day: (() => {
+            const v =
+              (item as Record<string, unknown>).averageDailyVolume10Day ??
+              (item as Record<string, unknown>).average_daily_volume10_day;
+            return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+          })(),
+          volumeRatio: (() => {
+            const v = (item as Record<string, unknown>).volumeRatio ?? (item as Record<string, unknown>).volume_ratio;
+            return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+          })(),
           };
         })
       : [],
@@ -2193,7 +2234,11 @@ export function ThemePageClient({
                   Momentum cluster（保有銘柄 Alpha）
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {stocks.map((s) => (
+                  {stocks.map((s) => {
+                    const { series: pulse5d, hasIntradayPulse } = fiveDayPulseForHoldingRow(s);
+                    const lastPulse =
+                      pulse5d.length > 0 ? pulse5d[pulse5d.length - 1]! : null;
+                    return (
                     <div
                       key={s.id}
                       className="rounded-xl border border-border bg-card/50 p-3 flex flex-col gap-2 min-h-[7.5rem]"
@@ -2212,36 +2257,35 @@ export function ThemePageClient({
                             </p>
                           ) : null}
                         </div>
-                        {s.alphaHistory.length > 0 ? (
+                        {lastPulse != null && Number.isFinite(lastPulse) ? (
                           <span
                             className={`text-[10px] font-mono font-bold shrink-0 ${
-                              s.alphaHistory[s.alphaHistory.length - 1]! > 0
+                              lastPulse > 0
                                 ? "text-emerald-400"
-                                : s.alphaHistory[s.alphaHistory.length - 1]! < 0
+                                : lastPulse < 0
                                   ? "text-rose-400"
                                   : "text-muted-foreground"
                             }`}
                           >
-                            {s.alphaHistory[s.alphaHistory.length - 1]! > 0
-                              ? "+"
-                              : ""}
-                            {s.alphaHistory[s.alphaHistory.length - 1]}%
+                            {lastPulse > 0 ? "+" : ""}
+                            {lastPulse.toFixed(2)}%
                           </span>
                         ) : (
                           <span className="text-[10px] text-muted-foreground">—</span>
                         )}
                       </div>
                       <div className="flex-1 flex items-center justify-center min-h-[3rem]">
-                        {s.alphaHistory.length === 0 ? (
+                        {pulse5d.length === 0 ? (
                           <span className="text-[10px] text-muted-foreground">
                             No series
                           </span>
                         ) : (
-                          <TrendMiniChart history={s.alphaHistory} />
+                          <TrendMiniChart history={pulse5d} maxPoints={5} lastBarPulse={hasIntradayPulse} />
                         )}
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               </section>
             ) : null}

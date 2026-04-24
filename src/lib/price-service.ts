@@ -816,6 +816,13 @@ export type HybridHoldingPriceSnapshot = {
   source: "live" | "close";
   /** ISO 8601 */
   asOf: string;
+  /** 直前取引日終値（`regularMarketPreviousClose`）。 */
+  previousClose: number | null;
+  regularMarketVolume: number | null;
+  /** 10 日平均出来高。Volume Ratio = regularMarketVolume / これ。 */
+  averageDailyVolume10Day: number | null;
+  /** 当日（セッション）出来高 / 10 日平均。算出不能時は null。 */
+  volumeRatio: number | null;
 };
 
 function finitePositive(n: unknown): number | null {
@@ -945,13 +952,31 @@ export function pickLivePriceFromQuote(q: Record<string, unknown>): {
   return null;
 }
 
+function volumeRatioFromQuote(q: Record<string, unknown>): number | null {
+  const rv = finitePositive(q["regularMarketVolume"]);
+  const av = finitePositive(q["averageDailyVolume10Day"]);
+  if (rv == null || av == null || av <= 0) return null;
+  return roundAlphaMetric(rv / av);
+}
+
+export type LiveQuoteSnapshot = {
+  price: number;
+  changePct: number | null;
+  asOf: string;
+  previousClose: number | null;
+  regularMarketVolume: number | null;
+  averageDailyVolume10Day: number | null;
+  volumeRatio: number | null;
+};
+
 /**
  * `yahooFinance.quote` でライブに近い最新値を取得（chart とは独立）。
+ * 出来高は同一レスポンスから `regularMarketVolume` / `averageDailyVolume10Day` を採用。
  */
 export async function fetchLiveQuoteSnapshot(
   ticker: string,
   providerSymbol?: string | null,
-): Promise<{ price: number; changePct: number | null; asOf: string } | null> {
+): Promise<LiveQuoteSnapshot | null> {
   const yahooSymbol = toYahooFinanceSymbol(ticker, providerSymbol);
   if (!yahooSymbol) return null;
   const logLabel = trimProvider(providerSymbol) ?? ticker;
@@ -966,6 +991,8 @@ export async function fetchLiveQuoteSnapshot(
           "regularMarketChangePercent",
           "regularMarketTime",
           "regularMarketPreviousClose",
+          "regularMarketVolume",
+          "averageDailyVolume10Day",
           "postMarketPrice",
           "postMarketChangePercent",
           "postMarketTime",
@@ -978,7 +1005,15 @@ export async function fetchLiveQuoteSnapshot(
       { validateResult: false },
     )) as unknown as Record<string, unknown>;
     if (q == null || typeof q !== "object") return null;
-    return pickLivePriceFromQuote(q);
+    const picked = pickLivePriceFromQuote(q);
+    if (picked == null) return null;
+    return {
+      ...picked,
+      previousClose: finitePositive(q["regularMarketPreviousClose"]),
+      regularMarketVolume: finitePositive(q["regularMarketVolume"]),
+      averageDailyVolume10Day: finitePositive(q["averageDailyVolume10Day"]),
+      volumeRatio: volumeRatioFromQuote(q),
+    };
   } catch (e) {
     logSkip(logLabel, "fetchLiveQuoteSnapshot (quote) failed", e);
     return null;
@@ -1013,6 +1048,10 @@ export async function fetchHoldingsHybridPriceSnapshots(
           changePct: live.changePct,
           source: "live" as const,
           asOf: live.asOf,
+          previousClose: live.previousClose,
+          regularMarketVolume: live.regularMarketVolume,
+          averageDailyVolume10Day: live.averageDailyVolume10Day,
+          volumeRatio: live.volumeRatio,
         } satisfies HybridHoldingPriceSnapshot,
       };
     }
@@ -1027,6 +1066,10 @@ export async function fetchHoldingsHybridPriceSnapshots(
         changePct: snap.changePct,
         source: "close" as const,
         asOf: `${snap.date.slice(0, 10)}T00:00:00.000Z`,
+        previousClose: null,
+        regularMarketVolume: null,
+        averageDailyVolume10Day: null,
+        volumeRatio: null,
       } satisfies HybridHoldingPriceSnapshot,
     };
   });

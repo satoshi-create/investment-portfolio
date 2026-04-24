@@ -342,6 +342,58 @@ export function computeLiveAlphaDayPercent(input: {
   return computeAlphaPercent(sr, input.benchmarkDayChangePercent);
 }
 
+/**
+ * 5D Pulse: 直近4営業日分の日次 Alpha（DB 系列）＋ ライブ quote があるとき本日の暫定日次 Alpha。
+ * ライブが無い場合は従来どおり最新5点の日次 Alpha。
+ */
+export function buildFiveDayPulseDailyAlpha(input: {
+  /** 日次 Alpha % の古い→新しい系列（`alpha_history` 由来） */
+  dailyAlphaHistory: readonly number[];
+  latestAlphaObservationYmd: string | null;
+  priceSource: "live" | "close";
+  livePrice: number | null;
+  previousClose: number | null;
+  benchmarkDayChangePercent: number | null;
+}): { series: number[]; hasIntradayPulse: boolean } {
+  const hist = [...input.dailyAlphaHistory];
+  const live = computeLiveAlphaDayPercent({
+    livePrice: input.livePrice,
+    previousClose: input.previousClose,
+    benchmarkDayChangePercent: input.benchmarkDayChangePercent,
+  });
+  const todayYmd = utcTodayYmd();
+  let trimmed = hist;
+  if (trimmed.length > 0 && input.latestAlphaObservationYmd != null && input.latestAlphaObservationYmd === todayYmd && live != null) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  const past4 = trimmed.length >= 4 ? trimmed.slice(-4) : trimmed;
+  if (live != null && Number.isFinite(live) && input.priceSource === "live") {
+    if (past4.length === 0) return { series: [live], hasIntradayPulse: true };
+    return { series: [...past4, live], hasIntradayPulse: true };
+  }
+  if (hist.length === 0) return { series: [], hasIntradayPulse: false };
+  return { series: hist.slice(-5), hasIntradayPulse: false };
+}
+
+/** 保有・テーマ詳細など `Stock` 行向け: `alphaHistory` 名の系列で 5D Pulse（4 確定＋1 本日暫定）を組む。 */
+export function fiveDayPulseForHoldingRow(s: {
+  alphaHistory: readonly number[];
+  latestAlphaObservationYmd: string | null;
+  priceSource: "live" | "close";
+  currentPrice: number | null;
+  previousClose: number | null;
+  benchmarkDayChangePercent: number | null;
+}): { series: number[]; hasIntradayPulse: boolean } {
+  return buildFiveDayPulseDailyAlpha({
+    dailyAlphaHistory: s.alphaHistory,
+    latestAlphaObservationYmd: s.latestAlphaObservationYmd,
+    priceSource: s.priceSource,
+    livePrice: s.currentPrice,
+    previousClose: s.previousClose,
+    benchmarkDayChangePercent: s.benchmarkDayChangePercent,
+  });
+}
+
 /** `alpha_history` 等から渡す 1 日分の超過リターン（Ticker% − Bench%）。 */
 export type DatedAlphaRow = {
   /** `recorded_at`（YYYY-MM-DD または ISO。先頭 10 文字を日付として扱う） */

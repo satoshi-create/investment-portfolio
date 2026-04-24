@@ -68,7 +68,7 @@ import {
 } from "@/src/lib/format-display-currency";
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
-import { computeLiveAlphaDayPercent } from "@/src/lib/alpha-logic";
+import { computeLiveAlphaDayPercent, fiveDayPulseForHoldingRow } from "@/src/lib/alpha-logic";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import { cn } from "@/src/lib/cn";
 import {
@@ -109,7 +109,8 @@ type SortKey =
   | "pe"
   | "peg"
   | "egrowth"
-  | "eps";
+  | "eps"
+  | "volRatio";
 
 type EarningsNoteModalTab = "edit" | "preview";
 
@@ -149,6 +150,22 @@ function liveDailyAlphaPct(s: Stock): number | null {
     previousClose: s.previousClose,
     benchmarkDayChangePercent: s.benchmarkDayChangePercent,
   });
+}
+
+function fiveDayPulseForStock(s: Stock) {
+  return fiveDayPulseForHoldingRow(s);
+}
+
+/** 5D 列の並び: 本日暫定 Alpha まで含む系列の最終点 */
+function trend5dSortValue(s: Stock): number | null {
+  const { series } = fiveDayPulseForStock(s);
+  if (series.length === 0) return null;
+  const v = series[series.length - 1]!;
+  return Number.isFinite(v) ? v : null;
+}
+
+function volRatioOf(s: Stock): number | null {
+  return s.volumeRatio != null && Number.isFinite(s.volumeRatio) ? s.volumeRatio : null;
 }
 
 /** 対ベンチで大きく遅行（ライブ日次 Alpha が極端にマイナス） */
@@ -814,7 +831,8 @@ export function InventoryTable({
       if (key === "perfListed")
         return dir * cmpNum(a.performanceSinceFoundation, b.performanceSinceFoundation);
       if (key === "alpha") return dir * cmpNum(sortableAlphaValue(a), sortableAlphaValue(b));
-      if (key === "trend5d") return dir * cmpNum(recordedLastAlphaPct(a), recordedLastAlphaPct(b));
+      if (key === "trend5d") return dir * cmpNum(trend5dSortValue(a), trend5dSortValue(b));
+      if (key === "volRatio") return dir * cmpNum(volRatioOf(a), volRatioOf(b));
       if (key === "position") return dir * cmpNum(a.marketValue, b.marketValue);
       if (key === "judgment") {
         const ja = judgmentPriorityRank(a.judgmentStatus as JudgmentStatus);
@@ -929,6 +947,8 @@ export function InventoryTable({
     let epsN = 0;
     let trend5dSum = 0;
     let trend5dN = 0;
+    let volRatioSum = 0;
+    let volRatioN = 0;
     for (const s of rows) {
       const pe = peOf(s);
       if (pe != null) {
@@ -950,14 +970,19 @@ export function InventoryTable({
         epsSum += ep;
         epsN += 1;
       }
-      const h = s.alphaHistory;
-      if (h.length >= 5) {
-        const last = h[h.length - 1]!;
-        const prev5 = h[h.length - 5]!;
-        if (Number.isFinite(last) && Number.isFinite(prev5)) {
-          trend5dSum += last - prev5;
+      const p = fiveDayPulseForStock(s).series;
+      if (p.length >= 5) {
+        const last = p[p.length - 1]!;
+        const first = p[0]!;
+        if (Number.isFinite(last) && Number.isFinite(first)) {
+          trend5dSum += last - first;
           trend5dN += 1;
         }
+      }
+      const vr = volRatioOf(s);
+      if (vr != null) {
+        volRatioSum += vr;
+        volRatioN += 1;
       }
     }
 
@@ -973,6 +998,7 @@ export function InventoryTable({
       avgExpectedGrowthVisible: egrowthN > 0 ? egrowthSum / egrowthN : null,
       avgEpsVisible: epsN > 0 ? epsSum / epsN : null,
       avgFiveDayAlphaDelta: trend5dN > 0 ? trend5dSum / trend5dN : null,
+      avgVolRatioVisible: volRatioN > 0 ? volRatioSum / volRatioN : null,
       totalMarketValueVisible: totalMv,
       sumWeightVisible: sumWt,
     };
@@ -1566,6 +1592,24 @@ export function InventoryTable({
                               onClick={() => toggleSort("trend5d")}
                             >
                               5D{sortMark("trend5d")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "volRatio":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            metricHelpText={METRIC_HEADER_TIP.volumeRatio}
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("volRatio")}
+                            >
+                              Vol 比{sortMark("volRatio")}
                             </button>
                           </SortableInventoryTh>
                         );
@@ -2198,16 +2242,40 @@ export function InventoryTable({
                             </div>
                           </td>
                         );
-                      case "trend5d":
+                      case "trend5d": {
+                        const { series, hasIntradayPulse } = fiveDayPulseForStock(stock);
                         return (
                           <td key={colId} className="px-4 py-4 align-middle">
-                            {stock.alphaHistory.length === 0 ? (
+                            {series.length === 0 ? (
                               <span className="text-muted-foreground text-xs">No data</span>
                             ) : (
-                              <TrendMiniChart history={stock.alphaHistory} maxPoints={5} />
+                              <TrendMiniChart history={series} maxPoints={5} lastBarPulse={hasIntradayPulse} />
                             )}
                           </td>
                         );
+                      }
+                      case "volRatio": {
+                        const vr = volRatioOf(stock);
+                        const volCls =
+                          vr == null
+                            ? "text-muted-foreground"
+                            : vr >= 2
+                              ? "text-amber-400 font-bold"
+                              : vr >= 1.2
+                                ? "text-cyan-300/90"
+                                : vr >= 0.8
+                                  ? "text-foreground/90"
+                                  : "text-slate-500";
+                        return (
+                          <td
+                            key={colId}
+                            className={cn("px-4 py-4 text-right font-mono text-xs tabular-nums", volCls)}
+                            title={vr != null ? `本日出来高 / 10 日平均: ${vr.toFixed(2)}×` : undefined}
+                          >
+                            {vr == null ? "—" : `${vr.toFixed(2)}×`}
+                          </td>
+                        );
+                      }
                       case "position":
                         return (
                           <td key={colId} className="px-6 py-4 text-right">
@@ -2523,11 +2591,32 @@ export function InventoryTable({
                                   ? "text-rose-400"
                                   : "text-muted-foreground"
                             }`}
-                            title="表示行の Alpha 終値における直近5営業日変化の単純平均"
+                            title="表示行の 5D Pulse 系列（暫定含む）先頭→末尾の日次Alpha差の単純平均"
                           >
                             {footerStats.avgFiveDayAlphaDelta > 0 ? "+" : ""}
                             {footerStats.avgFiveDayAlphaDelta.toFixed(2)}%
                           </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    );
+                  case "volRatio":
+                    return (
+                      <td
+                        key={colId}
+                        className="px-4 py-3 text-right align-top font-mono text-[11px] leading-tight"
+                        title="表示行の出来高比（本日/10日平均）の単純平均"
+                      >
+                        {footerStats.avgVolRatioVisible != null && Number.isFinite(footerStats.avgVolRatioVisible) ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                              Avg vol
+                            </span>
+                            <span className="font-bold text-foreground/90 tabular-nums">
+                              {footerStats.avgVolRatioVisible.toFixed(2)}×
+                            </span>
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}

@@ -9,7 +9,7 @@ import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepBut
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { ecoFcfYieldTone, ecoRuleOf40Tone } from "@/src/components/dashboard/eco-efficiency-display";
 import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
-import { dailyAlphaSeriesForMiniTrend } from "@/src/lib/eco-trend-daily";
+import { fiveDayPulseForEcosystem } from "@/src/lib/eco-trend-daily";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { cn } from "@/src/lib/cn";
@@ -25,6 +25,19 @@ import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-colu
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
 import { INVESTMENT_METRIC_TONE_TEXT_CLASS, investmentMetricToneForSignedPercent } from "@/src/types/investment";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
+
+function fmtVolumeRatioCell(r: number | null): string {
+  if (r == null || !Number.isFinite(r)) return "—";
+  return `${r.toFixed(2)}×`;
+}
+
+function volumeRatioToneClass(r: number | null): string {
+  if (r == null || !Number.isFinite(r)) return "text-muted-foreground";
+  if (r >= 2) return "text-amber-400 font-bold";
+  if (r >= 1.2) return "text-cyan-300/90";
+  if (r >= 0.8) return "text-foreground/90";
+  return "text-slate-500";
+}
 
 function fmtDdCol(v: number | null): string {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -554,13 +567,13 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               </td>
             );
           case "trend5d": {
-            const dailySeries = dailyAlphaSeriesForMiniTrend(e);
+            const { series, hasIntradayPulse } = fiveDayPulseForEcosystem(e);
             return (
               <td key={colId} className={`px-4 py-3 align-middle text-center ${stickyFirst}`}>
-                {dailySeries.length === 0 ? (
+                {series.length === 0 ? (
                   <span className="text-muted-foreground text-xs">No data</span>
                 ) : (
-                  <TrendMiniChart history={dailySeries} maxPoints={5} />
+                  <TrendMiniChart history={series} maxPoints={5} lastBarPulse={hasIntradayPulse} />
                 )}
               </td>
             );
@@ -895,6 +908,16 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                   ) : null}
                   <EcosystemCumulativeSparkline history={e.alphaHistory} />
                 </div>
+              </td>
+            );
+          case "volRatio":
+            return (
+              <td
+                key={colId}
+                title={e.volumeRatio != null ? `本日出来高 / 10 日平均: ${e.volumeRatio.toFixed(2)}×` : undefined}
+                className={cn("px-4 py-3 text-right font-mono text-xs tabular-nums", volumeRatioToneClass(e.volumeRatio), stickyFirst)}
+              >
+                {fmtVolumeRatioCell(e.volumeRatio)}
               </td>
             );
           case "price":

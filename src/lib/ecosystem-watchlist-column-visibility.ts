@@ -38,6 +38,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
   eps: "EPS",
   alpha: "Cum. α",
   cumTrend: "累積トレンド",
+  volRatio: "Vol 比",
   price: "Last（価格）",
 };
 
