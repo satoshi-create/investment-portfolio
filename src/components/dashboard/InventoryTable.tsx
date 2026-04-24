@@ -87,6 +87,7 @@ import {
 import { InventoryTableColumnToolbar } from "@/src/components/dashboard/InventoryTableColumnToolbar";
 import { MetricHeaderHelp } from "@/src/components/dashboard/MetricHeaderHelp";
 import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
+import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
 
 type SortKey =
   | "asset"
@@ -1771,8 +1772,11 @@ export function InventoryTable({
                                       ✨
                                     </span>
                                   ) : null}
-                                  <span className="min-w-0 truncate font-bold font-mono text-foreground group-hover:text-accent-cyan transition-colors">
-                                    {stock.ticker}
+                                  <span
+                                    className="min-w-0 truncate font-bold font-mono text-foreground group-hover:text-accent-cyan transition-colors"
+                                    title={`Yahoo: ${yahooSymbolForTooltip(stock.ticker, stock.providerSymbol)}`}
+                                  >
+                                    {formatTickerForDisplay(stock.ticker, stock.instrumentKind)}
                                   </span>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">

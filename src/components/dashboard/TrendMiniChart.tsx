@@ -15,6 +15,11 @@ export function TrendMiniChart({
   lastBarPulse?: boolean;
 }) {
   const pts = Array.isArray(history) ? history.slice(-Math.max(1, Math.floor(maxPoints))) : [];
+  /** 単日の壊れた Alpha でバー高さが他を潰さないよう表示だけ緩衝 */
+  const barHeightPx = (h: number) => {
+    const w = Math.max(-25, Math.min(25, h));
+    return Math.min(Math.abs(w) * 5 + 2, 24);
+  };
   return (
     <div
       className="mx-auto flex min-w-[4.25rem] shrink-0 justify-center gap-1 h-6 items-end"
@@ -23,15 +28,16 @@ export function TrendMiniChart({
     >
       {pts.map((h, i) => {
         const isLast = i === pts.length - 1;
+        const w = Math.max(-25, Math.min(25, h));
         return (
           <div
             key={i}
             className={cn(
               "w-1.5 rounded-full",
-              h > 0 ? "bg-accent-emerald/50" : "bg-accent-rose/50",
+              w > 0 ? "bg-accent-emerald/50" : "bg-accent-rose/50",
               lastBarPulse && isLast && "ring-1 ring-cyan-400/55",
             )}
-            style={{ height: `${Math.min(Math.abs(h) * 5 + 2, 24)}px` }}
+            style={{ height: `${barHeightPx(h)}px` }}
           />
         );
       })}

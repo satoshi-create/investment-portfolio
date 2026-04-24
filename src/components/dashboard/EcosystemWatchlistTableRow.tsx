@@ -15,6 +15,7 @@ import {
   formatDividendPayoutPercent,
 } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
+import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
@@ -162,8 +163,11 @@ export function EcosystemWatchlistTableRow({
                           ✨
                         </span>
                       ) : null}
-                      <span className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono whitespace-nowrap truncate">
-                        {e.ticker}
+                      <span
+                        className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono whitespace-nowrap truncate"
+                        title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}`}
+                      >
+                        {formatTickerForDisplay(e.ticker, e.instrumentKind)}
                       </span>
                     </div>
                     <div className="shrink-0 flex flex-row flex-nowrap items-center gap-1">

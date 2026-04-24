@@ -67,6 +67,7 @@ import {
   isThemeStructuralTrendPositiveUp,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
 } from "@/src/lib/alpha-logic";
+import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER } from "@/src/lib/edo-theme-constants";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { parseAlphaDailyHistoryJson } from "@/src/lib/eco-trend-daily";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
@@ -91,6 +92,7 @@ import { AiUnicornCreditSeam } from "@/src/components/dashboard/AiUnicornCreditS
 import { SemiconductorSupplyChainObservationPanel } from "@/src/components/dashboard/SemiconductorSupplyChainObservationPanel";
 import { SaaSApocalypseLensPanel } from "@/src/components/dashboard/SaaSApocalypseLensPanel";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
+import { ThemeMetaBlock } from "@/src/components/dashboard/ThemeMetaBlock";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { UnicornCard } from "@/src/components/dashboard/UnicornCard";
 import {
@@ -265,47 +267,6 @@ function ecosystemMatchesSearchQuery(
   if (n.length === 0) return true;
   const hay = [e.companyName, e.ticker, e.role, e.observationNotes ?? ""];
   return hay.some((s) => s.toLowerCase().includes(n));
-}
-
-function ThemeMetaBlock({
-  theme,
-  themeName,
-}: {
-  theme: InvestmentThemeRecord | null;
-  themeName: string;
-}) {
-  return (
-    <div className="space-y-4 rounded-2xl border border-border bg-card/40 p-5 md:p-6">
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-1">
-          Investment thesis
-        </p>
-        {theme?.description ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-            {theme.description}
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            テーマ「{themeName}」の解説は未登録です。
-            <span className="font-mono text-muted-foreground">investment_themes</span>{" "}
-            に Notion から移行した{" "}
-            <span className="font-mono">description</span>{" "}
-            を投入すると表示されます。
-          </p>
-        )}
-      </div>
-      {theme?.goal ? (
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-1">
-            Goal & milestones
-          </p>
-          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-            {theme.goal}
-          </p>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 type ThemeDetailJson = ThemeDetailData & { userId?: string; error?: string };
@@ -2161,7 +2122,11 @@ export function ThemePageClient({
                         id="eco-add-role"
                         value={addRole}
                         onChange={(e) => setAddRole(e.target.value)}
-                        placeholder="江戸的役割・メモ"
+                        placeholder={
+                          themeLabel.trim() === EDO_CIRCULAR_THEME_NAME
+                            ? EDO_ECOSYSTEM_ROLE_PLACEHOLDER
+                            : "江戸的役割・メモ"
+                        }
                         autoComplete="off"
                       />
                     </div>

@@ -19,6 +19,7 @@ import {
   formatDividendPayoutPercent,
 } from "@/src/lib/eco-dividend-payout";
 import { ECOSYSTEM_MEMBER_FIELD_MAX_LEN } from "@/src/lib/ecosystem-field-meta";
+import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
@@ -310,8 +311,11 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         ✨
                       </span>
                     ) : null}
-                    <span className="shrink-0 font-bold font-mono text-foreground group-hover:text-blue-400 transition-colors">
-                      {e.ticker}
+                    <span
+                      className="shrink-0 font-bold font-mono text-foreground group-hover:text-blue-400 transition-colors"
+                      title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}`}
+                    >
+                      {formatTickerForDisplay(e.ticker, e.instrumentKind)}
                     </span>
                     {e.companyName ? (
                       <span

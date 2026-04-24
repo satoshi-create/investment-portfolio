@@ -577,6 +577,72 @@ async function fetchOldestDailyListingPriceFromChart(yahooSymbol: string, ticker
 
 type SortedDailyBar = { ymd: string; adj: number | null; cl: number | null };
 
+function effectiveSortedBarPrice(b: SortedDailyBar): number | null {
+  if (b.adj != null && b.adj > 0) return b.adj;
+  if (b.cl != null && b.cl > 0) return b.cl;
+  return null;
+}
+
+/**
+ * Yahoo 日足に混じる孤立スパイク（分割誤判定・壊れた1バー等）を除き、上場来%・区間損益の分母/分子を安定化する。
+ * 隣接バーと整合しない**内点**を落とし、**先端**が隣の集団から外れすぎていれば1本削る。
+ */
+function filterSortedDailyBarChartOutliers(bars: SortedDailyBar[]): SortedDailyBar[] {
+  if (bars.length < 3) return bars;
+  const R = 5;
+
+  function median3(a: number, b: number, c: number): number {
+    const s = [a, b, c].sort((x, y) => x - y);
+    return s[1]!;
+  }
+
+  let b = bars;
+  for (let pass = 0; pass < 4; pass++) {
+    const next: SortedDailyBar[] = [];
+    for (let i = 0; i < b.length; i++) {
+      const p = effectiveSortedBarPrice(b[i]!);
+      if (p == null) continue;
+      if (i > 0 && i < b.length - 1) {
+        const pl = effectiveSortedBarPrice(b[i - 1]!);
+        const pr = effectiveSortedBarPrice(b[i + 1]!);
+        if (pl != null && pr != null && pl > 0 && pr > 0) {
+          const nLo = pl < pr ? pl : pr;
+          const nHi = pl > pr ? pl : pr;
+          if (nLo > 0 && nHi / nLo < 2) {
+            if (p / nLo > R || nHi / p > R) continue;
+          }
+        }
+      }
+      next.push(b[i]!);
+    }
+    if (next.length === b.length) break;
+    b = next;
+  }
+
+  while (b.length >= 4) {
+    const p0 = effectiveSortedBarPrice(b[0]!);
+    const p1 = effectiveSortedBarPrice(b[1]!);
+    const p2 = effectiveSortedBarPrice(b[2]!);
+    const p3 = effectiveSortedBarPrice(b[3]!);
+    if (p0 == null || p0 <= 0 || p1 == null || p2 == null || p3 == null) break;
+    const m = median3(p1, p2, p3);
+    if (m > 0 && (p0 / m > R || m / p0 > R)) b = b.slice(1);
+    else break;
+  }
+  while (b.length >= 4) {
+    const L = b.length - 1;
+    const pL = effectiveSortedBarPrice(b[L]!);
+    const pa = effectiveSortedBarPrice(b[L - 1]!);
+    const pb = effectiveSortedBarPrice(b[L - 2]!);
+    const pc = effectiveSortedBarPrice(b[L - 3]!);
+    if (pL == null || pL <= 0 || pa == null || pb == null || pc == null) break;
+    const m = median3(pa, pb, pc);
+    if (m > 0 && (pL / m > R || m / pL > R)) b = b.slice(0, -1);
+    else break;
+  }
+  return b;
+}
+
 function collectSortedDailyBarsFromChartQuotes(quotes: ChartArrayQuote[]): SortedDailyBar[] {
   const out: SortedDailyBar[] = [];
   for (const q of quotes) {
@@ -590,7 +656,7 @@ function collectSortedDailyBarsFromChartQuotes(quotes: ChartArrayQuote[]): Sorte
     out.push({ ymd, adj, cl });
   }
   out.sort((a, b) => a.ymd.localeCompare(b.ymd));
-  return out;
+  return filterSortedDailyBarChartOutliers(out);
 }
 
 /**
