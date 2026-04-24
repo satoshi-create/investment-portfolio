@@ -11,6 +11,7 @@ import React, {
 } from "react";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 
+import { TooltipProvider } from "@/src/components/ui/tooltip";
 import { USD_JPY_RATE_FALLBACK, type ViewCurrency } from "@/src/lib/fx-constants";
 
 export type { ViewCurrency };
@@ -59,8 +60,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <PortfolioCurrencyContext.Provider value={value}>
-      <NextThemesProvider attribute="class" defaultTheme="dark" enableSystem={false}>
-        {children}
+      <NextThemesProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="theme">
+        <TooltipProvider delayDuration={250}>
+          {children}
+        </TooltipProvider>
       </NextThemesProvider>
     </PortfolioCurrencyContext.Provider>
   );

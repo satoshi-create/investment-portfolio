@@ -85,6 +85,8 @@ import {
   saveInventoryTableCompact,
 } from "@/src/lib/inventory-column-visibility";
 import { InventoryTableColumnToolbar } from "@/src/components/dashboard/InventoryTableColumnToolbar";
+import { MetricHeaderHelp } from "@/src/components/dashboard/MetricHeaderHelp";
+import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
 
 type SortKey =
   | "asset"
@@ -491,12 +493,15 @@ function SortableInventoryTh({
   className,
   align = "left",
   title,
+  metricHelpText,
   children,
 }: {
   id: InventoryColId;
   className?: string;
   align?: "left" | "right" | "center";
   title?: string;
+  /** Radix ツールチップ（構造投資向け解説）。指定時は `title` を付けない（ネイティブ二重表示を防ぐ） */
+  metricHelpText?: string;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -508,7 +513,7 @@ function SortableInventoryTh({
   const justify =
     align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
   return (
-    <th ref={setNodeRef} style={style} className={className} title={title}>
+    <th ref={setNodeRef} style={style} className={className} title={metricHelpText ? undefined : title}>
       <div className={`flex w-full items-center gap-1 ${justify}`}>
         <button
           type="button"
@@ -521,9 +526,23 @@ function SortableInventoryTh({
           <GripVertical className="h-3.5 w-3.5" aria-hidden />
         </button>
         <div
-          className={`min-w-0 ${align === "right" ? "text-right" : align === "center" ? "text-center" : ""}`}
+          className={cn(
+            "min-w-0",
+            align === "right" && "text-right",
+            align === "center" && "text-center",
+            metricHelpText && "flex w-full min-w-0 items-start gap-0.5",
+            metricHelpText && align === "right" && "justify-end",
+            metricHelpText && align === "center" && "justify-center",
+          )}
         >
-          {children}
+          {metricHelpText ? (
+            <>
+              <div className="min-w-0 flex-1 text-inherit">{children}</div>
+              <MetricHeaderHelp text={metricHelpText} className="mt-0.5" />
+            </>
+          ) : (
+            children
+          )}
         </div>
       </div>
     </th>
@@ -1387,7 +1406,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="Rule of 40（売上成長率% + FCFマージン%）"
+                            metricHelpText={METRIC_HEADER_TIP.ruleOf40}
                           >
                             <button
                               type="button"
@@ -1405,7 +1424,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="FCF Yield（%）= 年次 FCF / (株価×希薄化株数)。負の FCF はマイナス%で表示"
+                            metricHelpText={METRIC_HEADER_TIP.fcfYield}
                           >
                             <button
                               type="button"
@@ -1477,7 +1496,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="Alpha 乖離（σ）"
+                            metricHelpText={METRIC_HEADER_TIP.alphaDeviationZ}
                           >
                             <button
                               type="button"
@@ -1495,7 +1514,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-6 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="90 日高値比"
+                            metricHelpText={METRIC_HEADER_TIP.drawdown}
                           >
                             <button
                               type="button"
@@ -1513,7 +1532,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-6 py-4 text-right cursor-pointer select-none"
-                            title="対ベンチ日次超過（現在値×^GSPC / ^TPX）。データ欠損時は記録 Alpha で並び替え"
+                            metricHelpText={METRIC_HEADER_TIP.alpha}
                           >
                             <button
                               type="button"
@@ -1539,7 +1558,7 @@ export function InventoryTable({
                             id={colId}
                             align="center"
                             className="px-4 py-4 text-center cursor-pointer select-none whitespace-nowrap"
-                            title="直近5観測の日次 Alpha に基づくミニチャートで並べ替え"
+                            metricHelpText={METRIC_HEADER_TIP.fiveDay}
                           >
                             <button
                               type="button"
@@ -1593,7 +1612,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="PEG（小さいほど割安）· Forward PER 優先"
+                            metricHelpText={METRIC_HEADER_TIP.peg}
                           >
                             <button
                               type="button"

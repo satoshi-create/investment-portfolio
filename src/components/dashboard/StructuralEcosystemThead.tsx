@@ -2,9 +2,12 @@
 
 import React from "react";
 
+import { MetricHeaderHelp } from "@/src/components/dashboard/MetricHeaderHelp";
 import { SortableEcoWatchlistTh } from "@/src/components/dashboard/SortableEcoWatchlistTh";
 import { stickyThFirst } from "@/src/components/dashboard/table-sticky";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
+import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
+import { cn } from "@/src/lib/cn";
 
 export type StructuralEcoSortKey =
   | "asset"
@@ -34,6 +37,7 @@ function EcoSortTh({
   align,
   className,
   title,
+  metricHelpText,
   label,
   toggleEcoSort,
   ecoSortMark,
@@ -43,23 +47,51 @@ function EcoSortTh({
   align: "left" | "right" | "center";
   className: string;
   title?: string;
+  metricHelpText?: string;
   label: React.ReactNode;
   toggleEcoSort: (next: StructuralEcoSortKey) => void;
   ecoSortMark: (k: StructuralEcoSortKey) => string;
   sortKey: StructuralEcoSortKey;
 }) {
-  const btnCls =
+  const sortOnlyBtnCls =
     align === "right"
-      ? "bg-transparent p-0 text-right font-[inherit] text-inherit"
+      ? "bg-transparent p-0 min-w-0 text-right font-[inherit] text-inherit"
       : align === "center"
-        ? "bg-transparent p-0 font-[inherit] text-inherit"
-        : "bg-transparent p-0 text-left font-[inherit] text-inherit";
+        ? "bg-transparent p-0 min-w-0 font-[inherit] text-inherit"
+        : "bg-transparent p-0 min-w-0 text-left font-[inherit] text-inherit";
+  const sortBtnClsNoHelp =
+    align === "right"
+      ? "inline-flex max-w-full min-w-0 items-start text-right font-[inherit] text-inherit"
+      : align === "center"
+        ? "inline-flex max-w-full min-w-0 items-center font-[inherit] text-inherit"
+        : "inline-flex max-w-full min-w-0 items-center text-left font-[inherit] text-inherit";
   return (
-    <SortableEcoWatchlistTh id={id} align={align} className={className} title={title}>
-      <button type="button" className={btnCls} onClick={() => toggleEcoSort(sortKey)}>
-        {label}
-        {ecoSortMark(sortKey)}
-      </button>
+    <SortableEcoWatchlistTh id={id} align={align} className={className} title={metricHelpText ? undefined : title}>
+      {metricHelpText ? (
+        <div
+          className={cn(
+            "flex w-full min-w-0 items-start gap-0.5",
+            align === "right" && "justify-end text-right",
+            align === "center" && "items-center justify-center text-center",
+            align === "left" && "items-center text-left",
+          )}
+        >
+          <button type="button" className={sortOnlyBtnCls} onClick={() => toggleEcoSort(sortKey)}>
+            <span className="min-w-0 [word-break:break-word]">
+              {label}
+              {ecoSortMark(sortKey)}
+            </span>
+          </button>
+          <MetricHeaderHelp text={metricHelpText} className="shrink-0 mt-0.5" />
+        </div>
+      ) : (
+        <button type="button" className={sortBtnClsNoHelp} onClick={() => toggleEcoSort(sortKey)}>
+          <span className="min-w-0 [word-break:break-word]">
+            {label}
+            {ecoSortMark(sortKey)}
+          </span>
+        </button>
+      )}
     </SortableEcoWatchlistTh>
   );
 }
@@ -101,7 +133,7 @@ export function StructuralEcosystemThead({
                   sortKey="trend5d"
                   align="center"
                   className={`px-4 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="直近5観測の日次 Alpha（ミニチャート）"
+                  metricHelpText={METRIC_HEADER_TIP.fiveDay}
                   label="5D"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -230,7 +262,7 @@ export function StructuralEcosystemThead({
                   sortKey="ruleOf40"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="Rule of 40（売上成長率% + FCFマージン%）"
+                  metricHelpText={METRIC_HEADER_TIP.ruleOf40}
                   label="Rule of 40"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -244,7 +276,7 @@ export function StructuralEcosystemThead({
                   sortKey="fcfYield"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="FCF Yield（%）"
+                  metricHelpText={METRIC_HEADER_TIP.fcfYield}
                   label="FCF Yield"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -272,7 +304,7 @@ export function StructuralEcosystemThead({
                   sortKey="deviation"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="日次 Alpha 乖離（σ）"
+                  metricHelpText={METRIC_HEADER_TIP.alphaDeviationZ}
                   label="乖離"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -286,7 +318,7 @@ export function StructuralEcosystemThead({
                   sortKey="drawdown"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="90 日高値比"
+                  metricHelpText={METRIC_HEADER_TIP.drawdown}
                   label="落率"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -314,7 +346,7 @@ export function StructuralEcosystemThead({
                   sortKey="peg"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="PER÷成長率（小さいほど割安）"
+                  metricHelpText={METRIC_HEADER_TIP.peg}
                   label="PEG"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -356,7 +388,7 @@ export function StructuralEcosystemThead({
                   sortKey="alpha"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none ${sfirst}`}
-                  title="Sort"
+                  metricHelpText={METRIC_HEADER_TIP.alphaCumulative}
                   label="Cum. α"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
