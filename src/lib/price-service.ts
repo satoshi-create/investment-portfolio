@@ -904,26 +904,45 @@ function pctFromQuoteField(n: unknown): number | null {
   return roundAlphaMetric(x);
 }
 
-/** Yahoo の *Time は秒またはミリ秒の UNIX。 */
-function quoteTimeToIso(raw: unknown): string | null {
+/** Yahoo の *Time は秒またはミリ秒の UNIX。`Date` も可。 */
+function quoteTimeToUnixMs(raw: unknown): number | null {
   if (raw == null) return null;
+  if (typeof raw === "object" && raw instanceof Date) {
+    const t = raw.getTime();
+    return Number.isFinite(t) && t > 0 ? t : null;
+  }
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
-  const ms = n < 1e12 ? n * 1000 : n;
+  return n < 1e12 ? n * 1000 : n;
+}
+
+/** Yahoo の *Time は秒またはミリ秒の UNIX。`Date` も可。 */
+function quoteTimeToIso(raw: unknown): string | null {
+  const ms = quoteTimeToUnixMs(raw);
+  if (ms == null) return null;
   const d = new Date(ms);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
 
+type QuoteSessionKind = "reg" | "post" | "pre";
+
+/** 同一ミリ秒タイのとき本場を優先（取引所公式セッション寄り）。 */
+function quoteSessionTieOrder(kind: QuoteSessionKind): number {
+  return kind === "reg" ? 3 : kind === "pre" ? 2 : 1;
+}
+
 /**
- * `quote` から市場状態に応じて最も「今」に近い価格を選択（REGULAR / PRE / POST / CLOSED）。
+ * `quote` から最も「今」に近い価格を選択。
+ * - `regularMarketTime` / `postMarketTime` / `preMarketTime` が取れるときは **最新タイムスタンプ** を採用（Yahoo が `marketState: REGULAR` のまま Overnight を `postMarket*` に載せるケースに対応）。
+ * - いずれの時刻も無いときは従来どおり `marketState` 分岐。
  */
 export function pickLivePriceFromQuote(q: Record<string, unknown>): {
   price: number;
   changePct: number | null;
   asOf: string;
 } | null {
-  const state = String(q["marketState"] ?? "");
+  const state = String(q["marketState"] ?? "").toUpperCase();
   const prevClose = finitePositive(q["regularMarketPreviousClose"]);
   const reg = finitePositive(q["regularMarketPrice"]);
   const post = finitePositive(q["postMarketPrice"]);
@@ -934,6 +953,53 @@ export function pickLivePriceFromQuote(q: Record<string, unknown>): {
     if (prevClose == null || prevClose <= 0) return null;
     return roundAlphaMetric(((price - prevClose) / prevClose) * 100);
   };
+
+  type Cand = {
+    kind: QuoteSessionKind;
+    price: number;
+    changePct: number | null;
+    timeMs: number | null;
+    asOf: string;
+  };
+
+  const cands: Cand[] = [];
+  if (reg != null) {
+    cands.push({
+      kind: "reg",
+      price: reg,
+      changePct: pctFromQuoteField(q["regularMarketChangePercent"]) ?? pctVsPrev(reg),
+      timeMs: quoteTimeToUnixMs(q["regularMarketTime"]),
+      asOf: quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+    });
+  }
+  if (post != null) {
+    cands.push({
+      kind: "post",
+      price: post,
+      changePct: pctFromQuoteField(q["postMarketChangePercent"]) ?? pctVsPrev(post),
+      timeMs: quoteTimeToUnixMs(q["postMarketTime"]),
+      asOf: quoteTimeToIso(q["postMarketTime"]) ?? quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+    });
+  }
+  if (pre != null) {
+    cands.push({
+      kind: "pre",
+      price: pre,
+      changePct: pctFromQuoteField(q["preMarketChangePercent"]) ?? pctVsPrev(pre),
+      timeMs: quoteTimeToUnixMs(q["preMarketTime"]),
+      asOf: quoteTimeToIso(q["preMarketTime"]) ?? quoteTimeToIso(q["regularMarketTime"]) ?? nowIso,
+    });
+  }
+
+  const timed = cands.filter((c) => c.timeMs != null) as (Cand & { timeMs: number })[];
+  if (timed.length > 0) {
+    timed.sort((a, b) => {
+      if (b.timeMs !== a.timeMs) return b.timeMs - a.timeMs;
+      return quoteSessionTieOrder(b.kind) - quoteSessionTieOrder(a.kind);
+    });
+    const best = timed[0]!;
+    return { price: best.price, changePct: best.changePct, asOf: best.asOf };
+  }
 
   if (state === "POST" || state === "POSTPOST") {
     if (post != null) {
