@@ -621,8 +621,36 @@ export type PortfolioDailySnapshotRow = {
   portfolioReturnVsPrevPct: number | null;
   benchmarkReturnVsPrevPct: number | null;
   alphaVsPrevPct: number | null;
-  /** 同日 `market_glance_snapshots.payload_json` をパースした値（未記録時は undefined） */
+  /**
+   * DB 列 `market_indicators_json`（記録時に dashboard の Market glance と同一 JSON を保存）。CSV 分析用。
+   * 未移行・空行は undefined。
+   */
+  marketIndicatorsJson?: string;
+  /** 同日 `market_glance_snapshots.payload_json` または上記列をパースした値（未記録時は undefined） */
   marketIndicators?: MarketIndicator[];
+};
+
+/**
+ * スナップショット窓（既定30日暦日・端点含む）の集計。`portfolio_aggregate_kpis`。
+ * 表示クライアントの `buildSnapshotStats` と同一定義（合計損益・評価額変化は窓内最古→最新）。
+ */
+export type PortfolioAggregateKPI = {
+  id: string;
+  userId: string;
+  asOfDate: string;
+  windowDays: number;
+  snapshotCount: number;
+  periodStart: string;
+  periodEnd: string;
+  totalProfitChange: number | null;
+  valuationChange: number | null;
+  avgPfDailyChangePct: number | null;
+  avgBmDailyChangePct: number | null;
+  /** 行ごとの `effectiveAlphaVsPrevPct` の算術平均（%） */
+  avgAlphaDeviationPct: number | null;
+  /** 記録行の VOO 当日%（`benchmark_change_pct`）の単純平均 */
+  avgVooDailyPct: number | null;
+  computedAt: string;
 };
 
 /** One row from `holding_daily_snapshots` (銘柄×日・Record snapshot 時). */

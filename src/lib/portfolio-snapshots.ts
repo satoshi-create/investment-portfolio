@@ -6,14 +6,12 @@ import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { isLikelyEtfOrFundHolding } from "@/src/lib/strata-holding-detect";
 import { getDashboardData } from "@/src/lib/dashboard-data";
+import { parseMarketGlancePayload } from "@/src/lib/market-indicators-json";
+import { DEFAULT_AGGREGATE_KPI_WINDOW_DAYS, updateAggregateKPIs } from "@/src/lib/portfolio-aggregate-kpis";
+
+export { parseMarketGlancePayload };
 import { lastCompletedNyseSessionCalendarYmd } from "@/src/lib/us-market-session";
-import type {
-  HoldingDailySnapshotRow,
-  MarketIndicator,
-  PortfolioDailySnapshotRow,
-  Stock,
-  TickerInstrumentKind,
-} from "@/src/types/investment";
+import type { HoldingDailySnapshotRow, PortfolioDailySnapshotRow, Stock, TickerInstrumentKind } from "@/src/types/investment";
 
 export type RecordPortfolioSnapshotResult = {
   snapshotDate: string;
@@ -63,31 +61,7 @@ function sumNonEtfListedEquityQuantity(stocks: Stock[]): number {
   return sum;
 }
 
-/** Parse `market_glance_snapshots.payload_json` → validated indicators (empty array OK). */
-function parseMarketGlancePayload(raw: unknown): MarketIndicator[] | undefined {
-  if (raw == null) return undefined;
-  if (typeof raw !== "string" || raw.length === 0) return undefined;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return undefined;
-    const out: MarketIndicator[] = [];
-    for (const item of parsed) {
-      if (item == null || typeof item !== "object") continue;
-      const o = item as Record<string, unknown>;
-      const label = typeof o.label === "string" ? o.label : "";
-      const value = typeof o.value === "number" ? o.value : Number(o.value);
-      const changePct = typeof o.changePct === "number" ? o.changePct : Number(o.changePct);
-      if (!label) continue;
-      if (!Number.isFinite(value) || !Number.isFinite(changePct)) continue;
-      out.push({ label, value, changePct });
-    }
-    return out;
-  } catch {
-    return undefined;
-  }
-}
-
-function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): PortfolioDailySnapshotRow {
+function mapPortfolioRow(row: Record<string, unknown>, marketJoinPayload: unknown): PortfolioDailySnapshotRow {
   const base: PortfolioDailySnapshotRow = {
     id: String(row.id),
     userId: String(row.user_id),
@@ -111,7 +85,12 @@ function mapPortfolioRow(row: Record<string, unknown>, marketPayload: unknown): 
     benchmarkReturnVsPrevPct: numOrNull(row.benchmark_return_vs_prev_pct),
     alphaVsPrevPct: numOrNull(row.alpha_vs_prev_pct),
   };
-  const mi = parseMarketGlancePayload(marketPayload);
+  const stored = row.market_indicators_json;
+  if (typeof stored === "string" && stored.length > 0) {
+    base.marketIndicatorsJson = stored;
+  }
+  const payload = typeof stored === "string" && stored.length > 0 ? stored : marketJoinPayload;
+  const mi = parseMarketGlancePayload(payload);
   if (mi !== undefined) base.marketIndicators = mi;
   return base;
 }
@@ -132,6 +111,7 @@ export async function fetchPortfolioDailySnapshotsForUser(
                    p.non_etf_listed_equity_quantity_total,
                    p.portfolio_avg_alpha,
                    p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
+                   p.market_indicators_json,
                    m.payload_json AS market_glance_payload_json
             FROM portfolio_daily_snapshots p
             LEFT JOIN market_glance_snapshots m
@@ -143,6 +123,26 @@ export async function fetchPortfolioDailySnapshotsForUser(
     });
     return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
   } catch (e) {
+    if (isSqliteMissingColumn(e, "market_indicators_json")) {
+      const rs = await db.execute({
+        sql: `SELECT p.id, p.user_id, p.snapshot_date, p.recorded_at, p.fx_usd_jpy, p.benchmark_ticker, p.benchmark_close,
+                     p.benchmark_change_pct,
+                     p.total_market_value_jpy, p.total_unrealized_pnl_jpy, p.total_profit, p.cost_basis,
+                     p.holdings_count, p.holdings_added_count, p.holdings_removed_count, p.holdings_continuing_count,
+                     p.non_etf_listed_equity_quantity_total,
+                     p.portfolio_avg_alpha,
+                     p.portfolio_return_vs_prev_pct, p.benchmark_return_vs_prev_pct, p.alpha_vs_prev_pct,
+                     m.payload_json AS market_glance_payload_json
+              FROM portfolio_daily_snapshots p
+              LEFT JOIN market_glance_snapshots m
+                ON m.user_id = p.user_id AND m.snapshot_date = p.snapshot_date
+              WHERE p.user_id = ?
+              ORDER BY p.snapshot_date DESC
+              LIMIT ?`,
+        args: [userId, cap],
+      });
+      return rs.rows.map((row) => mapPortfolioRow(row as Record<string, unknown>, row.market_glance_payload_json));
+    }
     if (isSqliteMissingColumn(e, "non_etf_listed_equity_quantity_total")) {
       try {
         const rs = await db.execute({
@@ -800,8 +800,9 @@ export async function recordPortfolioDailySnapshot(
               holdings_count, holdings_added_count, holdings_removed_count, holdings_continuing_count,
               non_etf_listed_equity_quantity_total,
               portfolio_avg_alpha,
-              portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              portfolio_return_vs_prev_pct, benchmark_return_vs_prev_pct, alpha_vs_prev_pct,
+              market_indicators_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
               id = excluded.id,
               recorded_at = excluded.recorded_at,
@@ -820,7 +821,8 @@ export async function recordPortfolioDailySnapshot(
               portfolio_avg_alpha = excluded.portfolio_avg_alpha,
               portfolio_return_vs_prev_pct = excluded.portfolio_return_vs_prev_pct,
               benchmark_return_vs_prev_pct = excluded.benchmark_return_vs_prev_pct,
-              alpha_vs_prev_pct = excluded.alpha_vs_prev_pct`,
+              alpha_vs_prev_pct = excluded.alpha_vs_prev_pct,
+              market_indicators_json = excluded.market_indicators_json`,
       args: [
         id,
         userId,
@@ -843,6 +845,7 @@ export async function recordPortfolioDailySnapshot(
         portfolioReturnVsPrev,
         benchmarkReturnVsPrev,
         alphaVsPrev,
+        payloadJson,
       ],
     });
 
@@ -896,6 +899,18 @@ export async function recordPortfolioDailySnapshot(
     const metricTableMissing =
       msgLower.includes("no such table") && msgLower.includes("holding_snapshots");
     if (!metricTableMissing) throw e;
+  }
+
+  try {
+    await updateAggregateKPIs(db, userId, snapshotDate, DEFAULT_AGGREGATE_KPI_WINDOW_DAYS);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const lower = msg.toLowerCase();
+    if (lower.includes("no such table") && lower.includes("portfolio_aggregate_kpis")) {
+      console.warn("[snapshot] portfolio_aggregate_kpis: table missing (apply migration 044); KPI skipped");
+    } else {
+      console.warn(`[snapshot] updateAggregateKPIs: ${msg}`);
+    }
   }
 
   return {

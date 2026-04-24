@@ -14,7 +14,11 @@ export type RecordPortfolioSnapshotActionResult = {
   alphaHistoryRowsBackfilled?: number;
 };
 
-/** Manual / cron: append or replace today’s patrol row for divergence vs VOO. */
+/**
+ * Manual / cron: append or replace today’s patrol row for divergence vs VOO.
+ * After a successful `portfolio_daily_snapshots` write, `recordPortfolioDailySnapshot` also upserts
+ * `portfolio_aggregate_kpis` (30d window; see `migrations/044_portfolio_aggregate_kpis.sql`).
+ */
 export async function recordPortfolioSnapshotAction(userId?: string): Promise<RecordPortfolioSnapshotActionResult> {
   if (!isDbConfigured()) {
     return {

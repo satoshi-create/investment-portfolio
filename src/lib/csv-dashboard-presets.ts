@@ -5,6 +5,7 @@ import type {
   Stock,
   ThemeEcosystemWatchItem,
 } from "@/src/types/investment";
+import { effectiveAlphaVsPrevPct } from "@/src/lib/portfolio-snapshot-alpha";
 import { LYNCH_CATEGORY_LABEL_JA } from "@/src/types/investment";
 
 import { ADOPTION_STAGE_META } from "@/src/lib/adoption-stage";
@@ -109,6 +110,12 @@ export function portfolioSnapshotsToCsvRows(rows: PortfolioDailySnapshotRow[]): 
     benchmarkTicker: r.benchmarkTicker,
     benchmarkClose: r.benchmarkClose,
     benchmarkChangePct: r.benchmarkChangePct,
+    marketIndicatorsJson:
+      r.marketIndicatorsJson && r.marketIndicatorsJson.length > 0
+        ? r.marketIndicatorsJson
+        : r.marketIndicators && r.marketIndicators.length > 0
+          ? JSON.stringify(r.marketIndicators)
+          : "",
     totalMarketValueJpy: r.totalMarketValueJpy,
     totalUnrealizedPnlJpy: r.totalUnrealizedPnlJpy,
     totalProfitJpy: r.totalProfitJpy,
@@ -121,7 +128,7 @@ export function portfolioSnapshotsToCsvRows(rows: PortfolioDailySnapshotRow[]): 
     portfolioAvgAlpha: r.portfolioAvgAlpha,
     portfolioReturnVsPrevPct: r.portfolioReturnVsPrevPct,
     benchmarkReturnVsPrevPct: r.benchmarkReturnVsPrevPct,
-    alphaVsPrevPct: r.alphaVsPrevPct,
+    alphaVsPrevPct: effectiveAlphaVsPrevPct(r),
   }));
 }
 
@@ -132,6 +139,10 @@ export const PORTFOLIO_SNAPSHOT_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "benchmarkTicker", header: "ベンチマーク" },
   { key: "benchmarkClose", header: "ベンチマーク終値" },
   { key: "benchmarkChangePct", header: "ベンチマーク当日%" },
+  {
+    key: "marketIndicatorsJson",
+    header: "market_indicators_json",
+  },
   { key: "totalMarketValueJpy", header: "評価額合計（円）" },
   { key: "totalUnrealizedPnlJpy", header: "含み損益合計（円）" },
   { key: "totalProfitJpy", header: "合計損益（円）" },
@@ -147,7 +158,7 @@ export const PORTFOLIO_SNAPSHOT_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "portfolioAvgAlpha", header: "平均Alpha" },
   { key: "portfolioReturnVsPrevPct", header: "PF前日比（%）" },
   { key: "benchmarkReturnVsPrevPct", header: "BM前日比（%）" },
-  { key: "alphaVsPrevPct", header: "α乖離（%）" },
+  { key: "alphaVsPrevPct", header: "α乖離（%・補完可）" },
 ];
 
 export function holdingSnapshotsToCsvRows(rows: HoldingDailySnapshotRow[]): Record<string, unknown>[] {

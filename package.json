@@ -25,7 +25,8 @@
     "rebackfill:alpha-ymd": "tsx scripts/rebackfill-alpha-ymd.ts",
     "debug:holdings-alpha": "tsx scripts/debug-holdings-alpha-tail.ts",
     "snapshot:daily": "tsx scripts/record-portfolio-snapshot.ts",
-    "migrate:portfolio-benchmark-pct": "tsx scripts/migrate-portfolio-benchmark-change-pct.ts"
+    "migrate:portfolio-benchmark-pct": "tsx scripts/migrate-portfolio-benchmark-change-pct.ts",
+    "backfill:aggregate-kpis": "tsx scripts/backfill-aggregate-kpis.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

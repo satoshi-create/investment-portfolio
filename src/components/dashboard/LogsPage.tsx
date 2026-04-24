@@ -3,9 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 
+import { DEFAULT_AGGREGATE_KPI_WINDOW_DAYS } from "@/src/lib/portfolio-aggregate-kpis";
+import { normalizeLogsKpiWindowDays } from "@/src/lib/logs-kpi-window";
+
 import type {
   ClosedTradeDashboardRow,
   HoldingDailySnapshotRow,
+  PortfolioAggregateKPI,
   PortfolioDailySnapshotRow,
 } from "@/src/types/investment";
 import { ClosedTradesTable } from "@/src/components/dashboard/ClosedTradesTable";
@@ -14,27 +18,49 @@ import { PortfolioSnapshotsTable } from "@/src/components/dashboard/PortfolioSna
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
+const KPI_WINDOW_STORAGE_KEY = "logs.kpiWindowDays";
+
+function readStoredKpiWindowDays(): number {
+  if (typeof window === "undefined") return DEFAULT_AGGREGATE_KPI_WINDOW_DAYS;
+  try {
+    const s = localStorage.getItem(KPI_WINDOW_STORAGE_KEY);
+    if (s) return normalizeLogsKpiWindowDays(Number(s));
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_AGGREGATE_KPI_WINDOW_DAYS;
+}
 
 type LogsPayload = {
   userId: string;
+  kpiWindowDays: number;
   portfolioSnapshots: PortfolioDailySnapshotRow[];
   holdingSnapshotsDate: string | null;
   holdingSnapshots: HoldingDailySnapshotRow[];
   closedTrades: ClosedTradeDashboardRow[];
+  portfolioAggregateKpis: PortfolioAggregateKPI[];
 };
 
 export function LogsPage() {
+  const [kpiWindowDays, setKpiWindowDays] = useState<number>(DEFAULT_AGGREGATE_KPI_WINDOW_DAYS);
   const [data, setData] = useState<LogsPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setKpiWindowDays(readStoredKpiWindowDays());
+  }, []);
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/logs?userId=${encodeURIComponent(DEFAULT_USER_ID)}`, {
+      const res = await fetch(
+        `/api/logs?userId=${encodeURIComponent(DEFAULT_USER_ID)}&kpiWindowDays=${encodeURIComponent(String(kpiWindowDays))}&kpiLimit=500`,
+        {
         cache: "no-store",
-      });
+        },
+      );
       const json = (await res.json()) as Partial<LogsPayload> & { error?: string; hint?: string };
       if (!res.ok) {
         setData(null);
@@ -43,10 +69,12 @@ export function LogsPage() {
       }
       setData({
         userId: json.userId!,
+        kpiWindowDays: json.kpiWindowDays ?? kpiWindowDays,
         portfolioSnapshots: json.portfolioSnapshots ?? [],
         holdingSnapshotsDate: json.holdingSnapshotsDate ?? null,
         holdingSnapshots: json.holdingSnapshots ?? [],
         closedTrades: json.closedTrades ?? [],
+        portfolioAggregateKpis: json.portfolioAggregateKpis ?? [],
       });
     } catch (e) {
       setData(null);
@@ -54,16 +82,26 @@ export function LogsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [kpiWindowDays]);
 
   useEffect(() => {
     void loadLogs();
   }, [loadLogs]);
 
+  const persistKpiWindow = (next: number) => {
+    setKpiWindowDays(next);
+    try {
+      localStorage.setItem(KPI_WINDOW_STORAGE_KEY, String(next));
+    } catch {
+      /* ignore */
+    }
+  };
+
   const portfolioSnapshots = data?.portfolioSnapshots ?? [];
   const holdingSnapshotsDate = data?.holdingSnapshotsDate ?? null;
   const holdingSnapshots = data?.holdingSnapshots ?? [];
   const closedTrades = data?.closedTrades ?? [];
+  const portfolioAggregateKpis = data?.portfolioAggregateKpis ?? [];
 
   const holdingsBySnapshotDate = useMemo(() => {
     const m = new Map<string, HoldingDailySnapshotRow[]>();
@@ -103,7 +141,15 @@ export function LogsPage() {
           </div>
         </div>
 
-      <PortfolioSnapshotsTable rows={portfolioSnapshots} holdingsBySnapshotDate={holdingsBySnapshotDate} />
+      <PortfolioSnapshotsTable
+        userId={DEFAULT_USER_ID}
+        kpiWindowDays={kpiWindowDays}
+        onKpiWindowChange={persistKpiWindow}
+        onKpiDataRefresh={() => void loadLogs()}
+        rows={portfolioSnapshots}
+        holdingsBySnapshotDate={holdingsBySnapshotDate}
+        serverAggregateKpis={portfolioAggregateKpis}
+      />
       <HoldingDailySnapshotsTable snapshotDate={holdingSnapshotsDate} rows={holdingSnapshots} />
       <ClosedTradesTable rows={closedTrades} />
     </div>

@@ -1,13 +1,21 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { ChevronDown, FileSpreadsheet, Table2 } from "lucide-react";
+import React, { useMemo, useRef, useState } from "react";
+import { ChevronDown, FileSpreadsheet, FileUp, Loader2, Table2 } from "lucide-react";
 
 import { MarketBar } from "@/src/components/dashboard/MarketBar";
 import { PORTFOLIO_SNAPSHOT_CSV_COLUMNS, portfolioSnapshotsToCsvRows } from "@/src/lib/csv-dashboard-presets";
+import {
+  AGGREGATE_KPI_CSV_COLUMNS,
+  aggregateKpiCsvFileName,
+  portfolioAggregateKpisToCsvRows,
+} from "@/src/lib/csv-aggregate-kpis";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
-import type { HoldingDailySnapshotRow, PortfolioDailySnapshotRow } from "@/src/types/investment";
+import { roundAlphaMetric } from "@/src/lib/alpha-logic";
+import { effectiveAlphaVsPrevPct } from "@/src/lib/portfolio-snapshot-alpha";
+import type { HoldingDailySnapshotRow, PortfolioAggregateKPI, PortfolioDailySnapshotRow } from "@/src/types/investment";
 import { stickyTdFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
+import { LOGS_KPI_WINDOW_DAYS_OPTIONS } from "@/src/lib/logs-kpi-window";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -123,7 +131,10 @@ function buildSnapshotStats(rows: PortfolioDailySnapshotRow[]): SnapshotStats | 
     marketValueDeltaJpy,
     avgPortfolioReturnPct: average(finiteNumbers(rows, (r) => r.portfolioReturnVsPrevPct)),
     avgBenchmarkReturnPct: average(finiteNumbers(rows, (r) => r.benchmarkReturnVsPrevPct)),
-    avgAlphaVsPrevPct: average(finiteNumbers(rows, (r) => r.alphaVsPrevPct)),
+    avgAlphaVsPrevPct: (() => {
+      const av = average(finiteNumbers(rows, effectiveAlphaVsPrevPct));
+      return av != null ? roundAlphaMetric(av) : null;
+    })(),
     avgBenchmarkDayPct: average(finiteNumbers(rows, (r) => r.benchmarkChangePct)),
   };
 }
@@ -217,13 +228,33 @@ function SameDayHoldingsBlock({
 }
 
 type PortfolioSnapshotsTableProps = {
+  /** ログ: KPI 取り込み API 用。 */
+  userId: string;
+  /** 表示・取得中の暦日窓（`portfolio_aggregate_kpis.window_days`） */
+  kpiWindowDays: number;
+  onKpiWindowChange: (windowDays: number) => void;
+  /** CSV 取り込み成功後の一覧再取得。 */
+  onKpiDataRefresh: () => void;
   rows: PortfolioDailySnapshotRow[];
   /** ログ用: `snapshot_date` ごとの holding 行（Portfolio 行展開で同日銘柄を表示） */
   holdingsBySnapshotDate?: ReadonlyMap<string, HoldingDailySnapshotRow[]>;
+  /** 記録時に `portfolio_aggregate_kpis` へ永続化した窓集計（時系列用） */
+  serverAggregateKpis?: PortfolioAggregateKPI[];
 };
 
-export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: PortfolioSnapshotsTableProps) {
+export function PortfolioSnapshotsTable({
+  userId,
+  kpiWindowDays,
+  onKpiWindowChange,
+  onKpiDataRefresh,
+  rows,
+  holdingsBySnapshotDate,
+  serverAggregateKpis = [],
+}: PortfolioSnapshotsTableProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const kpiFileRef = useRef<HTMLInputElement>(null);
+  const [kpiImportBusy, setKpiImportBusy] = useState(false);
+  const [kpiNotice, setKpiNotice] = useState<string | null>(null);
   const stats = useMemo(() => buildSnapshotStats(rows), [rows]);
 
   return (
@@ -269,6 +300,172 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
             CSV
           </button>
         ) : null}
+      </div>
+      <div className="px-5 py-3 border-b border-border bg-cyan-500/[0.04]">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+          <div className="min-w-0">
+            <h4 className="text-[10px] font-bold uppercase tracking-widest text-cyan-300/80">
+              KPI 履歴（DB）— {kpiWindowDays} 日暦日窓 · 永続
+            </h4>
+            <p className="text-[9px] text-muted-foreground mt-1 max-w-3xl">
+              各 <span className="font-mono">as_of_date</span> 記録直後に、直近 {kpiWindowDays} 日分の{" "}
+              <span className="font-mono">portfolio_daily_snapshots</span> から上表と同定義の統計を再計算し保存。窓の幅は
+              下のセレクタで切替（localStorage 保存）。書き出した CSV を Excel で編集し、取り込みで
+              <span className="font-mono"> portfolio_aggregate_kpis </span>
+              を上書き（同一 <span className="font-mono">user_id + as_of_date + window_days</span> ）。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span className="font-bold uppercase tracking-wide">窓</span>
+              <select
+                value={kpiWindowDays}
+                onChange={(e) => onKpiWindowChange(Number(e.target.value))}
+                className="text-[10px] font-mono font-medium border border-border rounded-md bg-background px-2 py-1.5"
+              >
+                {LOGS_KPI_WINDOW_DAYS_OPTIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d} 日
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                exportToCSV(
+                  portfolioAggregateKpisToCsvRows(serverAggregateKpis),
+                  aggregateKpiCsvFileName(kpiWindowDays),
+                  AGGREGATE_KPI_CSV_COLUMNS,
+                );
+                setKpiNotice(
+                  serverAggregateKpis.length > 0
+                    ? `CSV: ${serverAggregateKpis.length} 行（窓 ${kpiWindowDays} 日）を書き出しました。`
+                    : `見出しのみの CSV（窓 ${kpiWindowDays} 日）を書き出しました。行を追記して取り込めます。`,
+                );
+              }}
+              className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-2.5 py-2 rounded-lg hover:bg-muted/50 transition-all"
+              title="表示中の窓のKPI行を UTF-8 BOM 付き CSV でダウンロード（0件なら見出しのみ）"
+            >
+              <FileSpreadsheet size={14} />
+              書き出し
+            </button>
+            <input
+              ref={kpiFileRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="sr-only"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                setKpiNotice(null);
+                setKpiImportBusy(true);
+                try {
+                  const text = await f.text();
+                  const res = await fetch("/api/portfolio-aggregate-kpis", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ userId, csv: text }),
+                  });
+                  const json = (await res.json()) as { error?: string; applied?: number };
+                  if (!res.ok) {
+                    setKpiNotice(`取り込みエラー: ${json.error ?? res.statusText}`);
+                    return;
+                  }
+                  setKpiNotice(
+                    `取り込み完了: ${json.applied ?? 0} 行を反映しました。`,
+                  );
+                  onKpiDataRefresh();
+                } catch (err) {
+                  setKpiNotice(err instanceof Error ? err.message : "取り込みに失敗しました");
+                } finally {
+                  setKpiImportBusy(false);
+                }
+              }}
+            />
+            <button
+              type="button"
+              disabled={kpiImportBusy}
+              onClick={() => kpiFileRef.current?.click()}
+              className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-cyan-200/90 border border-cyan-500/40 px-2.5 py-2 rounded-lg hover:bg-cyan-500/10 transition-all disabled:opacity-50"
+              title="CSV を選択して DB に反映（上書き）"
+            >
+              {kpiImportBusy ? <Loader2 size={14} className="animate-spin" /> : <FileUp size={14} />}
+              取り込み
+            </button>
+          </div>
+        </div>
+        {kpiNotice != null && (
+          <p className="text-[9px] text-muted-foreground mb-2" role="status">
+            {kpiNotice}
+          </p>
+        )}
+        {serverAggregateKpis.length > 0 ? (
+          <p className="text-[9px] text-muted-foreground/90 mb-2">
+            表は先頭 8 行のみ。CSV には現在の窓の <span className="font-mono">全 {serverAggregateKpis.length} 行</span>（最大
+            500）を含めます。
+          </p>
+        ) : (
+          <p className="text-[9px] text-muted-foreground/90 mb-2">
+            この窓（<span className="font-mono">{kpiWindowDays} 日</span>）の行がありません。Record snapshot で自動計算するか、CSV
+            を取り込んでください（別窓のデータを書き出して window_days 列を編集しても可）。
+          </p>
+        )}
+        <div className="overflow-x-auto rounded-lg border border-border/60 min-h-[2.5rem]">
+          {serverAggregateKpis.length > 0 ? (
+            <table className="w-full text-left text-xs min-w-[880px]">
+              <thead className="bg-background/80 text-[9px] uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 whitespace-nowrap">as of</th>
+                  <th className="px-3 py-2 whitespace-nowrap">期間 (min–max)</th>
+                  <th className="px-3 py-2 text-right">n</th>
+                  <th className="px-3 py-2 text-right">Σ損益Δ</th>
+                  <th className="px-3 py-2 text-right">評価額Δ</th>
+                  <th className="px-3 py-2 text-right" title="α 乖離（補完可）平均">
+                    α 乖離平均
+                  </th>
+                  <th className="px-3 py-2 text-right">PF% 均</th>
+                  <th className="px-3 py-2 text-right">BM% 均</th>
+                  <th className="px-3 py-2 text-right">VOO当日% 均</th>
+                  <th className="px-3 py-2 whitespace-nowrap">computed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {serverAggregateKpis.slice(0, 8).map((k) => (
+                  <tr key={k.id} className="hover:bg-muted/20">
+                    <td className="px-3 py-1.5 font-mono text-foreground/90 whitespace-nowrap">{k.asOfDate}</td>
+                    <td className="px-3 py-1.5 font-mono text-[10px] text-muted-foreground whitespace-nowrap">
+                      {k.periodStart} → {k.periodEnd}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono">{k.snapshotCount}</td>
+                    <td className={`px-3 py-1.5 text-right font-mono ${jpyPnlCellClass(k.totalProfitChange)}`}>
+                      {k.totalProfitChange != null ? jpyFmt.format(k.totalProfitChange) : "—"}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono ${jpyPnlCellClass(k.valuationChange)}`}>
+                      {k.valuationChange != null ? jpyFmt.format(k.valuationChange) : "—"}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono font-medium ${pctClass(k.avgAlphaDeviationPct)}`}>
+                      {fmtPct(k.avgAlphaDeviationPct)}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono ${pctClass(k.avgPfDailyChangePct)}`}>
+                      {fmtPct(k.avgPfDailyChangePct)}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono ${pctClass(k.avgBmDailyChangePct)}`}>
+                      {fmtPct(k.avgBmDailyChangePct)}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono ${pctClass(k.avgVooDailyPct)}`}>
+                      {fmtPct(k.avgVooDailyPct)}
+                    </td>
+                    <td className="px-3 py-1.5 text-[9px] text-muted-foreground whitespace-nowrap font-mono">
+                      {fmtRecorded(k.computedAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </div>
       </div>
       {rows.length === 0 ? (
         <p className="px-5 py-8 text-sm text-muted-foreground">
@@ -334,7 +531,12 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
                 <th className="px-4 py-3 text-right whitespace-nowrap">平均 α</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">PF 前日比</th>
                 <th className="px-4 py-3 text-right whitespace-nowrap">BM 前日比</th>
-                <th className="px-4 py-3 text-right whitespace-nowrap">α 乖離</th>
+                <th
+                  className="px-4 py-3 text-right whitespace-nowrap"
+                  title="PF 前日比 − ベンチ前日比（%）。列 alpha_vs_prev_pct、欠損行は2列の差で補完"
+                >
+                  α 乖離
+                </th>
                 <th className="px-4 py-3 whitespace-nowrap min-w-[7rem]">Market</th>
               </tr>
             </thead>
@@ -418,8 +620,15 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
                       <td className={`px-4 py-2.5 text-right font-mono text-xs ${pctClass(r.benchmarkReturnVsPrevPct)}`}>
                         {fmtPct(r.benchmarkReturnVsPrevPct)}
                       </td>
-                      <td className={`px-4 py-2.5 text-right font-mono text-xs font-semibold ${pctClass(r.alphaVsPrevPct)}`}>
-                        {fmtPct(r.alphaVsPrevPct)}
+                      <td
+                        className={`px-4 py-2.5 text-right font-mono text-xs font-semibold ${pctClass(effectiveAlphaVsPrevPct(r))}`}
+                        title={
+                          r.alphaVsPrevPct == null && effectiveAlphaVsPrevPct(r) != null
+                            ? "補完: この行の portfolio_return_vs_prev − benchmark_return_vs_prev"
+                            : undefined
+                        }
+                      >
+                        {fmtPct(effectiveAlphaVsPrevPct(r))}
                       </td>
                       <td className="px-3 py-2.5">
                         <button
@@ -554,7 +763,12 @@ export function PortfolioSnapshotsTable({ rows, holdingsBySnapshotDate }: Portfo
               </dd>
             </div>
             <div className="flex flex-col gap-0.5">
-              <dt className="text-muted-foreground">α 乖離（平均・記録ありのみ）</dt>
+              <dt
+                className="text-muted-foreground"
+                title="各行の「α 乖離」列（欠損時は PF−BM で補完）の算術平均。全行 null のみ —"
+              >
+                α 乖離（平均・補完可）
+              </dt>
               <dd className={`font-mono font-semibold tabular-nums ${pctClass(stats.avgAlphaVsPrevPct)}`}>
                 {stats.avgAlphaVsPrevPct != null ? fmtPct(stats.avgAlphaVsPrevPct) : "—"}
               </dd>
