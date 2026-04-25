@@ -27,6 +27,12 @@ import {
 import { ECOSYSTEM_MEMBER_FIELD_MAX_LEN } from "@/src/lib/ecosystem-field-meta";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
 import { EarningsSummaryNoteTextarea } from "@/src/components/dashboard/HoldingEcosystemNoteFields";
+import {
+  EcosystemStructuralInsightExpandable,
+  EcosystemStructuralInsightHoverWrap,
+  EcosystemViScoreBar,
+  ecosystemMemberHasStructuralInsight,
+} from "@/src/components/dashboard/EcosystemStructuralInsight";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
@@ -318,19 +324,23 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                       </span>
                     ) : null}
                     <RegionMarketBadge yahooCountry={e.yahooCountry} />
-                    <span
-                      className="shrink-0 font-bold font-mono text-foreground group-hover:text-blue-400 transition-colors"
-                      title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}${e.yahooCountry ? ` · ${e.yahooCountry}` : ""}`}
-                    >
-                      {formatTickerForDisplay(e.ticker, e.instrumentKind)}
-                    </span>
-                    {e.companyName ? (
+                    <EcosystemStructuralInsightHoverWrap e={e} className="shrink-0 min-w-0">
                       <span
-                        className="min-w-0 flex-1 basis-[6rem] truncate text-[10px] text-muted-foreground"
-                        title={e.companyName}
+                        className="font-bold font-mono text-foreground group-hover:text-blue-400 transition-colors inline-block max-w-full truncate"
+                        title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}${e.yahooCountry ? ` · ${e.yahooCountry}` : ""}`}
                       >
-                        {e.companyName}
+                        {formatTickerForDisplay(e.ticker, e.instrumentKind)}
                       </span>
+                    </EcosystemStructuralInsightHoverWrap>
+                    {e.companyName ? (
+                      <EcosystemStructuralInsightHoverWrap e={e} className="min-w-0 flex-1 basis-[6rem]">
+                        <span
+                          className="block truncate text-[10px] text-muted-foreground cursor-help"
+                          title={ecosystemMemberHasStructuralInsight(e) ? undefined : e.companyName}
+                        >
+                          {e.companyName}
+                        </span>
+                      </EcosystemStructuralInsightHoverWrap>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-1">
@@ -354,6 +364,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                       </span>
                     ) : null}
                   </div>
+                  <EcosystemStructuralInsightExpandable e={e} />
                   {e.isUnlisted ? (
                     <div className="flex flex-wrap items-center gap-1">
                       {e.estimatedIpoDate ? (
@@ -774,6 +785,12 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                 ) : (
                   <span className="text-xs text-muted-foreground">—</span>
                 )}
+              </td>
+            );
+          case "viScore":
+            return (
+              <td key={colId} className={`px-4 py-3 align-middle ${stickyFirst}`}>
+                <EcosystemViScoreBar viScore={e.viScore ?? null} />
               </td>
             );
           case "ruleOf40":

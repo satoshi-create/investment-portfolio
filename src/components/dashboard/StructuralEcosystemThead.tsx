@@ -30,6 +30,7 @@ export type StructuralEcoSortKey =
   | "ruleOf40"
   | "fcfYield"
   | "judgment"
+  | "viScore"
   | "dividend"
   | "payout";
 
@@ -254,6 +255,20 @@ export function StructuralEcosystemThead({
                 <SortableEcoWatchlistTh key={colId} id={colId} align="left" className={`px-6 py-4 whitespace-nowrap ${sfirst}`}>
                   <span className="pointer-events-none">江戸的役割</span>
                 </SortableEcoWatchlistTh>
+              );
+            case "viScore":
+              return (
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="viScore"
+                  align="center"
+                  className={`px-3 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  title="垂直統合スコア（0–100）"
+                  label="VI"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                />
               );
             case "ruleOf40":
               return (

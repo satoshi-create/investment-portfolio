@@ -13,6 +13,12 @@ import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import {
+  EcosystemStructuralInsightExpandable,
+  EcosystemStructuralInsightHoverWrap,
+  EcosystemViScoreBar,
+  ecosystemMemberHasStructuralInsight,
+} from "@/src/components/dashboard/EcosystemStructuralInsight";
+import {
   dividendPayoutCellClassName,
   ecosystemDividendPayoutPercent,
   formatDividendPayoutPercent,
@@ -177,12 +183,14 @@ export function EcosystemWatchlistTableRow({
                         </span>
                       ) : null}
                       <RegionMarketBadge yahooCountry={e.yahooCountry} />
-                      <span
-                        className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono whitespace-nowrap truncate"
-                        title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}${e.yahooCountry ? ` · ${e.yahooCountry}` : ""}`}
-                      >
-                        {formatTickerForDisplay(e.ticker, e.instrumentKind)}
-                      </span>
+                      <EcosystemStructuralInsightHoverWrap e={e} className="min-w-0 shrink-0">
+                        <span
+                          className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono whitespace-nowrap truncate inline-block max-w-full"
+                          title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}${e.yahooCountry ? ` · ${e.yahooCountry}` : ""}`}
+                        >
+                          {formatTickerForDisplay(e.ticker, e.instrumentKind)}
+                        </span>
+                      </EcosystemStructuralInsightHoverWrap>
                     </div>
                     <div className="shrink-0 flex flex-row flex-nowrap items-center gap-1">
                       <EcosystemKeepButton
@@ -217,13 +225,16 @@ export function EcosystemWatchlistTableRow({
                     </div>
                   ) : null}
                   {e.companyName ? (
-                    <span
-                      className="text-[10px] text-muted-foreground leading-snug line-clamp-2"
-                      title={e.companyName}
-                    >
-                      {e.companyName}
-                    </span>
+                    <EcosystemStructuralInsightHoverWrap e={e} className="block min-w-0">
+                      <span
+                        className="text-[10px] text-muted-foreground leading-snug line-clamp-2 cursor-help"
+                        title={ecosystemMemberHasStructuralInsight(e) ? undefined : e.companyName}
+                      >
+                        {e.companyName}
+                      </span>
+                    </EcosystemStructuralInsightHoverWrap>
                   ) : null}
+                  <EcosystemStructuralInsightExpandable e={e} />
                   {ecoEditingId === e.id ? (
                     <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/40 p-2">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -427,6 +438,12 @@ export function EcosystemWatchlistTableRow({
                 ) : (
                   <span className="text-xs text-muted-foreground">—</span>
                 )}
+              </td>
+            );
+          case "viScore":
+            return (
+              <td key={colId} className={`px-4 py-4 align-middle ${stickyFirst}`}>
+                <EcosystemViScoreBar viScore={e.viScore ?? null} />
               </td>
             );
           case "ruleOf40":

@@ -118,6 +118,10 @@ import {
   type SemiconductorSupplyChainCatalogRow,
 } from "@/src/lib/semiconductor-supply-chain-catalog";
 import {
+  MOBILITY_REFACTORING_THEME_QUERY_NAME,
+  MOBILITY_REFACTORING_THEME_SLUG,
+} from "@/src/lib/mobility-refactoring-theme";
+import {
   DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER,
   loadEcosystemWatchlistColumnOrder,
   saveEcosystemWatchlistColumnOrder,
@@ -232,6 +236,13 @@ function mapThemeLabelForQuery(raw: string): {
       slug: "半導体製造装置",
     };
   }
+  if (s.toLowerCase() === MOBILITY_REFACTORING_THEME_SLUG || s === MOBILITY_REFACTORING_THEME_QUERY_NAME) {
+    return {
+      query: MOBILITY_REFACTORING_THEME_QUERY_NAME,
+      display: MOBILITY_REFACTORING_THEME_QUERY_NAME,
+      slug: MOBILITY_REFACTORING_THEME_SLUG,
+    };
+  }
   return { query: s, display: s, slug: s };
 }
 
@@ -272,7 +283,14 @@ function ecosystemMatchesSearchQuery(
 ): boolean {
   const n = raw.trim().toLowerCase();
   if (n.length === 0) return true;
-  const hay = [e.companyName, e.ticker, e.role, e.observationNotes ?? ""];
+  const hay = [
+    e.companyName,
+    e.ticker,
+    e.role,
+    e.observationNotes ?? "",
+    e.chasm ?? "",
+    e.moat ?? "",
+  ];
   return hay.some((s) => s.toLowerCase().includes(n));
 }
 
@@ -438,6 +456,21 @@ function normalizeThemeDetailResponse(
           volumeRatio: (() => {
             const v = (item as Record<string, unknown>).volumeRatio ?? (item as Record<string, unknown>).volume_ratio;
             return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+          })(),
+          chasm: (() => {
+            const a = (item as Record<string, unknown>).chasm;
+            const s = typeof a === "string" ? a.trim() : "";
+            return s.length > 0 ? s : null;
+          })(),
+          moat: (() => {
+            const a = (item as Record<string, unknown>).moat;
+            const s = typeof a === "string" ? a.trim() : "";
+            return s.length > 0 ? s : null;
+          })(),
+          viScore: (() => {
+            const v = (item as Record<string, unknown>).viScore ?? (item as Record<string, unknown>).vi_score;
+            if (typeof v !== "number" || !Number.isFinite(v)) return null;
+            return Math.min(100, Math.max(0, Math.round(v)));
           })(),
           yahooBuybackPosture: parseYahooBuybackPostureJson(
             (item as Record<string, unknown>).yahooBuybackPosture ??
@@ -1624,6 +1657,7 @@ export function ThemePageClient({
         if (divEx !== 0) return dir * divEx;
         return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
       }
+      if (ecoSortKey === "viScore") return dir * cmpNum(a.viScore, b.viScore);
       return 0;
     });
     return arr;

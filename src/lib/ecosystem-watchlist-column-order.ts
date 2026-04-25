@@ -12,6 +12,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_IDS = [
   "earnings",
   "research",
   "role",
+  "viScore",
   "holder",
   "dividend",
   "payout",

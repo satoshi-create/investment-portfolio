@@ -102,7 +102,14 @@ function ecosystemMatchesMarketFilter(
 function ecosystemMatchesSearchQuery(e: ThemeEcosystemWatchItem, raw: string): boolean {
   const n = raw.trim().toLowerCase();
   if (n.length === 0) return true;
-  const hay = [e.companyName, e.ticker, e.role, e.observationNotes ?? ""];
+  const hay = [
+    e.companyName,
+    e.ticker,
+    e.role,
+    e.observationNotes ?? "",
+    e.chasm ?? "",
+    e.moat ?? "",
+  ];
   return hay.some((s) => s.toLowerCase().includes(n));
 }
 

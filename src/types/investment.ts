@@ -517,6 +517,12 @@ export type ThemeEcosystemWatchItem = {
   adoptionStageRationale: string | null;
   /** `theme_ecosystem_members.expectation_category`（リンチ分類）。未設定は null */
   expectationCategory: LynchCategory | null;
+  /** パラダイムシフトを阻む課題（DB `theme_ecosystem_members.chasm`）。未設定は null */
+  chasm: string | null;
+  /** 競合を寄せ付けない参入障壁（DB `theme_ecosystem_members.moat`）。未設定は null */
+  moat: string | null;
+  /** 垂直統合スコア 0–100（DB `theme_ecosystem_members.vi_score`）。未設定は null */
+  viScore: number | null;
 
   /**
    * Defensive theme extensions (stored as JSON TEXT in SQLite).

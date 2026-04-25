@@ -23,6 +23,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
   earnings: "決算まで",
   research: "Research",
   role: "江戸的役割",
+  viScore: "VI",
   holder: "Holder",
   dividend: "配当カレンダー",
   payout: "配当性向",

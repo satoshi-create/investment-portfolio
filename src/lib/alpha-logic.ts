@@ -11,6 +11,14 @@ import {
   type TickerInstrumentKind,
 } from "@/src/types/investment";
 
+/*
+ * Mobility refactoring / vertical integration (案): テーマエコシステムの `viScore`（0–100）が高いほど
+ * 「地政学リスク耐性」ボーナスを Alpha 解釈やシグナルに足す例（現状未配線・設計メモのみ）。
+ *   bonusPctPt = (viScore / 100) * 0.5; // 例: 最大 +0.5 パーセントポイント
+ *   またはシグモイド: MAX * (1 / (1 + Math.exp(-k * (viScore - 50))));
+ * 入力は保有ウェイト加重かウォッチ単体か、テーマ内平均かを別途決める。
+ */
+
 /** Benchmark ticker persisted in `alpha_history` / used by signal rules (must exist in `benchmarks`). */
 export const SIGNAL_BENCHMARK_TICKER = "VOO";
 

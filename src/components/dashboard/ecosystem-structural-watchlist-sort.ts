@@ -149,6 +149,7 @@ export function sortStructuralEcosystemWatchlist<T extends ThemeEcosystemWatchIt
       if (divEx !== 0) return dir * divEx;
       return dir * cmpNum(a.dividendYieldPercent, b.dividendYieldPercent);
     }
+    if (ecoSortKey === "viScore") return dir * cmpNum(a.viScore, b.viScore);
     return 0;
   });
   return arr;
