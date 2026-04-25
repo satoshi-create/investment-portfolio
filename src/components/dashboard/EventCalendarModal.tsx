@@ -121,9 +121,9 @@ const MODAL_SAFE_PADDING: React.CSSProperties = {
 /** サーバー側で Yahoo 多段取得のため長めに（軽量プローブ後も残タスクに依存） */
 const KOYOMI_FETCH_TIMEOUT_MS = 120_000;
 
-/** テーマ暦: 同一ユーザーで 24h 以内は localStorage のスナップショットをそのまま表示し Yahoo を叩かない */
-const KOYOMI_LANE_LS_KEY = "investment-portfolio:koyomi-lane:v1";
-const KOYOMI_SNAPSHOT_TTL_MS = 24 * 60 * 60 * 1000;
+/** テーマ暦: v2 で窓拡大後のレスポンスに切替。TTL は短め（SWR で裏取りするため主にオフライン快適用） */
+const KOYOMI_LANE_LS_KEY = "investment-portfolio:koyomi-lane:v2";
+const KOYOMI_SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
 
 type KoyomiLaneLsPayload = {
   at: number;
@@ -154,6 +154,17 @@ function writeKoyomiLaneSnapshot(uid: string, data: KoyomiLaneResponse): void {
     /* 容量・プライベートブラウザ等 */
   }
 }
+
+function parseKoyomiLaneJson(raw: KoyomiLaneResponse & { error?: string }): KoyomiLaneResponse | null {
+  if ("error" in raw && typeof raw.error === "string" && raw.error.length > 0) return null;
+  return {
+    startYmd: raw.startYmd,
+    endYmd: raw.endYmd,
+    todayYmd: raw.todayYmd,
+    themeLanes: Array.isArray(raw.themeLanes) ? raw.themeLanes : [],
+    outcomeTableMissing: Boolean(raw.outcomeTableMissing),
+  };
+}
 /** `/api/events` はテーマウォッチの Yahoo が重い。`allSettled` の遅い片方で UI が止まるため上限 */
 const EVENTS_FETCH_TIMEOUT_MS = 60_000;
 /** `/api/dashboard` にも Abort を付けないとハング時に `loading` が永遠に true のままになり得る */
@@ -177,8 +188,11 @@ export function EventCalendarModal({
   const [koyomiLane, setKoyomiLane] = useState<KoyomiLaneResponse | null>(null);
   const [koyomiLoading, setKoyomiLoading] = useState(false);
   const [koyomiErr, setKoyomiErr] = useState<string | null>(null);
+  const [koyomiForceRefreshing, setKoyomiForceRefreshing] = useState(false);
   /** テーマ暦 fetch の世代。クリーンアップで進め、遅れて帰ったレスポンスは無視する */
   const koyomiGen = useRef(0);
+  /** 手動 force 再取得。モーダル閉鎖等で番号を進め、遅延レスポンスを捨てる */
+  const koyomiForceRefreshGen = useRef(0);
   /** `/api/events` のバックグラウンド強化フェッチをモーダル閉鎖時に無効化する */
   const eventsFetchGen = useRef(0);
 
@@ -189,43 +203,86 @@ export function EventCalendarModal({
     [today],
   );
 
+  const forceRefreshKoyomi = useCallback(async () => {
+    const uid = userId.trim();
+    if (uid.length === 0) return;
+    koyomiGen.current += 1;
+    koyomiForceRefreshGen.current += 1;
+    const my = koyomiForceRefreshGen.current;
+    setKoyomiForceRefreshing(true);
+    setKoyomiErr(null);
+    const ac = new AbortController();
+    const timeoutId = window.setTimeout(() => ac.abort(), KOYOMI_FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(
+        `/api/koyomi-lane?userId=${encodeURIComponent(uid)}&yahoo=full&force=1&_=${Date.now()}`,
+        { cache: "no-store", signal: ac.signal },
+      );
+      if (my !== koyomiForceRefreshGen.current) return;
+      const json = (await res.json()) as KoyomiLaneResponse & { error?: string };
+      if (my !== koyomiForceRefreshGen.current) return;
+      if (!res.ok) {
+        setKoyomiErr(json.error ?? `HTTP ${res.status}`);
+        setKoyomiLane(null);
+        return;
+      }
+      if ("error" in json && typeof json.error === "string" && json.error.length > 0) {
+        setKoyomiErr(json.error);
+        setKoyomiLane(null);
+        return;
+      }
+      const lane = parseKoyomiLaneJson(json);
+      if (lane != null) {
+        setKoyomiLane(lane);
+        writeKoyomiLaneSnapshot(uid, lane);
+      } else {
+        setKoyomiErr("データ取得に失敗しました。再試行してください。");
+        setKoyomiLane(null);
+      }
+    } catch (e) {
+      if (my !== koyomiForceRefreshGen.current) return;
+      if (e instanceof Error && e.name === "AbortError") {
+        setKoyomiErr("テーマ暦の取得がタイムアウトしました。しばらくしてから再度お試しください。");
+      } else {
+        setKoyomiErr(e instanceof Error ? e.message : "読み込みに失敗しました");
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
+      if (my === koyomiForceRefreshGen.current) {
+        setKoyomiForceRefreshing(false);
+      }
+    }
+  }, [userId]);
+
   const load = useCallback(async () => {
+    const fetchWithTimeout = async (url: string, timeoutMs: number) => {
+      const ac = new AbortController();
+      const tid = window.setTimeout(() => ac.abort(), timeoutMs);
+      try {
+        return await fetch(url, { cache: "no-store", signal: ac.signal });
+      } finally {
+        window.clearTimeout(tid);
+      }
+    };
+
     const myGen = ++eventsFetchGen.current;
     setLoading(true);
     setFetchErr(null);
-    let stocksRawForBg: DashboardStockLite[] = [];
     try {
       const uid = userId.trim().length > 0 ? userId.trim() : "";
       const eventsLightUrl = `/api/events?userId=${encodeURIComponent(uid)}&watchResearch=0`;
-      const eventsFullUrl = `/api/events?userId=${encodeURIComponent(uid)}`;
       const dashUrl = `/api/dashboard?userId=${encodeURIComponent(uid)}`;
 
-      const [evSettled, dashSettled] = await Promise.allSettled([
-        (async () => {
-          const ac = new AbortController();
-          const tid = window.setTimeout(() => ac.abort(), EVENTS_FETCH_TIMEOUT_MS);
-          try {
-            return await fetch(eventsLightUrl, { cache: "no-store", signal: ac.signal });
-          } finally {
-            window.clearTimeout(tid);
-          }
-        })(),
-        (async () => {
-          const ac = new AbortController();
-          const tid = window.setTimeout(() => ac.abort(), DASHBOARD_FETCH_TIMEOUT_MS);
-          try {
-            return await fetch(dashUrl, { cache: "no-store", signal: ac.signal });
-          } finally {
-            window.clearTimeout(tid);
-          }
-        })(),
+      const [evLightSettled, dashSettled] = await Promise.allSettled([
+        fetchWithTimeout(eventsLightUrl, EVENTS_FETCH_TIMEOUT_MS),
+        fetchWithTimeout(dashUrl, DASHBOARD_FETCH_TIMEOUT_MS),
       ]);
 
       const errs: string[] = [];
       let normalizedApi: MarketEventRecord[] = [];
 
-      if (evSettled.status === "fulfilled") {
-        const resEvents = evSettled.value;
+      if (evLightSettled.status === "fulfilled") {
+        const resEvents = evLightSettled.value;
         try {
           const eventsJson = (await resEvents.json()) as { events?: MarketEventRecord[]; error?: string };
           if (!resEvents.ok) {
@@ -241,7 +298,7 @@ export function EventCalendarModal({
           errs.push("イベント API の応答を解析できませんでした");
         }
       } else {
-        const reason = evSettled.reason;
+        const reason = evLightSettled.reason;
         const aborted = reason instanceof DOMException && reason.name === "AbortError";
         errs.push(
           aborted
@@ -277,8 +334,6 @@ export function EventCalendarModal({
         );
       }
 
-      stocksRawForBg = stocksRaw;
-
       if (eventsFetchGen.current !== myGen) return;
 
       setEvents(mergeEventsWithHoldings(normalizedApi, stocksRaw, dateWindow));
@@ -290,45 +345,76 @@ export function EventCalendarModal({
       setLoading(false);
     }
 
-    if (eventsFetchGen.current !== myGen) return;
-
-    void (async () => {
-      try {
-        const ac = new AbortController();
-        const tid = window.setTimeout(() => ac.abort(), EVENTS_FETCH_TIMEOUT_MS);
-        let res: Response;
+    const uid2 = userId.trim().length > 0 ? userId.trim() : "";
+    if (uid2.length === 0) return;
+    const genAfterLight = eventsFetchGen.current;
+    const eventsFullUrl2 = `/api/events?userId=${encodeURIComponent(uid2)}`;
+    const dashUrl2 = `/api/dashboard?userId=${encodeURIComponent(uid2)}`;
+    const runFull = () => {
+      void (async () => {
         try {
-          const uid = userId.trim().length > 0 ? userId.trim() : "";
-          res = await fetch(`/api/events?userId=${encodeURIComponent(uid)}`, {
-            cache: "no-store",
-            signal: ac.signal,
-          });
-        } finally {
-          window.clearTimeout(tid);
+          const [resFull, resDash2] = await Promise.allSettled([
+            fetchWithTimeout(eventsFullUrl2, EVENTS_FETCH_TIMEOUT_MS),
+            fetchWithTimeout(dashUrl2, DASHBOARD_FETCH_TIMEOUT_MS),
+          ]);
+          if (eventsFetchGen.current !== genAfterLight) return;
+
+          const errs2: string[] = [];
+          let fullApi: MarketEventRecord[] = [];
+          if (resFull.status === "fulfilled") {
+            const res = resFull.value;
+            try {
+              const j = (await res.json()) as { events?: MarketEventRecord[]; error?: string };
+              if (!res.ok) {
+                errs2.push(j.error ?? `イベント（フル）HTTP ${res.status}`);
+              } else {
+                const apiEvents = Array.isArray(j.events) ? j.events : [];
+                fullApi = apiEvents.map((e) => ({ ...e, source: e.source ?? ("macro" as const) }));
+              }
+            } catch {
+              errs2.push("イベント（フル）の解析に失敗しました");
+            }
+          }
+          let stocks2: DashboardStockLite[] = [];
+          if (resDash2.status === "fulfilled") {
+            const res = resDash2.value;
+            try {
+              const j = (await res.json()) as { stocks?: unknown[]; error?: string };
+              if (res.ok && Array.isArray(j.stocks)) stocks2 = j.stocks as DashboardStockLite[];
+            } catch {
+              /* keep stocks2 empty */
+            }
+          }
+          if (eventsFetchGen.current !== genAfterLight) return;
+          if (resFull.status === "fulfilled" && resFull.value.ok) {
+            setEvents(mergeEventsWithHoldings(fullApi, stocks2, dateWindow));
+            if (errs2.length > 0) {
+              setFetchErr((cur) => (cur != null && cur.length > 0 ? `${cur} / ${errs2.join(" ")}` : errs2.join(" ")));
+            }
+          } else if (errs2.length > 0) {
+            setFetchErr((cur) => (cur != null && cur.length > 0 ? `${cur} / ${errs2.join(" ")}` : errs2.join(" ")));
+          }
+        } catch {
+          /* フル補完は best-effort */
         }
-        if (eventsFetchGen.current !== myGen) return;
-        const eventsJson = (await res.json()) as { events?: MarketEventRecord[]; error?: string };
-        if (!res.ok) return;
-        const apiEvents = Array.isArray(eventsJson.events) ? eventsJson.events : [];
-        const normalizedFull = apiEvents.map((e) => ({
-          ...e,
-          source: e.source ?? ("macro" as const),
-        }));
-        if (eventsFetchGen.current !== myGen) return;
-        setEvents(mergeEventsWithHoldings(normalizedFull, stocksRawForBg, dateWindow));
-      } catch {
-        /* バックグラウンド強化は失敗しても軽量版のまま */
-      }
-    })();
+      })();
+    };
+    if (typeof requestIdleCallback !== "undefined") {
+      requestIdleCallback(() => runFull(), { timeout: 2500 });
+    } else {
+      window.setTimeout(runFull, 200);
+    }
   }, [dateWindow.end, dateWindow.start, userId]);
 
   useEffect(() => {
     if (!open) {
       eventsFetchGen.current += 1;
       koyomiGen.current += 1;
+      koyomiForceRefreshGen.current += 1;
       setKoyomiLane(null);
       setKoyomiErr(null);
       setKoyomiLoading(false);
+      setKoyomiForceRefreshing(false);
       return;
     }
     void load();
@@ -344,35 +430,49 @@ export function EventCalendarModal({
     const myGen = ++koyomiGen.current;
     const uid = userId.trim().length > 0 ? userId.trim() : "";
 
+    const stale = () => myGen !== koyomiGen.current;
+    const baseKoyomi = `/api/koyomi-lane?userId=${encodeURIComponent(uid)}`;
+    const revalidateAc = new AbortController();
+
     const snap = readKoyomiLaneSnapshot(uid);
     if (snap != null) {
       setKoyomiLane(snap);
       setKoyomiErr(null);
       setKoyomiLoading(false);
-      return;
+      void (async () => {
+        try {
+          const resFull = await fetch(`${baseKoyomi}&yahoo=full`, {
+            cache: "no-store",
+            signal: revalidateAc.signal,
+          });
+          if (stale() || revalidateAc.signal.aborted) return;
+          const json = (await resFull.json()) as KoyomiLaneResponse & { error?: string };
+          if (stale()) return;
+          if (!resFull.ok) return;
+          if ("error" in json && typeof json.error === "string" && json.error.length > 0) return;
+          const lane = parseKoyomiLaneJson(json);
+          if (lane != null) {
+            setKoyomiLane(lane);
+            writeKoyomiLaneSnapshot(uid, lane);
+            setKoyomiErr(null);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.name === "AbortError") return;
+        }
+      })();
+      return () => {
+        revalidateAc.abort();
+        koyomiGen.current += 1;
+        koyomiForceRefreshGen.current += 1;
+      };
     }
 
     const ac = new AbortController();
 
-    const stale = () => myGen !== koyomiGen.current;
-
     setKoyomiLoading(true);
     setKoyomiErr(null);
 
-    const baseKoyomi = `/api/koyomi-lane?userId=${encodeURIComponent(uid)}`;
-
     void (async () => {
-      const parseLane = (raw: KoyomiLaneResponse & { error?: string }): KoyomiLaneResponse | null => {
-        if ("error" in raw && typeof raw.error === "string" && raw.error.length > 0) return null;
-        return {
-          startYmd: raw.startYmd,
-          endYmd: raw.endYmd,
-          todayYmd: raw.todayYmd,
-          themeLanes: Array.isArray(raw.themeLanes) ? raw.themeLanes : [],
-          outcomeTableMissing: Boolean(raw.outcomeTableMissing),
-        };
-      };
-
       let gotQuick = false;
       try {
         const resMin = await fetch(`${baseKoyomi}&yahoo=minimal`, {
@@ -381,7 +481,7 @@ export function EventCalendarModal({
         });
         if (!stale() && resMin.ok) {
           const json = (await resMin.json()) as KoyomiLaneResponse & { error?: string };
-          const lane = parseLane(json);
+          const lane = parseKoyomiLaneJson(json);
           if (lane != null) {
             setKoyomiLane(lane);
             setKoyomiErr(null);
@@ -428,7 +528,7 @@ export function EventCalendarModal({
           }
           return;
         }
-        const lane = parseLane(json);
+        const lane = parseKoyomiLaneJson(json);
         if (lane != null && !stale()) {
           setKoyomiLane(lane);
           writeKoyomiLaneSnapshot(uid, lane);
@@ -453,6 +553,7 @@ export function EventCalendarModal({
 
     return () => {
       koyomiGen.current += 1;
+      koyomiForceRefreshGen.current += 1;
       ac.abort();
       setKoyomiLoading(false);
     };
@@ -524,7 +625,7 @@ export function EventCalendarModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="koyomi-title"
-        className="relative z-10 flex w-[80vw] max-w-[80vw] min-w-0 min-h-0 max-h-[min(94dvh,56rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-h-[min(92dvh,80rem)]"
+        className="relative z-10 flex h-[min(92dvh,85rem)] w-[min(99vw,110rem)] max-w-[99vw] min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-6 sm:py-4">
@@ -581,20 +682,21 @@ export function EventCalendarModal({
           </button>
         </div>
 
-        <div
-          className={cn(
-            "min-h-0 flex-1 px-4 py-4 text-sm sm:px-6 sm:py-5 sm:text-base",
-            tab === "themes"
-              ? "flex min-w-0 flex-col overflow-hidden"
-              : "overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]",
-          )}
-        >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] px-4 py-4 text-sm sm:px-6 sm:py-5 sm:text-base",
+              tab === "themes" && "flex flex-col",
+            )}
+          >
           {tab === "themes" ? (
             <KoyomiLane
               className="min-h-0 min-w-0 flex-1 flex flex-col"
               data={koyomiLane}
               loading={koyomiLoading}
               error={koyomiErr}
+              forceRefreshing={koyomiForceRefreshing}
+              onForceRefresh={forceRefreshKoyomi}
               labelColClass="w-[7.5rem] sm:w-40 lg:w-48"
               density="comfortable"
             />
@@ -660,6 +762,7 @@ export function EventCalendarModal({
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>,

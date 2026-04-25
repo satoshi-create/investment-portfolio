@@ -14,6 +14,7 @@
     "fetch:fundamental-metrics": "tsx scripts/fetch-fundamental-metrics.ts",
     "fetch:fmp-metrics": "tsx scripts/fetch-fmp-metrics.ts",
     "db:apply": "tsx scripts/apply-migration.ts",
+    "sync:instrument-meta": "tsx scripts/sync-yahoo-instrument-meta.ts",
     "db:migrate:efficiency": "tsx scripts/apply-migration.ts migrations/038_ticker_efficiency_metrics.sql",
     "db:migrate:fmp": "tsx scripts/apply-migration.ts migrations/039_ticker_efficiency_fmp_columns.sql",
     "migrate:ecosystem-unlisted": "tsx scripts/migrate-theme-ecosystem-unlisted.ts",

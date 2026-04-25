@@ -54,6 +54,7 @@ import {
 import { parseAdoptionStage } from "@/src/lib/adoption-stage";
 import { parseExpectationCategory } from "@/src/lib/expectation-category";
 import {
+  computeDividendAdjustedPeg,
   computeInvestmentJudgment,
   expectationCategoryToInvestmentNarrative,
 } from "@/src/lib/judgment-logic";
@@ -1282,6 +1283,7 @@ function buildDraftsFromHoldingRows(
     const ticker = String(row.ticker);
     const series = byTicker.get(ticker) ?? [];
     const alphaHistory = series.map((p) => p.alpha);
+    const alphaHistoryObservationDates = series.map((p) => p.observationYmd);
     const latestAlphaObservationYmd =
       series.length > 0 ? series[series.length - 1]!.observationYmd : null;
     const closesForDrawdown = series.map((p) => p.close);
@@ -1350,6 +1352,17 @@ function buildDraftsFromHoldingRows(
       expectedGrowthDecimal: expectedGrowth,
       yahooPegRatio: research?.yahooPegRatio ?? null,
     });
+    const dividendAdjustedPeg = computeDividendAdjustedPeg({
+      forwardPe,
+      trailingPe,
+      expectedGrowthDecimal: expectedGrowth,
+      dividendYieldPercent,
+      pegRatio,
+    });
+    const yahooCountry = research?.yahooCountry ?? null;
+    const ttmRepurchaseOfStock = research?.ttmRepurchaseOfStock ?? null;
+    const consecutiveDividendYears = research?.consecutiveDividendYears ?? null;
+    const yahooBuybackPosture = research?.yahooBuybackPosture ?? null;
     const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
     const daysToExDividend = exDividendDate != null ? (() => {
       const d = new Date(`${exDividendDate}T00:00:00.000Z`);
@@ -1458,9 +1471,15 @@ function buildDraftsFromHoldingRows(
       trailingEps,
       forwardEps,
       pegRatio,
+      dividendAdjustedPeg,
       expectedGrowth,
+      yahooCountry,
+      ttmRepurchaseOfStock,
+      consecutiveDividendYears,
+      yahooBuybackPosture,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
+      alphaHistoryObservationDates,
       latestAlphaObservationYmd,
       alphaDeviationZ,
       drawdownFromHigh90dPct,
@@ -1700,7 +1719,7 @@ export async function fetchInvestmentThemeRecord(
     const rs = await db.execute({
       sql: `SELECT id, user_id, name, description, goal, created_at
             FROM investment_themes
-            WHERE user_id = ? AND name = ?
+            WHERE user_id = ? AND TRIM(name) = TRIM(?)
             LIMIT 1`,
       args: [userId, themeName],
     });
@@ -1818,6 +1837,17 @@ async function enrichEcosystemMemberRow(
     expectedGrowthDecimal: expectedGrowth,
     yahooPegRatio: research?.yahooPegRatio ?? null,
   });
+  const dividendAdjustedPeg = computeDividendAdjustedPeg({
+    forwardPe,
+    trailingPe,
+    expectedGrowthDecimal: expectedGrowth,
+    dividendYieldPercent,
+    pegRatio,
+  });
+  const yahooCountryEco = research?.yahooCountry ?? null;
+  const ttmRepurchaseOfStockEco = research?.ttmRepurchaseOfStock ?? null;
+  const consecutiveDividendYearsEco = research?.consecutiveDividendYears ?? null;
+  const yahooBuybackPostureEco = research?.yahooBuybackPosture ?? null;
   const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
   const daysToExDividend =
     exDividendDate != null
@@ -1900,6 +1930,7 @@ async function enrichEcosystemMemberRow(
 
   const cumPoints = calculateCumulativeAlpha(datedRows, startDate);
   const alphaHistory = cumPoints.map((p) => p.cumulative);
+  const alphaCumulativeObservationDates = cumPoints.map((p) => p.date);
   const latestAlpha = alphaHistory.length > 0 ? alphaHistory[alphaHistory.length - 1]! : null;
   const alphaObservationStartDate = cumPoints[0]?.date ?? null;
 
@@ -1937,6 +1968,7 @@ async function enrichEcosystemMemberRow(
     instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkTicker : liveAlphaCtx.jpBenchmarkTicker;
 
   const dailyAlphas = datedRows.map((d) => d.alphaValue);
+  const alphaDailyObservationDates = datedRows.map((r) => toYmd(r.recordedAt));
   const alphaDeviationZ = computeAlphaDeviationZScore(dailyAlphas);
 
   const closeSeriesFromDb: number[] = [];
@@ -2071,10 +2103,17 @@ async function enrichEcosystemMemberRow(
     trailingEps,
     forwardEps,
     pegRatio,
+    dividendAdjustedPeg,
     expectedGrowth,
+    yahooCountry: yahooCountryEco,
+    ttmRepurchaseOfStock: ttmRepurchaseOfStockEco,
+    consecutiveDividendYears: consecutiveDividendYearsEco,
+    yahooBuybackPosture: yahooBuybackPostureEco,
     observationStartedAt,
     alphaHistory,
+    alphaCumulativeObservationDates,
     alphaDailyHistory: dailyAlphas,
+    alphaDailyObservationDates,
     currentPrice: displayPrice,
     latestAlpha,
     alphaObservationStartDate,
@@ -2745,6 +2784,7 @@ export async function getThemeDetailData(
   let themeTotalMarketValue = 0;
   let themeAverageUnrealizedPnlPercent = 0;
   let themeAverageAlpha = 0;
+  let themeTotalLiveAlphaPct: number | null = null;
   let themeAverageFxNeutralAlpha = 0;
   let cumulativeAlphaSeries: CumulativeAlphaPoint[] = [];
   let themeStructuralTrendSeries: CumulativeAlphaPoint[] = [];
@@ -2788,6 +2828,7 @@ export async function getThemeDetailData(
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
     themeAverageUnrealizedPnlPercent = computeThemeAverageUnrealizedPnlPercent(stocks);
     themeAverageAlpha = computePortfolioAverageAlphaSummary(stocks).average;
+    themeTotalLiveAlphaPct = computePortfolioTotalLiveAlphaPctWeighted(stocks);
     themeAverageFxNeutralAlpha = portfolioAverageFxNeutralDailyAlphaPct(stocks);
 
     const { usRatio, jpRatio, basis: synthBasis } = computeThemeUsJpRatiosForSyntheticBenchmark(
@@ -3010,11 +3051,13 @@ export async function getThemeDetailData(
 
   return {
     themeName,
+    themeMissing: theme == null,
     theme,
     stocks,
     themeTotalMarketValue,
     themeAverageUnrealizedPnlPercent,
     themeAverageAlpha,
+    themeTotalLiveAlphaPct,
     themeAverageFxNeutralAlpha,
     fxUsdJpy,
     benchmarkLatestPrice: benchmarkSnap.close,
@@ -3273,9 +3316,19 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       trailingEps: null,
       forwardEps: null,
       pegRatio: null,
+      dividendAdjustedPeg: null,
       expectedGrowth: null,
+      yahooCountry: null,
+      ttmRepurchaseOfStock: null,
+      consecutiveDividendYears: null,
+      yahooBuybackPosture: null,
       tag,
       alphaHistory: [alpha],
+      alphaHistoryObservationDates: (() => {
+        const raw = row.detected_at != null ? String(row.detected_at).trim() : "";
+        const ymd = raw.length >= 10 ? raw.slice(0, 10) : "";
+        return ymd.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? [ymd] : [];
+      })(),
       latestAlphaObservationYmd: null,
       weight: 0,
       quantity: 0,

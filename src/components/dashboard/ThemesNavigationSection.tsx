@@ -72,6 +72,7 @@ export function ThemesNavigationSection(props: {
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
         {themes.map((t) => {
           const name = (t.name ?? "").trim();
+          /** `/themes/[theme]` と theme-detail は DB の `investment_themes.name`（trim 一致）と揃える */
           const href = `/themes/${encodeURIComponent(name)}`;
           const inPortfolio = inPortfolioThemeNames.has(name);
           const badgeLabel = inPortfolio ? "In Portfolio" : "Researching";

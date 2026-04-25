@@ -51,11 +51,13 @@ function CockpitPortfolioContent() {
         stocks={stocks}
         totalHoldings={summary.totalHoldings}
         averageAlpha={summary.portfolioAverageAlpha}
+        portfolioTotalLiveAlphaPct={summary.portfolioTotalLiveAlphaPct ?? null}
         averageFxNeutralAlpha={
           summary.portfolioAverageFxNeutralAlpha ?? summary.portfolioAverageAlpha
         }
         userId={userId}
         onEarningsNoteSaved={() => void loadDashboard()}
+        onAfterInstrumentMetaSync={() => void loadDashboard()}
         onTrade={(init) => openTradeForm(init)}
         onTradeNew={() => openTradeForm(null)}
         livePricePollIntervalMs={45_000}

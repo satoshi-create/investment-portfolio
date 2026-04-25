@@ -7,6 +7,7 @@ import type { Stock, TickerInstrumentKind } from "@/src/types/investment";
 import { holdingSectorDisplay } from "@/src/lib/structure-tags";
 import { cn } from "@/src/lib/cn";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
+import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { formatJpyValueForView, formatLocalPriceForView } from "@/src/lib/format-display-currency";
 
@@ -364,25 +365,33 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                 >
                   {holdingSectorDisplay(s.sector, s.secondaryTag)}
                 </td>
-                <td className="px-4 py-3 text-xs whitespace-nowrap">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
-                      {s.countryName}
-                    </span>
-                    {s.nextEarningsDate ? (
-                      <span className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md" title={`次期決算予定日: ${s.nextEarningsDate}`}>
-                        E:{s.daysToEarnings != null ? `D${s.daysToEarnings}` : s.nextEarningsDate}
+                <td className="px-4 py-3 text-xs whitespace-nowrap align-top">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-bold text-muted-foreground border border-border bg-background/60 px-2 py-0.5 rounded-md">
+                        {s.countryName}
                       </span>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground">E:—</span>
-                    )}
-                    {s.dividendYieldPercent != null ? (
-                      <span className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md">
-                        Div:{s.dividendYieldPercent.toFixed(2)}%
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground">Div:—</span>
-                    )}
+                      {s.nextEarningsDate ? (
+                        <span className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md" title={`次期決算予定日: ${s.nextEarningsDate}`}>
+                          E:{s.daysToEarnings != null ? `D${s.daysToEarnings}` : s.nextEarningsDate}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">E:—</span>
+                      )}
+                      {s.dividendYieldPercent != null ? (
+                        <span className="text-[10px] font-bold text-foreground/90 border border-border bg-card/60 px-2 py-0.5 rounded-md">
+                          Div:{s.dividendYieldPercent.toFixed(2)}%
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">Div:—</span>
+                      )}
+                    </div>
+                    <YahooReturnChips
+                      consecutiveDividendYears={s.consecutiveDividendYears}
+                      ttmRepurchaseOfStock={s.ttmRepurchaseOfStock}
+                      yahooBuybackPosture={s.yahooBuybackPosture}
+                      className="flex flex-wrap gap-1"
+                    />
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-foreground/85 whitespace-nowrap">{s.quantity}</td>

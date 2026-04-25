@@ -18,6 +18,19 @@ import type { KoyomiLaneItem, KoyomiLaneResponse, KoyomiThemeLane } from "@/src/
 
 export const dynamic = "force-dynamic";
 
+/**
+ * スイムレーンに掲げる次回決算日の範囲（UTC）。Yahoo から解決した未来日が狭窓外に出やすいため、前方日を広げる。
+ */
+const LANE_EARNINGS_BACK_DAYS = 5;
+/** 少なくとも「近い次回以降の決算」を多く乗せる（±15 の Yahoo 重み付け帯より広い） */
+const LANE_EARNINGS_FORWARD_DAYS = 120;
+
+/**
+ * Yahoo+Rule40 多段取得の対象ティッカーは負荷が大きいため、決算日の「近傍」帯に限定（DB 日付が既に取れている枠外は r40 等は既定値のまま）。
+ */
+const YAHOO_HEAVY_BACK_DAYS = 14;
+const YAHOO_HEAVY_FORWARD_DAYS = 14;
+
 /** 同一ユーザー・同一掲載ウィンドウでの再計算を避け、連続リロード時の体感を改善 */
 const LANE_HTTP_CACHE_TTL_MS = 75_000;
 const LANE_HTTP_CACHE_MAX = 16;
@@ -95,16 +108,21 @@ export async function GET(request: Request) {
 
   /** `yahoo=minimal` で Yahoo を呼ばず DB の `next_earnings_date` のみ（クライアントが 24h キャッシュヒット時に使用） */
   const useYahooFull = searchParams.get("yahoo") !== "minimal";
+  /** 手動再取得: 75s HTTP バッファと Yahoo 24h プロセス内キャッシュの読取を飛ばす */
+  const forceYahoo = searchParams.get("force") === "1" || searchParams.get("force") === "true";
 
   const today = utcTodayYmd();
-  /** 決算日前後 2 週間ずつ（計おおよそ 1 ヶ月、UTC） */
-  const startYmd = ymdAddDaysUtc(today, -14);
-  const endYmd = ymdAddDaysUtc(today, 14);
+  const startYmd = ymdAddDaysUtc(today, -LANE_EARNINGS_BACK_DAYS);
+  const endYmd = ymdAddDaysUtc(today, LANE_EARNINGS_FORWARD_DAYS);
+  const heavyStartYmd = ymdAddDaysUtc(today, -YAHOO_HEAVY_BACK_DAYS);
+  const heavyEndYmd = ymdAddDaysUtc(today, YAHOO_HEAVY_FORWARD_DAYS);
 
   const laneCacheKey = `${userId}\t${startYmd}\t${endYmd}\t${useYahooFull ? "full" : "min"}`;
-  const cachedLane = laneCacheGet(laneCacheKey);
-  if (cachedLane != null) {
-    return NextResponse.json(cachedLane);
+  if (!forceYahoo) {
+    const cachedLane = laneCacheGet(laneCacheKey);
+    if (cachedLane != null) {
+      return NextResponse.json(cachedLane);
+    }
   }
 
   let outcomeTableMissing = false;
@@ -132,6 +150,8 @@ export async function GET(request: Request) {
       /* holdings 未作成時は空集合 */
     }
 
+    /** エコシステム上の全テーマ（1 行も掲載されなくてもレーン枠を出す） */
+    const allThemeNamesById = new Map<string, string>();
     let rows: Record<string, unknown>[];
     try {
       const wr = await db.execute({
@@ -160,10 +180,18 @@ export async function GET(request: Request) {
       rows = wr.rows as Record<string, unknown>[];
     }
 
+    for (const row of rows) {
+      const tid = String(row["theme_id"] ?? "").trim();
+      if (!tid) continue;
+      const tn = String(row["theme_name"] ?? "").trim();
+      if (!allThemeNamesById.has(tid)) allThemeNamesById.set(tid, tn);
+    }
+
     /**
-     * Yahoo フル取得（`yahoo=minimal` ではスキップ）:
-     * - 掲載ウィンドウ内の次回決算（DB）
-     * - 日付未設定かつ保有銘柄（DB / member_status=owned / holdings）— 未保有の null は取得しない
+     * Yahoo フル取得（`yahoo=minimal` ではスキップ）の対象（テーマ Ecosystem 登録行は関心ありとみなし、`status` NULL は内部的に watch 扱いで下記に含む）:
+     * - 狭帯 [heavyStart..heavyEnd] に DB 日付がある
+     * - 掲載帯 [startYmd..endYmd] に DB 日付がある（遠めの日でもレーンに載るチップの R40/筋肉を出す）
+     * - `next_earnings_date` が null（全テーマ銘柄: PLTR/TEAM/日本株など Yahoo で日付・指標を補う）
      */
     const inWindowDbHeavy = new Map<string, TickerIn>();
     for (const row of rows) {
@@ -176,12 +204,13 @@ export async function GET(request: Request) {
       const u = eff.toUpperCase();
       const prov = holdingProviderByUpper.get(u) ?? null;
       const entry: TickerIn = { ticker: eff, providerSymbol: prov };
-      const statusRaw = row["member_status"];
-      const statusNorm = typeof statusRaw === "string" ? statusRaw.trim().toLowerCase() : "";
-      const isOwnedRow = statusNorm === "owned" || holdingTickerSet.has(u);
-      if (dbYmd != null && dbYmd >= startYmd && dbYmd <= endYmd) {
+      const inHeavyDate = dbYmd != null && dbYmd >= heavyStartYmd && dbYmd <= heavyEndYmd;
+      const inLaneDbDate = dbYmd != null && dbYmd >= startYmd && dbYmd <= endYmd;
+      if (inHeavyDate) {
         if (!inWindowDbHeavy.has(u)) inWindowDbHeavy.set(u, entry);
-      } else if (dbYmd == null && isOwnedRow) {
+      } else if (inLaneDbDate) {
+        if (!inWindowDbHeavy.has(u)) inWindowDbHeavy.set(u, entry);
+      } else if (dbYmd == null) {
         if (!inWindowDbHeavy.has(u)) inWindowDbHeavy.set(u, entry);
       }
     }
@@ -200,6 +229,7 @@ export async function GET(request: Request) {
           const combined = await fetchKoyomiResearchAndRule40Map(researchInputs, {
             concurrency: 12,
             delayMs: 0,
+            bypassYahooCache: forceYahoo,
           });
           for (const [k, v] of combined) {
             researchMap.set(k, v.research);
@@ -277,6 +307,7 @@ export async function GET(request: Request) {
       if (effectiveYmd < startYmd || effectiveYmd > endYmd) continue;
 
       const st = row["member_status"];
+      /** `status` NULL は上の Yahoo 対象ロジックで観測（watch）相当として扱われている。 */
       const stNorm = typeof st === "string" ? st.trim().toLowerCase() : "";
       const effU = effTicker.length > 0 ? effTicker.toUpperCase() : ticker.toUpperCase();
       const ownedMember = stNorm === "owned" || holdingTickerSet.has(effU);
@@ -444,6 +475,13 @@ export async function GET(request: Request) {
       themeLanes.push({ themeId, themeName, items: finalItems });
     }
 
+    const seenThemeIds = new Set(themeLanes.map((t) => t.themeId));
+    for (const [themeId, themeName] of allThemeNamesById) {
+      if (!seenThemeIds.has(themeId)) {
+        themeLanes.push({ themeId, themeName, items: [] });
+        seenThemeIds.add(themeId);
+      }
+    }
     themeLanes.sort((a, b) => a.themeName.localeCompare(b.themeName, "ja"));
 
     const resBody: KoyomiLaneResponse = {

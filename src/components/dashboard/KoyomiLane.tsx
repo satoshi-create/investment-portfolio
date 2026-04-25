@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useLayoutEffect, useMemo, useRef } from "react";
-import { AlertTriangle, Orbit, Radio } from "lucide-react";
+import { AlertTriangle, Loader2, Orbit, Radio, RefreshCw } from "lucide-react";
 
 import { ymdAddDays, type EarningsQualityKind } from "@/src/lib/alpha-logic";
 import { cn } from "@/src/lib/cn";
@@ -76,6 +76,36 @@ function itemsByYmdKey(lane: KoyomiThemeLane): Map<string, KoyomiLaneItem[]> {
   return m;
 }
 
+function KoyomiLaneHeader({
+  onForceRefresh,
+  forceRefreshing,
+  canRefresh,
+}: {
+  onForceRefresh?: () => void;
+  forceRefreshing: boolean;
+  canRefresh: boolean;
+}) {
+  if (!canRefresh) return null;
+  return (
+    <div className="flex shrink-0 items-center justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => onForceRefresh?.()}
+        disabled={forceRefreshing}
+        title="Yahoo から次回決算日・R40 等を強制再取得"
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/30 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-60"
+        aria-label="テーマ暦を強制更新"
+      >
+        {forceRefreshing ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        ) : (
+          <RefreshCw className="h-4 w-4" aria-hidden />
+        )}
+      </button>
+    </div>
+  );
+}
+
 const STICKY_HEADER_CLASS =
   "sticky top-0 z-30 border-b border-border/50 bg-card/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/90";
 const STICKY_CORNER_CLASS =
@@ -87,6 +117,9 @@ type KoyomiLaneProps = {
   data: KoyomiLaneResponse | null;
   loading: boolean;
   error: string | null;
+  /** 手動再取得中（Yahoo フル・force）。レーン上に重ねて表示 */
+  forceRefreshing?: boolean;
+  onForceRefresh?: () => void;
   className?: string;
   /** テーマ列の固定幅 */
   labelColClass?: string;
@@ -101,6 +134,8 @@ export function KoyomiLane({
   data,
   loading,
   error,
+  forceRefreshing = false,
+  onForceRefresh,
   className,
   labelColClass = "w-[7.5rem] sm:w-40 lg:w-48",
   /** Tactical view: チップと日付列を大きくし、ラベルをホバーなしで読める */
@@ -144,29 +179,73 @@ export function KoyomiLane({
 
   if (loading) {
     return (
-      <div className={cn("min-h-0 min-w-0", className)}>
+      <div className={cn("min-h-0 min-w-0 space-y-3", className)}>
+        <KoyomiLaneHeader
+          onForceRefresh={onForceRefresh}
+          forceRefreshing={forceRefreshing}
+          canRefresh={typeof onForceRefresh === "function"}
+        />
+        <div
+          className="animate-pulse space-y-2 rounded-lg border border-border/50 bg-card/20 p-4"
+          role="status"
+          aria-label="テーマ暦のスケルトン"
+        >
+          <div className="h-3 w-40 rounded bg-muted" />
+          <div className="h-32 rounded bg-muted/60" />
+        </div>
         <p className="text-sm text-muted-foreground">テーマ暦を読み込み中…</p>
       </div>
     );
   }
   if (error) {
     return (
-      <div className={cn("min-h-0 min-w-0", className)}>
-        <p className="text-sm text-destructive">{error}</p>
+      <div className={cn("min-h-0 min-w-0 space-y-3", className)}>
+        <KoyomiLaneHeader
+          onForceRefresh={onForceRefresh}
+          forceRefreshing={forceRefreshing}
+          canRefresh={typeof onForceRefresh === "function"}
+        />
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          データ取得に失敗しました。上の「更新」で再試行してください。
+        </p>
       </div>
     );
   }
   if (data == null) {
     return (
-      <div className={cn("min-h-0 min-w-0", className)}>
-        <p className="text-sm text-muted-foreground">データがありません。</p>
+      <div className={cn("min-h-0 min-w-0 space-y-3", className)}>
+        <KoyomiLaneHeader
+          onForceRefresh={onForceRefresh}
+          forceRefreshing={forceRefreshing}
+          canRefresh={typeof onForceRefresh === "function"}
+        />
+        <p className="text-sm text-muted-foreground" role="alert">
+          データ取得に失敗しました。再試行してください。
+        </p>
+        {typeof onForceRefresh === "function" ? (
+          <p className="text-xs text-muted-foreground">右上の更新アイコンで最新のファンダメンタルズを同期できます。</p>
+        ) : null}
       </div>
     );
   }
 
   if (data.themeLanes.length === 0) {
     return (
-      <div className={cn("min-h-0 min-w-0", className)}>
+      <div className={cn("min-h-0 min-w-0 space-y-3", className)}>
+        <KoyomiLaneHeader
+          onForceRefresh={onForceRefresh}
+          forceRefreshing={forceRefreshing}
+          canRefresh={typeof onForceRefresh === "function"}
+        />
+        {forceRefreshing ? (
+          <p className="text-xs text-cyan-200/90 flex items-center gap-1.5" role="status">
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+            最新のファンダメンタルズを同期中…
+          </p>
+        ) : null}
         <p className="text-sm text-muted-foreground leading-relaxed">
           表示できるテーマウォッチの決算予定がありません（テーマ Ecosystem の銘柄に次回決算日を設定するか、掲載ウィンドウ内に予定を置いてください）。
         </p>
@@ -181,6 +260,17 @@ export function KoyomiLane({
         className,
       )}
     >
+      <KoyomiLaneHeader
+        onForceRefresh={onForceRefresh}
+        forceRefreshing={forceRefreshing}
+        canRefresh={typeof onForceRefresh === "function"}
+      />
+      {forceRefreshing ? (
+        <p className="shrink-0 text-xs text-cyan-200/90 flex items-center gap-1.5" role="status">
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+          最新のファンダメンタルズを同期中…
+        </p>
+      ) : null}
       {data.outcomeTableMissing ? (
         <p className="shrink-0 flex items-start gap-2 text-xs text-amber-200/90 leading-relaxed border border-amber-500/30 rounded-lg px-3 py-2 bg-amber-500/5">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" aria-hidden />
@@ -199,9 +289,13 @@ export function KoyomiLane({
 
       <div
         ref={laneScrollRef}
-        className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [-webkit-overflow-scrolling:touch] rounded-lg border border-border/60 bg-card/20"
+        className={cn(
+          "min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [-webkit-overflow-scrolling:touch] rounded-lg border border-border/60 bg-card/20",
+          forceRefreshing && "pointer-events-none opacity-60",
+        )}
         role="region"
         aria-label="テーマ別決算スイムレーン"
+        aria-busy={forceRefreshing}
       >
         <div
           className={cn(

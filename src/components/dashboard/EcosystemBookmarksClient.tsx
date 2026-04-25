@@ -10,7 +10,6 @@ import {
   FileSpreadsheet,
   Layers,
   Search,
-  X,
 } from "lucide-react";
 import {
   DndContext,
@@ -30,7 +29,11 @@ import {
 import { toast } from "sonner";
 
 import { toggleThemeEcosystemMemberBookmark } from "@/app/actions/theme-ecosystem";
-import { EarningsNoteMarkdownPreview } from "@/src/components/dashboard/EarningsNoteMarkdownPreview";
+import {
+  EarningsSummaryNoteEditorModal,
+  EcosystemMarkdownMemoModal,
+} from "@/src/components/dashboard/HoldingEcosystemNoteModals";
+import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import { EcosystemThemeTableMappedRow } from "@/src/components/dashboard/EcosystemThemeTableMappedRow";
 import { EcosystemWatchlistColumnToolbar } from "@/src/components/dashboard/EcosystemWatchlistColumnToolbar";
 import { sortStructuralEcosystemWatchlist } from "@/src/components/dashboard/ecosystem-structural-watchlist-sort";
@@ -222,6 +225,10 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
   const [ecoMemoDraft, setEcoMemoDraft] = useState("");
   const [ecoMemoModalTab, setEcoMemoModalTab] = useState<"edit" | "preview">("edit");
   const [ecoMemoSaving, setEcoMemoSaving] = useState(false);
+  const [ecoEarningsSummaryTarget, setEcoEarningsSummaryTarget] = useState<ThemeEcosystemWatchItem | null>(null);
+  const [ecoEarningsSummaryDraft, setEcoEarningsSummaryDraft] = useState("");
+  const [ecoEarningsSummaryModalTab, setEcoEarningsSummaryModalTab] = useState<"edit" | "preview">("edit");
+  const [ecoEarningsSummarySaving, setEcoEarningsSummarySaving] = useState(false);
 
   useEffect(() => {
     setItems(initialItems);
@@ -638,6 +645,13 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
     }
   }, [ecoMemoTarget]);
 
+  useEffect(() => {
+    if (ecoEarningsSummaryTarget) {
+      setEcoEarningsSummaryDraft(ecoEarningsSummaryTarget.earningsSummaryNote ?? "");
+      setEcoEarningsSummaryModalTab("edit");
+    }
+  }, [ecoEarningsSummaryTarget]);
+
   const saveEcoMemberMemo = useCallback(async () => {
     if (!ecoMemoTarget?.themeId || ecoMemoSaving) return;
     setEcoMemoSaving(true);
@@ -677,6 +691,54 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
       setEcoMemoSaving(false);
     }
   }, [ecoMemoDraft, ecoMemoSaving, ecoMemoTarget, handleRefresh]);
+
+  const saveEcoEarningsSummaryNote = useCallback(async () => {
+    if (!ecoEarningsSummaryTarget?.themeId || ecoEarningsSummarySaving) return;
+    const trimmed = ecoEarningsSummaryDraft.trim();
+    if (trimmed.length > EARNINGS_SUMMARY_NOTE_MAX_LEN) {
+      toast.error(`決算要約は最大 ${EARNINGS_SUMMARY_NOTE_MAX_LEN} 文字です`);
+      return;
+    }
+    setEcoEarningsSummarySaving(true);
+    try {
+      const res = await fetch("/api/theme-ecosystem/member", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: DEFAULT_USER_ID,
+          themeId: ecoEarningsSummaryTarget.themeId,
+          memberId: ecoEarningsSummaryTarget.id,
+          earningsSummaryNote: trimmed.length > 0 ? trimmed : null,
+        }),
+      });
+      let json: { error?: string } = {};
+      try {
+        json = (await res.json()) as { error?: string };
+      } catch {
+        /* ignore */
+      }
+      if (!res.ok) {
+        toast.error(json.error ?? "保存に失敗しました");
+        return;
+      }
+      const memberId = ecoEarningsSummaryTarget.id;
+      const nextNote: string | null = trimmed.length > 0 ? trimmed : null;
+      setItems((cur) => cur.map((e) => (e.id === memberId ? { ...e, earningsSummaryNote: nextNote } : e)));
+      toast.success("決算要約を保存しました");
+      setEcoEarningsSummaryTarget(null);
+      await handleRefresh();
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      toast.error(e instanceof Error ? e.message : "保存に失敗しました");
+    } finally {
+      setEcoEarningsSummarySaving(false);
+    }
+  }, [
+    ecoEarningsSummaryDraft,
+    ecoEarningsSummarySaving,
+    ecoEarningsSummaryTarget,
+    handleRefresh,
+  ]);
 
   const handleEcosystemCsvDownload = useCallback(() => {
     const rows: Record<string, unknown>[] = [];
@@ -1196,6 +1258,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
                             saveEditEcosystem={saveEditEcosystem}
                             cancelEditEcosystem={cancelEditEcosystem}
                             setEcoMemoTarget={setEcoMemoTarget}
+                            setEcoEarningsSummaryTarget={setEcoEarningsSummaryTarget}
                             holderBadgeClass={holderBadgeClass}
                             dividendCalendar={dividendCalendar}
                             defensiveZClass={defensiveZClass}
@@ -1212,121 +1275,41 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
       )}
 
       {ecoMemoTarget ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
-          role="presentation"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
-            aria-label="閉じる"
-            onClick={() => !ecoMemoSaving && setEcoMemoTarget(null)}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="relative z-10 flex max-h-[min(92dvh,52rem)] w-[min(100%,36rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-w-2xl"
-            onClick={(ev) => ev.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Ecosystem memo</p>
-                <p className="text-base font-bold text-foreground mt-1 font-mono sm:text-lg">{ecoMemoTarget.ticker}</p>
-                {ecoMemoTarget.companyName ? (
-                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">{ecoMemoTarget.companyName}</p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                disabled={ecoMemoSaving}
-                onClick={() => setEcoMemoTarget(null)}
-                className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
-                aria-label="閉じる"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div
-              className="inline-flex shrink-0 gap-0 border-b border-border px-3 sm:px-4 pt-2"
-              role="tablist"
-              aria-label="メモの表示"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={ecoMemoModalTab === "edit"}
-                disabled={ecoMemoSaving}
-                onClick={() => setEcoMemoModalTab("edit")}
-                className={cn(
-                  "rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40",
-                  ecoMemoModalTab === "edit"
-                    ? "bg-background text-foreground border border-b-0 border-border -mb-px"
-                    : "text-muted-foreground hover:text-foreground/90",
-                )}
-              >
-                編集
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={ecoMemoModalTab === "preview"}
-                disabled={ecoMemoSaving}
-                onClick={() => setEcoMemoModalTab("preview")}
-                className={cn(
-                  "rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40",
-                  ecoMemoModalTab === "preview"
-                    ? "bg-background text-foreground border border-b-0 border-border -mb-px"
-                    : "text-muted-foreground hover:text-foreground/90",
-                )}
-              >
-                プレビュー（Markdown）
-              </button>
-            </div>
-            <div className="min-h-0 flex flex-1 flex-col bg-background">
-              {ecoMemoModalTab === "edit" ? (
-                <label htmlFor="eco-memo-ta-bm" className="sr-only">
-                  エコシステムメモ
-                </label>
-              ) : null}
-              {ecoMemoModalTab === "edit" ? (
-                <textarea
-                  id="eco-memo-ta-bm"
-                  value={ecoMemoDraft}
-                  onChange={(ev) => setEcoMemoDraft(ev.target.value)}
-                  disabled={ecoMemoSaving}
-                  rows={16}
-                  className="min-h-[16rem] flex-1 resize-y border-0 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent-cyan/40 disabled:opacity-50 sm:px-5 sm:py-4"
-                  placeholder="Markdown 可。空にして保存でクリア"
-                />
-              ) : (
-                <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 py-3 sm:px-5 sm:py-4">
-                  <p className="shrink-0 text-[10px] text-muted-foreground">未保存の編集も表示します</p>
-                  <div className="min-h-[12rem] flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
-                    <EarningsNoteMarkdownPreview markdown={ecoMemoDraft} />
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card/80 px-4 py-3 sm:px-5">
-              <button
-                type="button"
-                disabled={ecoMemoSaving}
-                onClick={() => setEcoMemoTarget(null)}
-                className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                disabled={ecoMemoSaving}
-                onClick={() => void saveEcoMemberMemo()}
-                className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
-              >
-                {ecoMemoSaving ? "保存中…" : "保存"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <EcosystemMarkdownMemoModal
+          ticker={ecoMemoTarget.ticker}
+          companyName={ecoMemoTarget.companyName}
+          draft={ecoMemoDraft}
+          onDraftChange={setEcoMemoDraft}
+          tab={ecoMemoModalTab}
+          onTabChange={setEcoMemoModalTab}
+          saving={ecoMemoSaving}
+          onClose={() => !ecoMemoSaving && setEcoMemoTarget(null)}
+          onSave={saveEcoMemberMemo}
+          textareaId="eco-memo-ta-bm"
+          placeholder="Markdown 可。空にして保存でクリア"
+          previewLeadText="未保存の編集も表示します"
+        />
+      ) : null}
+
+      {ecoEarningsSummaryTarget ? (
+        <EarningsSummaryNoteEditorModal
+          eyebrow="決算要約メモ"
+          title=""
+          titleId="eco-earnings-summary-modal-title-bm"
+          ticker={ecoEarningsSummaryTarget.ticker}
+          companyName={ecoEarningsSummaryTarget.companyName}
+          prominentTicker
+          draft={ecoEarningsSummaryDraft}
+          onDraftChange={setEcoEarningsSummaryDraft}
+          tab={ecoEarningsSummaryModalTab}
+          onTabChange={setEcoEarningsSummaryModalTab}
+          saving={ecoEarningsSummarySaving}
+          errorText={null}
+          onClose={() => !ecoEarningsSummarySaving && setEcoEarningsSummaryTarget(null)}
+          onSave={saveEcoEarningsSummaryNote}
+          textareaId="eco-earnings-ta-bm"
+          variant="ecosystem"
+        />
       ) : null}
     </div>
   );

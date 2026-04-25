@@ -6,10 +6,15 @@ import { CalendarClock, FileText, MessageSquare, Star } from "lucide-react";
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
+import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { ecoFcfYieldTone, ecoRuleOf40Tone } from "@/src/components/dashboard/eco-efficiency-display";
 import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
 import { fiveDayPulseForEcosystem } from "@/src/lib/eco-trend-daily";
+import {
+  ecosystemCumulativeSparklineTooltip,
+  ecosystemMappedAlphaCellTooltip,
+} from "@/src/lib/alpha-story-tooltip";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { cn } from "@/src/lib/cn";
@@ -20,7 +25,7 @@ import {
 } from "@/src/lib/eco-dividend-payout";
 import { ECOSYSTEM_MEMBER_FIELD_MAX_LEN } from "@/src/lib/ecosystem-field-meta";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
-import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import { EarningsSummaryNoteTextarea } from "@/src/components/dashboard/HoldingEcosystemNoteFields";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
@@ -422,17 +427,15 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                           <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
                             決算要約（Markdown・保存で更新）
                           </p>
-                          <textarea
+                          <EarningsSummaryNoteTextarea
+                            id={`eco-inline-earn-${e.id}`}
                             value={ecoEditEarningsSummaryNote ?? ""}
-                            onChange={(ev) => setEcoEditEarningsSummaryNote(ev.target.value)}
+                            onChange={(v) => setEcoEditEarningsSummaryNote(v)}
                             rows={4}
-                            maxLength={EARNINGS_SUMMARY_NOTE_MAX_LEN}
-                            placeholder="決算サマリー（memo とは別）"
                             className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground"
+                            placeholder="決算サマリー（memo とは別）"
+                            counterClassName="text-[9px] text-muted-foreground"
                           />
-                          <p className="text-[9px] text-muted-foreground">
-                            {(ecoEditEarningsSummaryNote ?? "").length} / {EARNINGS_SUMMARY_NOTE_MAX_LEN}
-                          </p>
                         </div>
                       ) : null}
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -549,22 +552,24 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         <MessageSquare size={11} className="shrink-0" aria-hidden />
                         メモ
                       </button>
-                      {setEcoEarningsSummaryTarget ? (
-                        <button
-                          type="button"
-                          onClick={() => setEcoEarningsSummaryTarget(e)}
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-colors",
-                            e.earningsSummaryNote != null && e.earningsSummaryNote.trim().length > 0
-                              ? "border-violet-500/45 bg-violet-500/10 text-violet-200"
-                              : "border-border text-muted-foreground hover:bg-muted/70",
-                          )}
-                          title="決算要約メモ（Markdown）を表示・編集"
-                        >
-                          <FileText size={11} className="shrink-0" aria-hidden />
-                          決算要約
-                        </button>
-                      ) : null}
+                    </div>
+                  ) : null}
+                  {setEcoEarningsSummaryTarget ? (
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEcoEarningsSummaryTarget(e)}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-colors",
+                          e.earningsSummaryNote != null && e.earningsSummaryNote.trim().length > 0
+                            ? "border-violet-500/45 bg-violet-500/10 text-violet-200"
+                            : "border-border text-muted-foreground hover:bg-muted/70",
+                        )}
+                        title="決算要約メモ（Markdown）を表示・編集"
+                      >
+                        <FileText size={11} className="shrink-0" aria-hidden />
+                        決算要約
+                      </button>
                     </div>
                   ) : null}
                 </div>
@@ -662,6 +667,14 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                 <div className="flex flex-col gap-2">
                   <div className="whitespace-nowrap">{dividendCalendar(e.dividendMonths)}</div>
                   {isDefensiveTheme ? <EcosystemDividendTradingStrip e={e} /> : null}
+                  {isDefensiveTheme ? (
+                    <YahooReturnChips
+                      consecutiveDividendYears={e.consecutiveDividendYears}
+                      ttmRepurchaseOfStock={e.ttmRepurchaseOfStock}
+                      yahooBuybackPosture={e.yahooBuybackPosture}
+                      className="flex flex-wrap gap-1.5"
+                    />
+                  ) : null}
                 </div>
               </td>
             );
@@ -735,6 +748,11 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                     ) : null}
                   </div>
                   <EcosystemDividendTradingStrip e={e} />
+                  <YahooReturnChips
+                    consecutiveDividendYears={e.consecutiveDividendYears}
+                    ttmRepurchaseOfStock={e.ttmRepurchaseOfStock}
+                    yahooBuybackPosture={e.yahooBuybackPosture}
+                  />
                 </div>
               </td>
             );
@@ -887,6 +905,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
+                title={ecosystemMappedAlphaCellTooltip(e)}
                 className={`px-6 py-3 text-right font-mono font-bold ${
                   e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? pctClass(e.latestAlpha) : "text-muted-foreground"
                 } ${stickyFirst}`}
@@ -903,7 +922,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "cumTrend":
             return (
-              <td key={colId} className={`px-6 py-3 ${stickyFirst}`}>
+              <td key={colId} title={ecosystemCumulativeSparklineTooltip(e)} className={`px-6 py-3 ${stickyFirst}`}>
                 <div className="flex flex-col items-center gap-1">
                   {e.isUnlisted ? (
                     <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">

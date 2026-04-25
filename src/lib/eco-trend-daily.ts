@@ -12,6 +12,17 @@ export function parseAlphaDailyHistoryJson(raw: unknown): number[] {
   return out;
 }
 
+/** テーマ API JSON から観測日（YYYY-MM-DD）配列を復元（camelCase / snake_case 双方） */
+export function parseAlphaObservationDatesJson(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const x of raw) {
+    const s = typeof x === "string" ? x.trim() : String(x).trim();
+    if (s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s)) out.push(s.slice(0, 10));
+  }
+  return out;
+}
+
 /**
  * 5D ミニバー用: 日次系列の構築 ＋ 本日暫定 Alpha。`alphaDailyHistory` 優先、
  * 空のときは累積 `alphaHistory` から隣接差分。

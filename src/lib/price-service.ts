@@ -16,7 +16,7 @@ import {
   type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
 import { MARKET_GLANCE_MACRO_DEFS } from "@/src/lib/market-glance-macros";
-import type { MarketIndicator } from "@/src/types/investment";
+import type { MarketIndicator, YahooBuybackPosture } from "@/src/types/investment";
 
 /** Yahoo アンケートの初回表示を抑止。先物など quote スキーマ不一致は `fetchLiveQuoteSnapshot` で validateResult: false を使用。 */
 const yahooFinance = new YahooFinance({
@@ -74,6 +74,20 @@ export type EquityResearchSnapshot = {
   expectedGrowth: number | null;
   /** Yahoo `defaultKeyStatistics.pegRatio`（自前計算のフォールバック用）。 */
   yahooPegRatio: number | null;
+  /**
+   * 直近4四半期の `repurchaseOfStock` 合算（絶対値）。四半期が空のときは年次 CF 最新1期にフォールバック。取得不能は null。
+   */
+  ttmRepurchaseOfStock: number | null;
+  /**
+   * `historical` 配当イベントから推定した「直近まで途切れない配当年数」（暦年ベースのヒューリスティック）。取得不能は null。
+   */
+  consecutiveDividendYears: number | null;
+  /** `assetProfile.country`（例: United States）。 */
+  yahooCountry: string | null;
+  /**
+   * 年次・四半期 CF の `repurchaseOfStock` から組み立てた自社株買いの複数期プロフィール。
+   */
+  yahooBuybackPosture: YahooBuybackPosture | null;
 };
 
 function pickRecordDateFromQuoteSummary(qss: unknown): string | null {
@@ -331,7 +345,258 @@ type YahooQuoteSummaryResearchShape = {
   };
   financialData?: { earningsGrowth?: unknown };
   earningsTrend?: { trend?: YahooEarningsTrendRow[] };
+  assetProfile?: { country?: string };
+  cashflowStatementHistoryQuarterly?: { cashflowStatements?: Array<Record<string, unknown> & { endDate?: Date }> };
 };
+
+/**
+ * 暦年ベース: 最も新しい配当年から連続して遡り、年1回以上の配当があった年数。
+ */
+export function consecutiveDividendYearsFromDividendRows(
+  rows: { date: Date; dividends?: number }[],
+): number | null {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const years = new Set<number>();
+  for (const r of rows) {
+    const d = r?.date;
+    if (!(d instanceof Date) || Number.isNaN(d.getTime())) continue;
+    const amt = typeof r.dividends === "number" ? r.dividends : Number((r as { dividends?: unknown }).dividends);
+    if (Number.isFinite(amt) && (amt as number) > 0) {
+      years.add(d.getUTCFullYear());
+    }
+  }
+  if (years.size === 0) return null;
+  const sorted = [...years].sort((a, b) => b - a);
+  const anchor = sorted[0]!;
+  let streak = 0;
+  for (let y = anchor; y >= anchor - 50; y--) {
+    if (years.has(y)) streak += 1;
+    else break;
+  }
+  return streak > 0 ? streak : null;
+}
+
+/** Yahoo CF 行の `repurchaseOfStock` を絶対値で取り出す（無・ゼロは null）。 */
+function parseRepurchaseAbsFromCashflowRow(r: Record<string, unknown>): number | null {
+  const raw = r["repurchaseOfStock"];
+  const n =
+    typeof raw === "number"
+      ? raw
+      : raw != null && typeof raw === "object" && "raw" in (raw as object)
+        ? Number((raw as { raw?: unknown }).raw)
+        : raw != null
+          ? Number(raw)
+          : NaN;
+  if (!Number.isFinite(n) || n === 0) return null;
+  return Math.abs(n);
+}
+
+/**
+ * `quoteSummary` の CF 行は `endDate` が `Date` / ISO 文字列 / epoch 秒・ms のいずれかで返り得る。
+ */
+function coerceCashflowEndDateMs(raw: unknown): number | null {
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.getTime();
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const ms = Math.abs(raw) < 1e12 ? raw * 1000 : raw;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : ms;
+  }
+  if (typeof raw === "string" && raw.trim().length > 0) {
+    const t = Date.parse(raw.trim());
+    return Number.isFinite(t) ? t : null;
+  }
+  return null;
+}
+
+function coerceCashflowEndDate(raw: unknown): Date | null {
+  const ms = coerceCashflowEndDateMs(raw);
+  return ms == null ? null : new Date(ms);
+}
+
+function cashflowStatementsSortedByEndDesc(
+  qs: unknown,
+  key: "cashflowStatementHistoryQuarterly" | "cashflowStatementHistory",
+): Array<Record<string, unknown> & { endDate?: Date }> {
+  const stmts = (qs as Record<string, { cashflowStatements?: unknown[] } | undefined>)[key]?.cashflowStatements;
+  if (!Array.isArray(stmts) || stmts.length === 0) return [];
+  const withT = stmts
+    .map((row) => {
+      const r = row as Record<string, unknown> & { endDate?: Date };
+      const t = coerceCashflowEndDateMs(r.endDate);
+      return { t: t ?? NaN, r };
+    })
+    .filter((x) => Number.isFinite(x.t))
+    .sort((a, b) => b.t - a.t)
+    .map((x) => x.r as Record<string, unknown> & { endDate?: Date });
+  return withT;
+}
+
+/**
+ * 年次 CF が空のときに四半期から暦年へ寄せて自社株買いの「還元姿勢」系列を組み立てる。
+ */
+export function buildYahooBuybackPostureFromQuoteSummary(qs: unknown): YahooBuybackPosture | null {
+  const quarterly = cashflowStatementsSortedByEndDesc(qs, "cashflowStatementHistoryQuarterly");
+  const annual = cashflowStatementsSortedByEndDesc(qs, "cashflowStatementHistory");
+
+  let fiscalRepurchasesAbs: { endDateYmd: string; amountAbs: number }[] = [];
+
+  if (annual.length > 0) {
+    fiscalRepurchasesAbs = annual
+      .map((r) => {
+        const end = coerceCashflowEndDate(r.endDate);
+        const abs = parseRepurchaseAbsFromCashflowRow(r);
+        if (end == null || abs == null) return null;
+        return { endDateYmd: formatDateYmd(end), amountAbs: abs };
+      })
+      .filter((x): x is { endDateYmd: string; amountAbs: number } => x != null)
+      .slice(0, 12);
+  }
+
+  if (fiscalRepurchasesAbs.length === 0 && quarterly.length > 0) {
+    const byYear = new Map<number, { sum: number; lastEnd: Date }>();
+    for (const r of quarterly) {
+      const end = coerceCashflowEndDate(r.endDate);
+      if (end == null) continue;
+      const abs = parseRepurchaseAbsFromCashflowRow(r);
+      if (abs == null) continue;
+      const y = end.getUTCFullYear();
+      const cur = byYear.get(y) ?? { sum: 0, lastEnd: end };
+      cur.sum += abs;
+      if (end.getTime() >= cur.lastEnd.getTime()) cur.lastEnd = end;
+      byYear.set(y, cur);
+    }
+    const years = [...byYear.entries()].sort((a, b) => b[0] - a[0]).slice(0, 10);
+    fiscalRepurchasesAbs = years.map(([, v]) => ({
+      endDateYmd: formatDateYmd(v.lastEnd),
+      amountAbs: v.sum,
+    }));
+  }
+
+  const last4 = quarterly.slice(0, 4);
+  let activeQuartersLast4 = 0;
+  for (const r of last4) {
+    if (parseRepurchaseAbsFromCashflowRow(r) != null) activeQuartersLast4 += 1;
+  }
+
+  const hasSignal = fiscalRepurchasesAbs.length > 0 || activeQuartersLast4 > 0;
+  if (!hasSignal) return null;
+
+  const byCalYear = new Map<number, number>();
+  for (const p of fiscalRepurchasesAbs) {
+    const y = Number(p.endDateYmd.slice(0, 4));
+    if (!Number.isFinite(y)) continue;
+    byCalYear.set(y, (byCalYear.get(y) ?? 0) + p.amountAbs);
+  }
+  const ys = [...byCalYear.entries()].sort((a, b) => b[0] - a[0]);
+  const sum3yAbs = ys.length > 0 ? ys.slice(0, 3).reduce((s, [, v]) => s + v, 0) : null;
+  const sum5yAbs = ys.length > 0 ? ys.slice(0, 5).reduce((s, [, v]) => s + v, 0) : null;
+
+  return {
+    fiscalRepurchasesAbs,
+    sum3yAbs,
+    sum5yAbs,
+    activeQuartersLast4: quarterly.length > 0 ? activeQuartersLast4 : null,
+  };
+}
+
+/**
+ * `historical(..., dividends)` が取れないときの控えめなヒント（最低 1 年）。
+ * `summaryDetail.trailingAnnualDividendRate` と `defaultKeyStatistics.lastDividend*` が揃い、最終配当が比較的新しいとき。
+ */
+export function consecutiveDividendYearsFromQuoteSummaryHint(qs: unknown): number | null {
+  const sd = (qs as { summaryDetail?: Record<string, unknown> }).summaryDetail;
+  const trail = sd?.trailingAnnualDividendRate != null ? Number(sd.trailingAnnualDividendRate) : NaN;
+  if (!Number.isFinite(trail) || trail <= 0) return null;
+  const dks = (qs as { defaultKeyStatistics?: Record<string, unknown> }).defaultKeyStatistics;
+  const lastVal = dks?.lastDividendValue != null ? Number(dks.lastDividendValue) : NaN;
+  if (!Number.isFinite(lastVal) || lastVal <= 0) return null;
+  const ld = dks?.lastDividendDate;
+  if (!(ld instanceof Date) || Number.isNaN(ld.getTime())) return null;
+  const ageMs = Date.now() - ld.getTime();
+  if (ageMs > 900 * 86_400_000) return null;
+  return 1;
+}
+
+function ttmAbsRepurchaseFromCashflowQuarterly(qs: unknown): number | null {
+  const stmts = (qs as { cashflowStatementHistoryQuarterly?: { cashflowStatements?: unknown[] } })
+    .cashflowStatementHistoryQuarterly?.cashflowStatements;
+  if (!Array.isArray(stmts) || stmts.length === 0) return null;
+  const withDates = stmts
+    .map((row) => {
+      const r = row as Record<string, unknown> & { endDate?: Date };
+      const t = coerceCashflowEndDateMs(r.endDate);
+      const abs = parseRepurchaseAbsFromCashflowRow(r);
+      return { t: t ?? NaN, abs };
+    })
+    .filter((x) => Number.isFinite(x.t))
+    .sort((a, b) => b.t - a.t);
+  const last4 = withDates.slice(0, 4);
+  let sum = 0;
+  let c = 0;
+  for (const x of last4) {
+    if (x.abs == null) continue;
+    sum += x.abs;
+    c += 1;
+  }
+  return c > 0 ? sum : null;
+}
+
+/** 年次 CF の最新1期の `repurchaseOfStock`（四半期が無い・空のときの 1 年相当フォールバック）。 */
+function ttmAbsRepurchaseFromCashflowAnnualLatest(qs: unknown): number | null {
+  const annual = cashflowStatementsSortedByEndDesc(qs, "cashflowStatementHistory");
+  if (annual.length === 0) return null;
+  return parseRepurchaseAbsFromCashflowRow(annual[0]! as Record<string, unknown>);
+}
+
+/**
+ * 直近4四半期の repurchase 合算を優先し、ダメなときは年次 CF の直近1期の絶対値を採用。
+ */
+function ttmAbsRepurchaseFromQuoteSummaryCashflows(qs: unknown): number | null {
+  const q = ttmAbsRepurchaseFromCashflowQuarterly(qs);
+  if (q != null && Number.isFinite(q) && q > 0) return q;
+  const a = ttmAbsRepurchaseFromCashflowAnnualLatest(qs);
+  if (a != null && Number.isFinite(a) && a > 0) return a;
+  return q ?? a;
+}
+
+function countCashflowStatementRows(
+  qs: unknown,
+  key: "cashflowStatementHistoryQuarterly" | "cashflowStatementHistory",
+): number {
+  const stmts = (qs as Record<string, { cashflowStatements?: unknown[] } | undefined>)[key]?.cashflowStatements;
+  return Array.isArray(stmts) ? stmts.length : 0;
+}
+
+/** 自社株買いが空のとき、サーバーで原因切り分けしやすいよう1行ログ（成功レスポンス内の欠損向け）。 */
+function logEquityResearchBuybackDiagnostics(
+  yahooSymbol: string,
+  qs: unknown,
+  snapshot: EquityResearchSnapshot,
+): void {
+  const ttm = snapshot.ttmRepurchaseOfStock;
+  const posture = snapshot.yahooBuybackPosture;
+  const ttmOk = ttm != null && Number.isFinite(ttm) && ttm > 0;
+  const postureOk =
+    posture != null &&
+    (posture.fiscalRepurchasesAbs.length > 0 ||
+      (posture.sum3yAbs != null && posture.sum3yAbs > 0) ||
+      (posture.sum5yAbs != null && posture.sum5yAbs > 0) ||
+      (posture.activeQuartersLast4 != null && posture.activeQuartersLast4 > 0));
+  if (ttmOk || postureOk) return;
+
+  const nQ = countCashflowStatementRows(qs, "cashflowStatementHistoryQuarterly");
+  const nA = countCashflowStatementRows(qs, "cashflowStatementHistory");
+  const hasFin = (qs as { financialData?: unknown }).financialData != null;
+  const qss = qs as { summaryDetail?: { dividendYield?: unknown } };
+  console.log(
+    `[price-service] equity-research gaps symbol=${yahooSymbol} ticker=${snapshot.ticker} ` +
+      `ttmRepurchaseOfStock=${ttm === null ? "null" : String(ttm)} yahooBuybackPosture=null ` +
+      `cashflowStatementHistoryQuarterly.rows=${nQ} cashflowStatementHistory.rows=${nA} financialData=${hasFin ? "yes" : "no"} ` +
+      `dividendYieldPercent=${snapshot.dividendYieldPercent === null ? "null" : String(snapshot.dividendYieldPercent)} ` +
+      `rawDividendYield=${String(qss.summaryDetail?.dividendYield)} pegRatio=${snapshot.yahooPegRatio === null ? "null" : String(snapshot.yahooPegRatio)} ` +
+      `expectedGrowth=${snapshot.expectedGrowth === null ? "null" : String(snapshot.expectedGrowth)}`,
+  );
+}
 
 /**
  * `quoteSummary` の結果から Koyomi / リサーチ用スナップショットを組み立てる（サーバー専用）。
@@ -368,6 +633,13 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
   const yahooPeg0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.pegRatio);
   const yahooPegRatio = yahooPeg0 != null && yahooPeg0 > 0 ? yahooPeg0 : null;
 
+  const ap = (qs as { assetProfile?: { country?: unknown } }).assetProfile;
+  const cRaw = ap?.country;
+  const yahooCountry =
+    typeof cRaw === "string" && cRaw.trim().length > 0 ? cRaw.trim() : null;
+  const ttmRepurchaseOfStock = ttmAbsRepurchaseFromQuoteSummaryCashflows(qs);
+  const yahooBuybackPosture = buildYahooBuybackPostureFromQuoteSummary(qs);
+
   return {
     ticker: tickerUpper,
     nextEarningsDate,
@@ -381,6 +653,10 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
     forwardEps: forwardEps0,
     expectedGrowth,
     yahooPegRatio,
+    ttmRepurchaseOfStock,
+    consecutiveDividendYears: null,
+    yahooCountry,
+    yahooBuybackPosture,
   } satisfies EquityResearchSnapshot;
 }
 
@@ -401,6 +677,18 @@ export function regularMarketChangePercentFromQuoteSummary(qs: unknown): number 
   return null;
 }
 
+/** `fetchEquityResearchSnapshots` が要求する `quoteSummary` モジュール（CF・financialData を含む）。 */
+export const QUOTE_SUMMARY_EQUITY_RESEARCH_MODULES = [
+  "calendarEvents",
+  "summaryDetail",
+  "defaultKeyStatistics",
+  "financialData",
+  "earningsTrend",
+  "cashflowStatementHistory",
+  "cashflowStatementHistoryQuarterly",
+  "assetProfile",
+] as const;
+
 /**
  * Yahoo から「次回決算日」「配当（年率/利回り）」を取得（軽量な quoteSummary）。
  * 失敗した銘柄は null（ログのみ）で継続。
@@ -419,11 +707,36 @@ export async function fetchEquityResearchSnapshots(
     if (!sym) return null;
     try {
       const qs = await yahooFinance.quoteSummary(sym, {
-        modules: ["calendarEvents", "summaryDetail", "defaultKeyStatistics", "financialData", "earningsTrend"],
+        modules: [...QUOTE_SUMMARY_EQUITY_RESEARCH_MODULES],
       });
 
-      return equityResearchSnapshotFromQuoteSummary(qs, ticker.toUpperCase());
+      const base = equityResearchSnapshotFromQuoteSummary(qs, ticker.toUpperCase());
+      logEquityResearchBuybackDiagnostics(sym, qs, base);
+      let consecutiveDividendYears: number | null = null;
+      try {
+        const period2 = new Date();
+        const period1 = new Date(period2);
+        period1.setUTCFullYear(period1.getUTCFullYear() - 20);
+        const divRows = await yahooFinance.historical(sym, {
+          period1,
+          period2,
+          events: "dividends",
+        });
+        if (Array.isArray(divRows) && divRows.length > 0) {
+          consecutiveDividendYears = consecutiveDividendYearsFromDividendRows(
+            divRows as { date: Date; dividends: number }[],
+          );
+        }
+      } catch {
+        /* 配当系列は補助指標 */
+      }
+      const mergedYears =
+        consecutiveDividendYears ?? consecutiveDividendYearsFromQuoteSummaryHint(qs);
+      return { ...base, consecutiveDividendYears: mergedYears };
     } catch (e) {
+      console.log(
+        `[price-service] equity-research quoteSummary failed ticker=${ticker} symbol=${sym} detail=${e instanceof Error ? e.message : String(e)}`,
+      );
       logSkip(sym, "quoteSummary failed (research snapshot)", e);
       return null;
     }

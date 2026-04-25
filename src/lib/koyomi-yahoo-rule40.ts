@@ -40,6 +40,7 @@ const KOYOMI_QUOTE_SUMMARY_MODULES = [
   "price",
   /** 可能なら 1 リクエストで四半期 PL/CF を得て TS 呼び出しを減らす */
   "incomeStatementHistoryQuarterly",
+  "cashflowStatementHistory",
   "cashflowStatementHistoryQuarterly",
 ] as const;
 
@@ -373,19 +374,25 @@ export async function fetchKoyomiCalendarProbeMap(
   return out;
 }
 
-async function fetchOneCombined(input: {
-  ticker: string;
-  providerSymbol?: string | null;
-}): Promise<KoyomiResearchAndRule40 | null> {
+async function fetchOneCombined(
+  input: {
+    ticker: string;
+    providerSymbol?: string | null;
+  },
+  opts?: { bypassCache?: boolean },
+): Promise<KoyomiResearchAndRule40 | null> {
+  const bypassCache = opts?.bypassCache === true;
   const ticker = input.ticker.trim();
   if (ticker.length === 0) return null;
   const sym = toYahooFinanceSymbol(ticker, input.providerSymbol ?? null);
   if (!sym) return null;
   const upper = ticker.toUpperCase();
   const ck = cacheKeyForKoyomi(upper, input.providerSymbol ?? null);
-  const hit = koyomiYahooCache.get(ck);
-  if (hit != null && hit.expiresAt > Date.now()) {
-    return hit.payload;
+  if (!bypassCache) {
+    const hit = koyomiYahooCache.get(ck);
+    if (hit != null && hit.expiresAt > Date.now()) {
+      return hit.payload;
+    }
   }
   try {
     const qs = await yahooFinance.quoteSummary(sym, {
@@ -416,7 +423,7 @@ async function fetchOneCombined(input: {
  */
 export async function fetchKoyomiResearchAndRule40Map(
   inputs: { ticker: string; providerSymbol?: string | null }[],
-  options?: { concurrency?: number; delayMs?: number },
+  options?: { concurrency?: number; delayMs?: number; bypassYahooCache?: boolean },
 ): Promise<Map<string, KoyomiResearchAndRule40>> {
   const out = new Map<string, KoyomiResearchAndRule40>();
   const seen = new Set<string>();
@@ -432,6 +439,7 @@ export async function fetchKoyomiResearchAndRule40Map(
 
   const concurrency = Math.max(1, Math.min(12, Math.floor(options?.concurrency ?? 10)));
   const delayMs = Math.max(0, Math.floor(options?.delayMs ?? 0));
+  const bypassYahooCache = options?.bypassYahooCache === true;
 
   let idx = 0;
   async function worker(): Promise<void> {
@@ -439,7 +447,7 @@ export async function fetchKoyomiResearchAndRule40Map(
       const i = idx++;
       if (i >= deduped.length) return;
       const it = deduped[i]!;
-      const row = await fetchOneCombined(it);
+      const row = await fetchOneCombined(it, { bypassCache: bypassYahooCache });
       if (row != null) {
         out.set(row.research.ticker.toUpperCase(), row);
       }

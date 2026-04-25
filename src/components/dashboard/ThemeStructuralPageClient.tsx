@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -12,7 +13,6 @@ import {
   Star,
   TrendingUp,
   UserPlus,
-  X,
 } from "lucide-react";
 import {
   DndContext,
@@ -65,10 +65,15 @@ import {
 } from "@/src/lib/alpha-logic";
 import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER } from "@/src/lib/edo-theme-constants";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
-import { parseAlphaDailyHistoryJson } from "@/src/lib/eco-trend-daily";
+import { parseAlphaDailyHistoryJson, parseAlphaObservationDatesJson } from "@/src/lib/eco-trend-daily";
+import { parseYahooBuybackPostureJson } from "@/src/lib/yahoo-buyback-posture";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import {
+  EarningsSummaryNoteEditorModal,
+  EcosystemMarkdownMemoModal,
+} from "@/src/components/dashboard/HoldingEcosystemNoteModals";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { formatJpyValueForView, formatLocalPriceForView } from "@/src/lib/format-display-currency";
@@ -96,7 +101,6 @@ import {
   TradeEntryForm,
   type TradeEntryInitial,
 } from "@/src/components/dashboard/TradeEntryForm";
-import { EarningsNoteMarkdownPreview } from "@/src/components/dashboard/EarningsNoteMarkdownPreview";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
@@ -332,6 +336,10 @@ function normalizeThemeDetailResponse(
 ): ThemeDetailData {
   return {
     ...rest,
+    themeMissing:
+      typeof (rest as ThemeDetailData).themeMissing === "boolean"
+        ? (rest as ThemeDetailData).themeMissing
+        : rest.theme == null,
     ecosystem: Array.isArray(rest.ecosystem)
       ? rest.ecosystem.map((item) => {
           const proxy = typeof item.proxyTicker === "string" ? item.proxyTicker.trim() : "";
@@ -486,6 +494,14 @@ function normalizeThemeDetailResponse(
             (item as Record<string, unknown>).alphaDailyHistory ??
               (item as Record<string, unknown>).alpha_daily_history,
           ),
+          alphaCumulativeObservationDates: parseAlphaObservationDatesJson(
+            (item as Record<string, unknown>).alphaCumulativeObservationDates ??
+              (item as Record<string, unknown>).alpha_cumulative_observation_dates,
+          ),
+          alphaDailyObservationDates: parseAlphaObservationDatesJson(
+            (item as Record<string, unknown>).alphaDailyObservationDates ??
+              (item as Record<string, unknown>).alpha_daily_observation_dates,
+          ),
           latestDailyAlphaObservationYmd: (() => {
             const a = (item as Record<string, unknown>).latestDailyAlphaObservationYmd;
             const b = (item as Record<string, unknown>).latest_daily_alpha_observation_ymd;
@@ -526,6 +542,10 @@ function normalizeThemeDetailResponse(
             const v = (item as Record<string, unknown>).volumeRatio ?? (item as Record<string, unknown>).volume_ratio;
             return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
           })(),
+          yahooBuybackPosture: parseYahooBuybackPostureJson(
+            (item as Record<string, unknown>).yahooBuybackPosture ??
+              (item as Record<string, unknown>).yahoo_buyback_posture,
+          ),
           };
         })
       : [],
@@ -578,6 +598,12 @@ function normalizeThemeDetailResponse(
     themeSyntheticBenchmarkTooltip:
       typeof rest.themeSyntheticBenchmarkTooltip === "string" && rest.themeSyntheticBenchmarkTooltip.trim().length > 0
         ? rest.themeSyntheticBenchmarkTooltip.trim()
+        : null,
+    themeTotalLiveAlphaPct:
+      rest.themeTotalLiveAlphaPct != null &&
+      typeof rest.themeTotalLiveAlphaPct === "number" &&
+      Number.isFinite(rest.themeTotalLiveAlphaPct)
+        ? rest.themeTotalLiveAlphaPct
         : null,
     themeAverageFxNeutralAlpha:
       typeof rest.themeAverageFxNeutralAlpha === "number" && Number.isFinite(rest.themeAverageFxNeutralAlpha)
@@ -1267,6 +1293,7 @@ export function ThemePageClient({
           }
           return;
         }
+        setAddSubmitting(false);
         toast.success("エコシステムに追加しました");
         setAddTicker("");
         setAddRole("");
@@ -1274,8 +1301,8 @@ export function ThemePageClient({
         setAddEcosystemField("");
         setAddObservationStartedAt(localCalendarIsoDate());
         setAddCompanyName(null);
-        router.refresh();
-        await refetchThemeDetailQuiet(ac.signal);
+        void router.refresh();
+        void refetchThemeDetailQuiet(ac.signal);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
         toast.error(e instanceof Error ? e.message : "追加に失敗しました");
@@ -1954,6 +1981,24 @@ export function ThemePageClient({
           </div>
         ) : null}
 
+        {!loading && canRenderContent && data.themeMissing ? (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
+            <p className="text-sm font-bold text-amber-200/95">
+              <span className="font-mono">investment_themes</span> に一致するテーマ行がありません
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              参照名: <span className="font-mono text-foreground/90">{themeQueryName}</span>
+              （DB のテーマ名と URL のセグメントが完全に一致する必要があります。前後の空白は許容）
+            </p>
+            <Link
+              href="/themes"
+              className="inline-block mt-3 text-sm font-bold text-amber-300/95 underline underline-offset-2 hover:opacity-90"
+            >
+              テーマ一覧へ
+            </Link>
+          </div>
+        ) : null}
+
         {/* Initial load: single panel avoids empty “ghost frames” + duplicate status rows */}
         {loading && !canRenderContent ? (
           <div
@@ -2256,6 +2301,7 @@ export function ThemePageClient({
                 stocks={stocks}
                 totalHoldings={stocks.length}
                 averageAlpha={data.themeAverageAlpha}
+                portfolioTotalLiveAlphaPct={data.themeTotalLiveAlphaPct}
                 averageFxNeutralAlpha={data.themeAverageFxNeutralAlpha}
                 userId={DEFAULT_USER_ID}
                 onEarningsNoteSaved={() => {
@@ -3195,248 +3241,40 @@ export function ThemePageClient({
         ) : null}
 
         {ecoMemoTarget ? (
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
-            role="presentation"
-          >
-            <button
-              type="button"
-              className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
-              aria-label="閉じる"
-              onClick={() => !ecoMemoSaving && setEcoMemoTarget(null)}
-            />
-            <div
-              role="dialog"
-              aria-modal="true"
-              className="relative z-10 flex max-h-[min(92dvh,52rem)] w-[min(100%,36rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-w-2xl"
-              onClick={(ev) => ev.stopPropagation()}
-            >
-              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Ecosystem memo
-                  </p>
-                  <p className="text-base font-bold text-foreground mt-1 font-mono sm:text-lg">{ecoMemoTarget.ticker}</p>
-                  {ecoMemoTarget.companyName ? (
-                    <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">{ecoMemoTarget.companyName}</p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  disabled={ecoMemoSaving}
-                  onClick={() => setEcoMemoTarget(null)}
-                  className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
-                  aria-label="閉じる"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div
-                className="inline-flex shrink-0 gap-0 border-b border-border px-3 sm:px-4 pt-2"
-                role="tablist"
-                aria-label="メモの表示"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={ecoMemoModalTab === "edit"}
-                  disabled={ecoMemoSaving}
-                  onClick={() => setEcoMemoModalTab("edit")}
-                  className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                    ecoMemoModalTab === "edit"
-                      ? "bg-background text-foreground border border-b-0 border-border -mb-px"
-                      : "text-muted-foreground hover:text-foreground/90"
-                  }`}
-                >
-                  編集
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={ecoMemoModalTab === "preview"}
-                  disabled={ecoMemoSaving}
-                  onClick={() => setEcoMemoModalTab("preview")}
-                  className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                    ecoMemoModalTab === "preview"
-                      ? "bg-background text-foreground border border-b-0 border-border -mb-px"
-                      : "text-muted-foreground hover:text-foreground/90"
-                  }`}
-                >
-                  プレビュー（Markdown）
-                </button>
-              </div>
-              <div className="min-h-0 flex flex-1 flex-col bg-background">
-                {ecoMemoModalTab === "edit" ? (
-                  <label htmlFor="eco-memo-ta" className="sr-only">
-                    エコシステムメモ
-                  </label>
-                ) : null}
-                {ecoMemoModalTab === "edit" ? (
-                  <textarea
-                    id="eco-memo-ta"
-                    value={ecoMemoDraft}
-                    onChange={(ev) => setEcoMemoDraft(ev.target.value)}
-                    disabled={ecoMemoSaving}
-                    rows={16}
-                    className="min-h-[16rem] flex-1 resize-y border-0 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent-cyan/40 disabled:opacity-50 sm:px-5 sm:py-4"
-                    placeholder="Markdown 可（見出し・リスト・表など）。空にして保存でクリア（theme_ecosystem_members.memo）"
-                  />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 py-3 sm:px-5 sm:py-4">
-                    <p className="shrink-0 text-[10px] text-muted-foreground">
-                      入力中の内容を Markdown として表示します（未保存の編集も反映）。
-                    </p>
-                    <div className="min-h-[12rem] flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
-                      <EarningsNoteMarkdownPreview markdown={ecoMemoDraft} />
-                    </div>
-                  </div>
-                )}
-                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card/80 px-4 py-3 sm:px-5">
-                  <button
-                    type="button"
-                    disabled={ecoMemoSaving}
-                    onClick={() => setEcoMemoTarget(null)}
-                    className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60"
-                  >
-                    キャンセル
-                  </button>
-                  <button
-                    type="button"
-                    disabled={ecoMemoSaving}
-                    onClick={() => void saveEcoMemberMemo()}
-                    className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
-                  >
-                    {ecoMemoSaving ? "保存中…" : "保存"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <EcosystemMarkdownMemoModal
+            ticker={ecoMemoTarget.ticker}
+            companyName={ecoMemoTarget.companyName}
+            draft={ecoMemoDraft}
+            onDraftChange={setEcoMemoDraft}
+            tab={ecoMemoModalTab}
+            onTabChange={setEcoMemoModalTab}
+            saving={ecoMemoSaving}
+            onClose={() => !ecoMemoSaving && setEcoMemoTarget(null)}
+            onSave={saveEcoMemberMemo}
+            textareaId="eco-memo-ta"
+            placeholder="Markdown 可（見出し・リスト・表など）。空にして保存でクリア（theme_ecosystem_members.memo）"
+          />
         ) : null}
 
         {ecoEarningsSummaryTarget ? (
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
-            role="presentation"
-          >
-            <button
-              type="button"
-              className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
-              aria-label="閉じる"
-              onClick={() => !ecoEarningsSummarySaving && setEcoEarningsSummaryTarget(null)}
-            />
-            <div
-              role="dialog"
-              aria-modal="true"
-              className="relative z-10 flex max-h-[min(92dvh,52rem)] w-[min(100%,36rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-w-2xl"
-              onClick={(ev) => ev.stopPropagation()}
-            >
-              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    決算要約メモ
-                  </p>
-                  <p className="text-base font-bold text-foreground mt-1 font-mono sm:text-lg">
-                    {ecoEarningsSummaryTarget.ticker}
-                  </p>
-                  {ecoEarningsSummaryTarget.companyName ? (
-                    <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">
-                      {ecoEarningsSummaryTarget.companyName}
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  disabled={ecoEarningsSummarySaving}
-                  onClick={() => setEcoEarningsSummaryTarget(null)}
-                  className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
-                  aria-label="閉じる"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div
-                className="inline-flex shrink-0 gap-0 border-b border-border px-3 sm:px-4 pt-2"
-                role="tablist"
-                aria-label="決算要約の表示"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={ecoEarningsSummaryModalTab === "edit"}
-                  disabled={ecoEarningsSummarySaving}
-                  onClick={() => setEcoEarningsSummaryModalTab("edit")}
-                  className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                    ecoEarningsSummaryModalTab === "edit"
-                      ? "bg-background text-foreground border border-b-0 border-border -mb-px"
-                      : "text-muted-foreground hover:text-foreground/90"
-                  }`}
-                >
-                  編集
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={ecoEarningsSummaryModalTab === "preview"}
-                  disabled={ecoEarningsSummarySaving}
-                  onClick={() => setEcoEarningsSummaryModalTab("preview")}
-                  className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                    ecoEarningsSummaryModalTab === "preview"
-                      ? "bg-background text-foreground border border-b-0 border-border -mb-px"
-                      : "text-muted-foreground hover:text-foreground/90"
-                  }`}
-                >
-                  プレビュー（Markdown）
-                </button>
-              </div>
-              <div className="min-h-0 flex flex-1 flex-col bg-background">
-                {ecoEarningsSummaryModalTab === "edit" ? (
-                  <label htmlFor="eco-earnings-ta" className="sr-only">
-                    決算要約
-                  </label>
-                ) : null}
-                {ecoEarningsSummaryModalTab === "edit" ? (
-                  <textarea
-                    id="eco-earnings-ta"
-                    value={ecoEarningsSummaryDraft}
-                    onChange={(ev) => setEcoEarningsSummaryDraft(ev.target.value)}
-                    disabled={ecoEarningsSummarySaving}
-                    maxLength={EARNINGS_SUMMARY_NOTE_MAX_LEN}
-                    rows={16}
-                    className="min-h-[16rem] flex-1 resize-y border-0 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-violet-500/35 disabled:opacity-50 sm:px-5 sm:py-4"
-                    placeholder="Markdown 可。空にして保存でクリア（theme_ecosystem_members.earnings_summary_note）"
-                  />
-                ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 py-3 sm:px-5 sm:py-4">
-                    <p className="shrink-0 text-[10px] text-muted-foreground">
-                      入力中の内容を Markdown として表示します（未保存の編集も反映）。
-                    </p>
-                    <div className="min-h-[12rem] flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
-                      <EarningsNoteMarkdownPreview markdown={ecoEarningsSummaryDraft} />
-                    </div>
-                  </div>
-                )}
-                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card/80 px-4 py-3 sm:px-5">
-                  <button
-                    type="button"
-                    disabled={ecoEarningsSummarySaving}
-                    onClick={() => setEcoEarningsSummaryTarget(null)}
-                    className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60"
-                  >
-                    キャンセル
-                  </button>
-                  <button
-                    type="button"
-                    disabled={ecoEarningsSummarySaving}
-                    onClick={() => void saveEcoEarningsSummaryNote()}
-                    className="text-[11px] font-bold uppercase tracking-wide text-background bg-violet-600 px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
-                  >
-                    {ecoEarningsSummarySaving ? "保存中…" : "保存"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <EarningsSummaryNoteEditorModal
+            eyebrow="決算要約メモ"
+            title=""
+            titleId="eco-earnings-summary-modal-title"
+            ticker={ecoEarningsSummaryTarget.ticker}
+            companyName={ecoEarningsSummaryTarget.companyName}
+            prominentTicker
+            draft={ecoEarningsSummaryDraft}
+            onDraftChange={setEcoEarningsSummaryDraft}
+            tab={ecoEarningsSummaryModalTab}
+            onTabChange={setEcoEarningsSummaryModalTab}
+            saving={ecoEarningsSummarySaving}
+            errorText={null}
+            onClose={() => !ecoEarningsSummarySaving && setEcoEarningsSummaryTarget(null)}
+            onSave={saveEcoEarningsSummaryNote}
+            textareaId="eco-earnings-ta"
+            variant="ecosystem"
+          />
         ) : null}
 
         <TradeEntryForm

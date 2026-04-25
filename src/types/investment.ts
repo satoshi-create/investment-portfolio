@@ -29,6 +29,16 @@ export interface Holding {
   listingPrice?: number | null;
   /** DB `holdings.next_earnings_date` — 調査スナップより優先して決算日表示に使う（YYYY-MM-DD）。未設定は null */
   nextEarningsDate?: string | null;
+  /** DB `holdings.ex_dividend_date`（Yahoo 同期）。未設定は null */
+  exDividendDate?: string | null;
+  /** DB `holdings.record_date`。未設定は null */
+  recordDate?: string | null;
+  /** DB `holdings.annual_dividend_rate`。未設定は null */
+  annualDividendRate?: number | null;
+  /** DB `holdings.dividend_yield_percent`。未設定は null */
+  dividendYieldPercent?: number | null;
+  /** DB `holdings.yahoo_research_synced_at`（ISO）。未設定は null */
+  yahooResearchSyncedAt?: string | null;
   /** DB `holdings.memo`（自由記述）。未設定は null */
   memo?: string | null;
   /** DB `holdings.is_bookmarked`。未読込時は省略可 */
@@ -67,6 +77,21 @@ export function investmentMetricToneForSignedPercent(value: number | null | unde
 }
 
 export type HoldingCategory = "Core" | "Satellite";
+
+/**
+ * Yahoo `quoteSummary` のキャッシュフロー（年次・四半期）から組み立てた自社株買いプロフィール。
+ * `repurchaseOfStock` は Yahoo 上で負のことが多いため、表示・集計は絶対値。
+ */
+export type YahooBuybackPosture = {
+  /** 会計期末ベース（年次が無いときは暦年集計を `YYYY-12-31` 代表日で格納）。新しい順。 */
+  fiscalRepurchasesAbs: readonly { endDateYmd: string; amountAbs: number }[];
+  /** 直近 3 暦年（年次または暦年集計）の自社株買い絶対値合計 */
+  sum3yAbs: number | null;
+  /** 直近 5 暦年 */
+  sum5yAbs: number | null;
+  /** 直近 4 四半期のうち、自社株買いが非ゼロだった期の数（0〜4） */
+  activeQuartersLast4: number | null;
+};
 
 /**
  * ピーター・リンチの6分類（`holdings.expectation_category` / `theme_ecosystem_members.expectation_category`）。
@@ -141,11 +166,28 @@ export interface Stock {
   forwardEps: number | null;
   /** PEG（Forward PER 優先で成長率とペア。算出不可は null） */
   pegRatio: number | null;
+  /**
+   * 配当込みPEG: `PE / (Earnings growth % + Dividend yield %)`（利回り未取得は 0 扱い）。
+   * 分母が非正のときは通常の `pegRatio` にフォールバック。`computeDividendAdjustedPeg`。
+   */
+  dividendAdjustedPeg: number | null;
   /** 予想EPS成長率（小数 0.15 = 15%）。Yahoo 由来・未取得は null */
   expectedGrowth: number | null;
+  /** Yahoo `assetProfile.country` 等。テーマ帯の可視化に利用。 */
+  yahooCountry: string | null;
+  /** 直近4Qの自社株買い（Yahoo CF・絶対値合算）。 */
+  ttmRepurchaseOfStock: number | null;
+  /** 推定 連続配当 年数（Yahoo 配当履歴 `historical` 優先。無いときは quoteSummary からの控えめなヒント）。 */
+  consecutiveDividendYears: number | null;
+  /** Yahoo CF 由来の自社株買いの複数期プロフィール（還元姿勢）。 */
+  yahooBuybackPosture: YahooBuybackPosture | null;
   /** 構造投資テーマ（`structure_tags` 先頭） */
   tag: string;
   alphaHistory: AlphaHistory;
+  /**
+   * `alphaHistory[i]` の観測日（YYYY-MM-DD）。`alphaHistory` と同長（系列が空なら空配列）。
+   */
+  alphaHistoryObservationDates: readonly string[];
   /** ポートフォリオ内ウェイト %（円換算・valuation_factor 後の評価額ベース） */
   weight: number;
   quantity: number;
@@ -440,16 +482,26 @@ export type ThemeEcosystemWatchItem = {
   trailingEps: number | null;
   forwardEps: number | null;
   pegRatio: number | null;
+  /** 配当込みPEG（無配は利回り0扱い・分母不可時は `pegRatio`）。`computeDividendAdjustedPeg`。 */
+  dividendAdjustedPeg: number | null;
   expectedGrowth: number | null;
+  yahooCountry: string | null;
+  ttmRepurchaseOfStock: number | null;
+  consecutiveDividendYears: number | null;
+  yahooBuybackPosture: YahooBuybackPosture | null;
   /** `theme_ecosystem_members.observation_started_at`（銘柄投入日・累積 Alpha の第一優先起点）。未設定時は null */
   observationStartedAt: string | null;
   /** 観測起点からの累積 Alpha %（累積系列）。スパークライン・最新累積値用。日次は `alphaDailyHistory`。 */
   alphaHistory: number[];
+  /** `alphaHistory`（累積）各点の営業日 YYYY-MM-DD。`alphaHistory` と同長。 */
+  alphaCumulativeObservationDates: string[];
   /**
    * 日次 Alpha % の時系列（保有 `Stock.alphaHistory` と同義）。`TrendMiniChart`（5D）用。
    * `alphaHistory` は累積なので別配列。
    */
   alphaDailyHistory: number[];
+  /** `alphaDailyHistory` 各点の観測日 YYYY-MM-DD。`alphaDailyHistory` と同長。 */
+  alphaDailyObservationDates: string[];
   currentPrice: number | null;
   /** `alphaHistory` の最終点（累積 Alpha %） */
   latestAlpha: number | null;
@@ -547,6 +599,8 @@ export type CumulativeAlphaPoint = {
 /** `/themes/[theme]` 用: テーマメタ + 該当保有の Stock（ウェイトはテーマ内評価額ベース）。 */
 export type ThemeDetailData = {
   themeName: string;
+  /** `investment_themes` に `theme` 名で一致する行が無い（URL/DB 名の不一致のヒント用） */
+  themeMissing: boolean;
   theme: InvestmentThemeRecord | null;
   stocks: Stock[];
   themeTotalMarketValue: number;
@@ -554,6 +608,11 @@ export type ThemeDetailData = {
   themeAverageUnrealizedPnlPercent: number;
   /** テーマ内銘柄の最新日次 Alpha の単純平均 */
   themeAverageAlpha: number;
+  /**
+   * テーマ内保有の時価加重ライブ日次α（%）。`getDashboardData` の `portfolioTotalLiveAlphaPct` と同じ定義（テーマ内銘柄に限定）。
+   * 算出不可時は null。
+   */
+  themeTotalLiveAlphaPct: number | null;
   /** 名目為替レンズに依らない日次 α（Lv.1 / 数値は通常 `themeAverageAlpha` と一致） */
   themeAverageFxNeutralAlpha: number;
   /** テーマ算出時の USD/JPY（換算レート・表示合成比の根拠） */

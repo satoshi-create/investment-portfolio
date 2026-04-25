@@ -69,9 +69,15 @@ import {
 } from "@/src/lib/alpha-logic";
 import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER } from "@/src/lib/edo-theme-constants";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
-import { parseAlphaDailyHistoryJson } from "@/src/lib/eco-trend-daily";
+import { parseAlphaDailyHistoryJson, parseAlphaObservationDatesJson } from "@/src/lib/eco-trend-daily";
+import { parseYahooBuybackPostureJson } from "@/src/lib/yahoo-buyback-posture";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
+import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import {
+  EarningsSummaryNoteEditorModal,
+  EcosystemMarkdownMemoModal,
+} from "@/src/components/dashboard/HoldingEcosystemNoteModals";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { formatJpyValueForView, formatLocalPriceForView } from "@/src/lib/format-display-currency";
@@ -276,6 +282,10 @@ function normalizeThemeDetailResponse(
 ): ThemeDetailData {
   return {
     ...rest,
+    themeMissing:
+      typeof (rest as ThemeDetailData).themeMissing === "boolean"
+        ? (rest as ThemeDetailData).themeMissing
+        : rest.theme == null,
     ecosystem: Array.isArray(rest.ecosystem)
       ? rest.ecosystem.map((item) => {
           const proxy = typeof item.proxyTicker === "string" ? item.proxyTicker.trim() : "";
@@ -380,6 +390,14 @@ function normalizeThemeDetailResponse(
             (item as Record<string, unknown>).alphaDailyHistory ??
               (item as Record<string, unknown>).alpha_daily_history,
           ),
+          alphaCumulativeObservationDates: parseAlphaObservationDatesJson(
+            (item as Record<string, unknown>).alphaCumulativeObservationDates ??
+              (item as Record<string, unknown>).alpha_cumulative_observation_dates,
+          ),
+          alphaDailyObservationDates: parseAlphaObservationDatesJson(
+            (item as Record<string, unknown>).alphaDailyObservationDates ??
+              (item as Record<string, unknown>).alpha_daily_observation_dates,
+          ),
           latestDailyAlphaObservationYmd: (() => {
             const a = (item as Record<string, unknown>).latestDailyAlphaObservationYmd;
             const b = (item as Record<string, unknown>).latest_daily_alpha_observation_ymd;
@@ -420,6 +438,10 @@ function normalizeThemeDetailResponse(
             const v = (item as Record<string, unknown>).volumeRatio ?? (item as Record<string, unknown>).volume_ratio;
             return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
           })(),
+          yahooBuybackPosture: parseYahooBuybackPostureJson(
+            (item as Record<string, unknown>).yahooBuybackPosture ??
+              (item as Record<string, unknown>).yahoo_buyback_posture,
+          ),
           earningsSummaryNote: (() => {
             const a = (item as Record<string, unknown>).earningsSummaryNote;
             const b = (item as Record<string, unknown>).earnings_summary_note;
@@ -490,6 +512,12 @@ function normalizeThemeDetailResponse(
     themeSyntheticBenchmarkTooltip:
       typeof rest.themeSyntheticBenchmarkTooltip === "string" && rest.themeSyntheticBenchmarkTooltip.trim().length > 0
         ? rest.themeSyntheticBenchmarkTooltip.trim()
+        : null,
+    themeTotalLiveAlphaPct:
+      rest.themeTotalLiveAlphaPct != null &&
+      typeof rest.themeTotalLiveAlphaPct === "number" &&
+      Number.isFinite(rest.themeTotalLiveAlphaPct)
+        ? rest.themeTotalLiveAlphaPct
         : null,
     themeAverageFxNeutralAlpha:
       typeof rest.themeAverageFxNeutralAlpha === "number" && Number.isFinite(rest.themeAverageFxNeutralAlpha)
@@ -652,6 +680,14 @@ export function ThemePageClient({
   const [ecoEditMarketCap, setEcoEditMarketCap] = useState("");
   const [ecoEditListingPrice, setEcoEditListingPrice] = useState("");
   const [ecoEditSaving, setEcoEditSaving] = useState(false);
+  const [ecoMemoTarget, setEcoMemoTarget] = useState<ThemeEcosystemWatchItem | null>(null);
+  const [ecoMemoDraft, setEcoMemoDraft] = useState("");
+  const [ecoMemoModalTab, setEcoMemoModalTab] = useState<"edit" | "preview">("edit");
+  const [ecoMemoSaving, setEcoMemoSaving] = useState(false);
+  const [ecoEarningsSummaryTarget, setEcoEarningsSummaryTarget] = useState<ThemeEcosystemWatchItem | null>(null);
+  const [ecoEarningsSummaryDraft, setEcoEarningsSummaryDraft] = useState("");
+  const [ecoEarningsSummaryModalTab, setEcoEarningsSummaryModalTab] = useState<"edit" | "preview">("edit");
+  const [ecoEarningsSummarySaving, setEcoEarningsSummarySaving] = useState(false);
   const [ecoBookmarksOnly, setEcoBookmarksOnly] = useState(false);
   const [ecoHideIncompleteQuotes, setEcoHideIncompleteQuotes] = useState(false);
   const [ecoColumnOrder, setEcoColumnOrder] = useState<EcosystemWatchlistColId[]>(
@@ -1259,6 +1295,132 @@ export function ThemePageClient({
       }
     },
     [cancelEditEcosystem, ecoEditingId, refetchThemeDetailQuiet, theme?.id],
+  );
+
+  useEffect(() => {
+    if (ecoMemoTarget) {
+      setEcoMemoDraft(ecoMemoTarget.memo ?? "");
+      setEcoMemoModalTab("edit");
+    }
+  }, [ecoMemoTarget]);
+
+  useEffect(() => {
+    if (ecoEarningsSummaryTarget) {
+      setEcoEarningsSummaryDraft(ecoEarningsSummaryTarget.earningsSummaryNote ?? "");
+      setEcoEarningsSummaryModalTab("edit");
+    }
+  }, [ecoEarningsSummaryTarget]);
+
+  const saveEcoMemberMemo = useCallback(
+    async () => {
+      if (!theme?.id || !ecoMemoTarget || ecoMemoSaving) return;
+      setEcoMemoSaving(true);
+      const ac = new AbortController();
+      try {
+        const res = await fetch("/api/theme-ecosystem/member", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: DEFAULT_USER_ID,
+            themeId: theme.id,
+            memberId: ecoMemoTarget.id,
+            memo: ecoMemoDraft.trim().length > 0 ? ecoMemoDraft.trim() : null,
+            themeSlugForRevalidate: themeQueryName,
+          }),
+        });
+        let json: { error?: string } = {};
+        try {
+          json = (await res.json()) as { error?: string };
+        } catch {
+          /* ignore */
+        }
+        if (!res.ok) {
+          toast.error(json.error ?? "保存に失敗しました");
+          return;
+        }
+        const memberId = ecoMemoTarget.id;
+        const nextMemo: string | null = ecoMemoDraft.trim().length > 0 ? ecoMemoDraft.trim() : null;
+        setData((cur) => {
+          if (!cur) return cur;
+          return {
+            ...cur,
+            ecosystem: cur.ecosystem.map((e) => (e.id === memberId ? { ...e, memo: nextMemo } : e)),
+          };
+        });
+        toast.success("メモを保存しました");
+        setEcoMemoTarget(null);
+        await refetchThemeDetailQuiet(ac.signal);
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        toast.error(e instanceof Error ? e.message : "保存に失敗しました");
+      } finally {
+        setEcoMemoSaving(false);
+      }
+    },
+    [ecoMemoDraft, ecoMemoSaving, ecoMemoTarget, refetchThemeDetailQuiet, theme?.id, themeQueryName],
+  );
+
+  const saveEcoEarningsSummaryNote = useCallback(
+    async () => {
+      if (!theme?.id || !ecoEarningsSummaryTarget || ecoEarningsSummarySaving) return;
+      const trimmed = ecoEarningsSummaryDraft.trim();
+      if (trimmed.length > EARNINGS_SUMMARY_NOTE_MAX_LEN) {
+        toast.error(`決算要約は最大 ${EARNINGS_SUMMARY_NOTE_MAX_LEN} 文字です`);
+        return;
+      }
+      setEcoEarningsSummarySaving(true);
+      const ac = new AbortController();
+      try {
+        const res = await fetch("/api/theme-ecosystem/member", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: DEFAULT_USER_ID,
+            themeId: theme.id,
+            memberId: ecoEarningsSummaryTarget.id,
+            earningsSummaryNote: trimmed.length > 0 ? trimmed : null,
+            themeSlugForRevalidate: themeQueryName,
+          }),
+        });
+        let json: { error?: string } = {};
+        try {
+          json = (await res.json()) as { error?: string };
+        } catch {
+          /* ignore */
+        }
+        if (!res.ok) {
+          toast.error(json.error ?? "保存に失敗しました");
+          return;
+        }
+        const memberId = ecoEarningsSummaryTarget.id;
+        const nextNote: string | null = trimmed.length > 0 ? trimmed : null;
+        setData((cur) => {
+          if (!cur) return cur;
+          return {
+            ...cur,
+            ecosystem: cur.ecosystem.map((row) =>
+              row.id === memberId ? { ...row, earningsSummaryNote: nextNote } : row,
+            ),
+          };
+        });
+        toast.success("決算要約を保存しました");
+        setEcoEarningsSummaryTarget(null);
+        await refetchThemeDetailQuiet(ac.signal);
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        toast.error(e instanceof Error ? e.message : "保存に失敗しました");
+      } finally {
+        setEcoEarningsSummarySaving(false);
+      }
+    },
+    [
+      ecoEarningsSummaryDraft,
+      ecoEarningsSummarySaving,
+      ecoEarningsSummaryTarget,
+      refetchThemeDetailQuiet,
+      theme?.id,
+      themeQueryName,
+    ],
   );
 
   useEffect(() => {
@@ -1993,6 +2155,7 @@ export function ThemePageClient({
                 stocks={stocks}
                 totalHoldings={stocks.length}
                 averageAlpha={data.themeAverageAlpha}
+                portfolioTotalLiveAlphaPct={data.themeTotalLiveAlphaPct}
                 averageFxNeutralAlpha={data.themeAverageFxNeutralAlpha}
                 userId={DEFAULT_USER_ID}
                 onEarningsNoteSaved={() => {
@@ -2766,6 +2929,7 @@ export function ThemePageClient({
                                   ecoEditListingPrice={ecoEditListingPrice}
                                   setEcoEditListingPrice={setEcoEditListingPrice}
                                   ecoEditSaving={ecoEditSaving}
+                                  showEcoMemoButton
                                   ecoResearchIncludeEarnings
                                   formatEcoPriceForView={formatEcoPriceForView}
                                   onOpenTrade={(init) => openTradeForm(init)}
@@ -2775,6 +2939,8 @@ export function ThemePageClient({
                                   handleToggleEcosystemBookmark={handleToggleEcosystemBookmark}
                                   saveEditEcosystem={saveEditEcosystem}
                                   cancelEditEcosystem={cancelEditEcosystem}
+                                  setEcoMemoTarget={setEcoMemoTarget}
+                                  setEcoEarningsSummaryTarget={setEcoEarningsSummaryTarget}
                                   holderBadgeClass={holderBadgeClass}
                                   dividendCalendar={dividendCalendar}
                                   defensiveZClass={defensiveZClass}
@@ -2808,6 +2974,43 @@ export function ThemePageClient({
               </p>
             ) : null}
           </>
+        ) : null}
+
+        {ecoMemoTarget ? (
+          <EcosystemMarkdownMemoModal
+            ticker={ecoMemoTarget.ticker}
+            companyName={ecoMemoTarget.companyName}
+            draft={ecoMemoDraft}
+            onDraftChange={setEcoMemoDraft}
+            tab={ecoMemoModalTab}
+            onTabChange={setEcoMemoModalTab}
+            saving={ecoMemoSaving}
+            onClose={() => !ecoMemoSaving && setEcoMemoTarget(null)}
+            onSave={saveEcoMemberMemo}
+            textareaId="eco-memo-ta-theme"
+            placeholder="Markdown 可（見出し・リスト・表など）。空にして保存でクリア（theme_ecosystem_members.memo）"
+          />
+        ) : null}
+
+        {ecoEarningsSummaryTarget ? (
+          <EarningsSummaryNoteEditorModal
+            eyebrow="決算要約メモ"
+            title=""
+            titleId="eco-earnings-summary-modal-title-theme"
+            ticker={ecoEarningsSummaryTarget.ticker}
+            companyName={ecoEarningsSummaryTarget.companyName}
+            prominentTicker
+            draft={ecoEarningsSummaryDraft}
+            onDraftChange={setEcoEarningsSummaryDraft}
+            tab={ecoEarningsSummaryModalTab}
+            onTabChange={setEcoEarningsSummaryModalTab}
+            saving={ecoEarningsSummarySaving}
+            errorText={null}
+            onClose={() => !ecoEarningsSummarySaving && setEcoEarningsSummaryTarget(null)}
+            onSave={saveEcoEarningsSummaryNote}
+            textareaId="eco-earnings-ta-theme"
+            variant="ecosystem"
+          />
         ) : null}
 
         <TradeEntryForm

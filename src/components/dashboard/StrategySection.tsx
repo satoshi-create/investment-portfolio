@@ -293,6 +293,19 @@ export function StrategySection({
       ? roundAlphaMetric((totalUnrealizedPnlJpy / totalCostBasisJpy) * 100)
       : null;
 
+  const yahooReturnHeadline = useMemo(() => {
+    if (stocks.length === 0) return null;
+    let divStreak = 0;
+    let buybackTtm = 0;
+    for (const s of stocks) {
+      if (s.consecutiveDividendYears != null && s.consecutiveDividendYears > 0) divStreak += 1;
+      if (s.ttmRepurchaseOfStock != null && Number.isFinite(s.ttmRepurchaseOfStock) && s.ttmRepurchaseOfStock > 0) {
+        buybackTtm += 1;
+      }
+    }
+    return { divStreak, buybackTtm, total: stocks.length };
+  }, [stocks]);
+
   return (
     <div className="space-y-4">
       {/* Satellite 個別株モニター */}
@@ -347,6 +360,26 @@ export function StrategySection({
           {SATELLITE_TARGET_MAX} 銘柄ゾーン。
         </p>
       </div>
+
+      {yahooReturnHeadline != null ? (
+        <div className="rounded-2xl border border-border bg-card/70 px-4 py-3 md:px-5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Yahoo 還元スナップショット（保有）</p>
+          <p className="mt-1.5 text-xs text-foreground/90 font-mono tabular-nums">
+            配当連続（推定）あり:{" "}
+            <span className="font-bold text-cyan-300/95">
+              {yahooReturnHeadline.divStreak}/{yahooReturnHeadline.total}
+            </span>
+            <span className="text-muted-foreground mx-2">·</span>
+            自社株買い TTM 計上あり:{" "}
+            <span className="font-bold text-amber-300/95">
+              {yahooReturnHeadline.buybackTtm}/{yahooReturnHeadline.total}
+            </span>
+          </p>
+          <p className="text-[9px] text-muted-foreground mt-1 leading-relaxed">
+            銘柄別の年数・CF 期別・3y/5y 合計は下の保有テーブル「Research」列のバッジ（ホバーでツールチップ）を参照。
+          </p>
+        </div>
+      ) : null}
 
       <div className="bg-card border border-border p-6 rounded-2xl shadow-xl">
           <div className="flex flex-wrap items-start justify-between gap-2 mb-2">

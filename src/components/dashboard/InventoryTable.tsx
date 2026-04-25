@@ -51,11 +51,14 @@ import {
 import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
-import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import {
+  EarningsSummaryNoteEditorModal,
+  HoldingMemoPlainModal,
+} from "@/src/components/dashboard/HoldingEcosystemNoteModals";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
-import { EarningsNoteMarkdownPreview } from "@/src/components/dashboard/EarningsNoteMarkdownPreview";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
+import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
@@ -87,6 +90,7 @@ import {
 import { InventoryTableColumnToolbar } from "@/src/components/dashboard/InventoryTableColumnToolbar";
 import { MetricHeaderHelp } from "@/src/components/dashboard/MetricHeaderHelp";
 import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
+import { appendTitleBlock, holdingDailyAlphaStoryTitle } from "@/src/lib/alpha-story-tooltip";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
 
 type SortKey =
@@ -571,9 +575,13 @@ export function InventoryTable({
   stocks,
   totalHoldings,
   averageAlpha,
+  /** ダッシュボード `summary.portfolioTotalLiveAlphaPct` と同じ（時価加重ライブ日次α）。フッター括弧内を Pulse と一致させる。 */
+  portfolioTotalLiveAlphaPct = null,
   averageFxNeutralAlpha: _averageFxNeutralAlpha,
   userId,
   onEarningsNoteSaved,
+  /** メタ同期完了後にダッシュを再取得したい場合（現状コール箇所は将来拡張用） */
+  onAfterInstrumentMetaSync: _onAfterInstrumentMetaSync,
   onTrade,
   onTradeNew,
   themeStructuralTrendUp = false,
@@ -586,10 +594,13 @@ export function InventoryTable({
   stocks: Stock[];
   totalHoldings: number;
   averageAlpha: number;
+  /** ホーム: `summary.portfolioTotalLiveAlphaPct`。テーマ: `themeTotalLiveAlphaPct`。未指定は null。 */
+  portfolioTotalLiveAlphaPct?: number | null;
   /** 決算メモ保存 API 用 */
   userId: string;
   /** メモ保存成功後にダッシュボード / テーマを再取得する */
   onEarningsNoteSaved?: () => void | Promise<void>;
+  onAfterInstrumentMetaSync?: () => void | Promise<void>;
   onTrade?: (initial: TradeEntryInitial) => void;
   onTradeNew?: () => void;
   /** テーマページなどで加重累積 Alpha が上向きのとき true（✨ の条件に使用） */
@@ -802,6 +813,9 @@ export function InventoryTable({
     }
     return list;
   }, [stocks, structureFilter, lynchFilter, bookmarksOnly, hideIncompleteQuotes, bookmarkPatch]);
+
+  /** テーブル内フィルタ（検索・Lynch・ブックマーク等）で行が絞られているとき true。サマリーベースの平均とズレ得る。 */
+  const tableFilterActive = filteredStocks.length < stocks.length;
 
   const sortedStocks = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -1415,7 +1429,7 @@ export function InventoryTable({
                             id={colId}
                             align="left"
                             className="px-6 py-4 text-left cursor-pointer select-none min-w-[18rem]"
-                            title="配当落ちまでの日数が近い順（未取得は末尾）→ 配当利回り"
+                            title="配当利回り・配当日／Yahoo の連続配当年・自社株買い（TTM・期別はバッジホバー）。配当落ちが近い順でソート。"
                           >
                             <button
                               type="button"
@@ -2038,6 +2052,11 @@ export function InventoryTable({
                                   銘柄メモ
                                 </button>
                               </div>
+                              <YahooReturnChips
+                                consecutiveDividendYears={stock.consecutiveDividendYears}
+                                ttmRepurchaseOfStock={stock.ttmRepurchaseOfStock}
+                                yahooBuybackPosture={stock.yahooBuybackPosture}
+                              />
                               <div className="flex flex-col gap-0.5">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-mono text-muted-foreground">
                                   <span title="配当落ち日（ex-dividend date）">
@@ -2185,10 +2204,11 @@ export function InventoryTable({
                         return (
                           <td
                             key={colId}
-                            title={
+                            title={appendTitleBlock(
                               `上段: 直近取引日の確定日次Alpha（dailyAlpha）\n` +
-                              `下段: 現在値に連動したLive Alpha（liveAlpha, vs ${stock.liveAlphaBenchmarkTicker ?? "Benchmark"}）`
-                            }
+                                `下段: 現在値に連動したLive Alpha（liveAlpha, vs ${stock.liveAlphaBenchmarkTicker ?? "Benchmark"}）`,
+                              holdingDailyAlphaStoryTitle(stock.alphaHistoryObservationDates, stock.alphaHistory),
+                            )}
                             className={`px-6 py-4 text-right font-mono ${
                               liveA != null && liveA <= -2 ? "rounded-md ring-1 ring-cyan-400/45 bg-cyan-500/[0.06]" : ""
                             }`}
@@ -2542,47 +2562,66 @@ export function InventoryTable({
                         </div>
                       </td>
                     );
-                  case "alpha":
+                  case "alpha": {
+                    const sumDaily = averageAlpha;
+                    const sumLive = portfolioTotalLiveAlphaPct;
                     return (
                       <td key={colId} className="px-6 py-3 text-right align-top font-mono text-[11px] leading-tight">
                         <div
                           className="flex flex-col items-end gap-0.5"
-                          title={"上段: 表示行の確定日次Alpha（dailyAlpha）の単純平均\n下段: 表示行の現在連動Alpha（liveAlpha）の単純平均"}
+                          title={
+                            tableFilterActive
+                              ? "上段・括弧: サマリーベース（ヘッダー Pulse と同じ定義）。下段: 表示中の行だけの算術平均。"
+                              : "ダッシュボード/テーマ集計とヘッダー Pulse と同じ（確定日次αの平均・ライブは時価加重）。"
+                          }
                         >
                           <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
                             Avg Alpha
                           </span>
                           <span
                             className={`font-bold tabular-nums ${
-                              footerStats.avgDailyAlphaVisible != null && footerStats.avgDailyAlphaVisible > 0
+                              Number.isFinite(sumDaily) && sumDaily > 0
                                 ? "text-emerald-400"
-                                : footerStats.avgDailyAlphaVisible != null && footerStats.avgDailyAlphaVisible < 0
+                                : Number.isFinite(sumDaily) && sumDaily < 0
                                   ? "text-rose-400"
                                   : "text-slate-400"
                             }`}
-                            aria-label="avg daily alpha"
+                            aria-label="portfolio average daily alpha (summary)"
                           >
-                            {footerStats.avgDailyAlphaVisible != null && Number.isFinite(footerStats.avgDailyAlphaVisible)
-                              ? `${footerStats.avgDailyAlphaVisible > 0 ? "+" : ""}${footerStats.avgDailyAlphaVisible.toFixed(2)}%`
-                              : "—"}
+                            {Number.isFinite(sumDaily) ? `${sumDaily > 0 ? "+" : ""}${sumDaily.toFixed(2)}%` : "—"}
                           </span>
                           <span
                             className={`text-xs tabular-nums whitespace-nowrap ${
-                              footerStats.avgLiveAlphaVisible != null && footerStats.avgLiveAlphaVisible > 0
+                              sumLive != null && Number.isFinite(sumLive) && sumLive > 0
                                 ? "text-emerald-300/80"
-                                : footerStats.avgLiveAlphaVisible != null && footerStats.avgLiveAlphaVisible < 0
+                                : sumLive != null && Number.isFinite(sumLive) && sumLive < 0
                                   ? "text-rose-300/80"
                                   : "text-muted-foreground"
                             }`}
-                            aria-label="avg live alpha"
+                            aria-label="portfolio live alpha weighted (summary)"
                           >
-                            {footerStats.avgLiveAlphaVisible != null && Number.isFinite(footerStats.avgLiveAlphaVisible)
-                              ? `(${footerStats.avgLiveAlphaVisible > 0 ? "+" : ""}${footerStats.avgLiveAlphaVisible.toFixed(2)}%)`
+                            {sumLive != null && Number.isFinite(sumLive)
+                              ? `(${sumLive > 0 ? "+" : ""}${sumLive.toFixed(2)}%)`
                               : "(—)"}
                           </span>
+                          {tableFilterActive ? (
+                            <span
+                              className="text-[10px] text-muted-foreground tabular-nums text-right max-w-[12rem] leading-tight"
+                              title="表の検索/フィルタで絞った行の単純平均"
+                            >
+                              表示中:{" "}
+                              {footerStats.avgDailyAlphaVisible != null && Number.isFinite(footerStats.avgDailyAlphaVisible)
+                                ? `${footerStats.avgDailyAlphaVisible > 0 ? "+" : ""}${footerStats.avgDailyAlphaVisible.toFixed(2)}%`
+                                : "—"}{" "}
+                              {footerStats.avgLiveAlphaVisible != null && Number.isFinite(footerStats.avgLiveAlphaVisible)
+                                ? `(${footerStats.avgLiveAlphaVisible > 0 ? "+" : ""}${footerStats.avgLiveAlphaVisible.toFixed(2)}% 行平均)`
+                                : ""}
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                     );
+                  }
                   case "trend5d":
                     return (
                       <td key={colId} className="px-4 py-3 text-center align-top font-mono text-[11px] leading-tight">
@@ -2700,219 +2739,47 @@ export function InventoryTable({
       />
 
       {noteModalStock ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
-          role="presentation"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
-            aria-label="モーダルを閉じる"
-            onClick={() => !noteSaving && setNoteModalStock(null)}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="earnings-note-title"
-            className="relative z-10 flex max-h-[min(90dvh,42rem)] w-[min(100%,26rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl min-h-0 sm:max-w-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-              <div className="min-w-0 space-y-1">
-                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Research</p>
-                <h2 id="earnings-note-title" className="text-base font-bold tracking-tight text-foreground sm:text-lg">
-                  決算要約メモ
-                </h2>
-                <p className="text-[11px] font-mono text-accent-cyan truncate">{noteModalStock.ticker}</p>
-                {noteModalStock.name ? (
-                  <p className="text-[11px] text-muted-foreground line-clamp-2">{noteModalStock.name}</p>
-                ) : null}
-                {noteModalStock.nextEarningsDate ? (
-                  <p className="text-[10px] text-muted-foreground">
-                    次回決算: {noteModalStock.nextEarningsDate}
-                    {noteModalStock.daysToEarnings != null ? `（あと ${noteModalStock.daysToEarnings} 日）` : ""}
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-muted-foreground">次回決算日: 未取得</p>
-                )}
-              </div>
-              <button
-                type="button"
-                disabled={noteSaving}
-                onClick={() => setNoteModalStock(null)}
-                className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
-                aria-label="閉じる"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div
-              className="flex shrink-0 gap-1 border-b border-border px-3 pt-2 sm:px-4"
-              role="tablist"
-              aria-label="メモ表示切替"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={noteModalTab === "edit"}
-                disabled={noteSaving}
-                onClick={() => setNoteModalTab("edit")}
-                className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                  noteModalTab === "edit"
-                    ? "bg-background text-foreground border border-b-0 border-border -mb-px"
-                    : "text-muted-foreground hover:text-foreground/90"
-                }`}
-              >
-                編集
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={noteModalTab === "preview"}
-                disabled={noteSaving}
-                onClick={() => setNoteModalTab("preview")}
-                className={`rounded-t-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                  noteModalTab === "preview"
-                    ? "bg-background text-foreground border border-b-0 border-border -mb-px"
-                    : "text-muted-foreground hover:text-foreground/90"
-                }`}
-              >
-                プレビュー
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 flex flex-col gap-3 px-4 py-3 sm:px-5 sm:py-4 bg-background">
-              {noteModalTab === "edit" ? (
-                <>
-                  <label htmlFor="earnings-summary-note" className="sr-only">
-                    決算要約メモ
-                  </label>
-                  <textarea
-                    id="earnings-summary-note"
-                    value={noteDraft}
-                    onChange={(e) => setNoteDraft(e.target.value)}
-                    maxLength={EARNINGS_SUMMARY_NOTE_MAX_LEN}
-                    rows={10}
-                    disabled={noteSaving}
-                    className="min-h-[12rem] w-full resize-y rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 disabled:opacity-50"
-                    placeholder="Markdown 対応（見出し・リスト・表・コードブロックなど）。空にして保存で削除。"
-                  />
-                  <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-                    <span>
-                      {noteDraft.length} / {EARNINGS_SUMMARY_NOTE_MAX_LEN}
-                    </span>
-                    {noteErr ? (
-                      <span className="text-destructive font-bold text-right flex-1">{noteErr}</span>
-                    ) : null}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="text-[10px] text-muted-foreground -mt-1 mb-1">
-                    入力中の内容を Markdown として表示します（未保存の編集も反映）。
-                  </p>
-                  <div className="min-h-[12rem] max-h-[min(52vh,24rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
-                    <EarningsNoteMarkdownPreview markdown={noteDraft} />
-                  </div>
-                  {noteErr ? (
-                    <div className="flex items-center justify-end text-[10px] text-destructive font-bold">{noteErr}</div>
-                  ) : null}
-                </>
-              )}
-              <div className="flex flex-wrap justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  disabled={noteSaving}
-                  onClick={() => setNoteModalStock(null)}
-                  className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60 disabled:opacity-40"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="button"
-                  disabled={noteSaving}
-                  onClick={() => void saveEarningsNote()}
-                  className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
-                >
-                  {noteSaving ? "保存中…" : "保存"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <EarningsSummaryNoteEditorModal
+          titleId="earnings-note-title"
+          title="決算要約メモ"
+          ticker={noteModalStock.ticker}
+          companyName={noteModalStock.name}
+          headerExtra={
+            noteModalStock.nextEarningsDate ? (
+              <p className="text-[10px] text-muted-foreground">
+                次回決算: {noteModalStock.nextEarningsDate}
+                {noteModalStock.daysToEarnings != null ? `（あと ${noteModalStock.daysToEarnings} 日）` : ""}
+              </p>
+            ) : (
+              <p className="text-[10px] text-muted-foreground">次回決算日: 未取得</p>
+            )
+          }
+          draft={noteDraft}
+          onDraftChange={setNoteDraft}
+          tab={noteModalTab}
+          onTabChange={setNoteModalTab}
+          saving={noteSaving}
+          errorText={noteErr}
+          onClose={() => !noteSaving && setNoteModalStock(null)}
+          onSave={saveEarningsNote}
+          textareaId="earnings-summary-note"
+          variant="inventory"
+        />
       ) : null}
 
       {memoModalStock ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
-          role="presentation"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
-            aria-label="モーダルを閉じる"
-            onClick={() => !memoSaving && setMemoModalStock(null)}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="relative z-10 flex max-h-[min(92dvh,48rem)] w-[min(100%,36rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-w-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-              <div className="min-w-0">
-                <h2 className="text-base font-bold text-foreground sm:text-lg">銘柄メモ</h2>
-                <p className="text-[11px] font-mono text-accent-cyan mt-0.5">{memoModalStock.ticker}</p>
-                {memoModalStock.name ? (
-                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">{memoModalStock.name}</p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                disabled={memoSaving}
-                onClick={() => setMemoModalStock(null)}
-                className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
-                aria-label="閉じる"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            {memoErr ? (
-              <p className="shrink-0 px-4 pt-2 text-[10px] text-destructive font-bold sm:px-5">{memoErr}</p>
-            ) : null}
-            <label htmlFor="holding-memo" className="sr-only">
-              銘柄メモ
-            </label>
-            <textarea
-              id="holding-memo"
-              value={memoDraft}
-              onChange={(e) => setMemoDraft(e.target.value)}
-              disabled={memoSaving}
-              rows={14}
-              className="min-h-[14rem] flex-1 resize-y rounded-none border-0 border-t border-border bg-background px-4 py-3 text-sm sm:px-5 sm:py-4 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent-cyan/40 disabled:opacity-50"
-              placeholder="holdings.memo（短文・長文可）"
-            />
-            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card/80 px-4 py-3 sm:px-5">
-              <button
-                type="button"
-                disabled={memoSaving}
-                onClick={() => setMemoModalStock(null)}
-                className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                disabled={memoSaving}
-                onClick={() => void saveHoldingMemo()}
-                className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
-              >
-                {memoSaving ? "保存中…" : "保存"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <HoldingMemoPlainModal
+          title="銘柄メモ"
+          ticker={memoModalStock.ticker}
+          name={memoModalStock.name}
+          draft={memoDraft}
+          onDraftChange={setMemoDraft}
+          saving={memoSaving}
+          errorText={memoErr}
+          onClose={() => !memoSaving && setMemoModalStock(null)}
+          onSave={saveHoldingMemo}
+          textareaId="holding-memo"
+        />
       ) : null}
 
       {lynchModalStock ? (

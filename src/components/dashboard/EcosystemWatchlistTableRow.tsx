@@ -3,7 +3,9 @@
 import React from "react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
+import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
+import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { ecoFcfYieldTone, ecoRuleOf40Tone } from "@/src/components/dashboard/eco-efficiency-display";
 import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
@@ -15,7 +17,13 @@ import {
   formatDividendPayoutPercent,
 } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
+import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
+import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
+import {
+  ecosystemCumulativeSparklineTooltip,
+  ecosystemWatchlistAlphaCellTooltip,
+} from "@/src/lib/alpha-story-tooltip";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
@@ -140,8 +148,12 @@ export function EcosystemWatchlistTableRow({
   dividendCalendar,
   defensiveZClass,
 }: EcosystemWatchlistTableRowProps) {
+  const region = regionDisplayFromYahooCountry(e.yahooCountry);
   return (
-    <tr id={`eco-row-${e.id}`} className="group hover:bg-muted/45 transition-all scroll-mt-24">
+    <tr
+      id={`eco-row-${e.id}`}
+      className={cn("group hover:bg-muted/45 transition-all scroll-mt-24", region.rowBg)}
+    >
       {ecoVisibleColumnIds.map((colId, colIdx) => {
         const stickyFirst = colIdx === 0 ? stickyTdFirst : "";
         switch (colId) {
@@ -163,9 +175,14 @@ export function EcosystemWatchlistTableRow({
                           ✨
                         </span>
                       ) : null}
+                      {region.flag ? (
+                        <span className="shrink-0 text-base leading-none" title={e.yahooCountry ?? undefined} aria-hidden>
+                          {region.flag}
+                        </span>
+                      ) : null}
                       <span
                         className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono whitespace-nowrap truncate"
-                        title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}`}
+                        title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}${e.yahooCountry ? ` · ${e.yahooCountry}` : ""}`}
                       >
                         {formatTickerForDisplay(e.ticker, e.instrumentKind)}
                       </span>
@@ -395,6 +412,11 @@ export function EcosystemWatchlistTableRow({
                       <span className="text-[10px] text-muted-foreground whitespace-nowrap">Div:—</span>
                     )}
                   </div>
+                  <YahooReturnChips
+                    consecutiveDividendYears={e.consecutiveDividendYears}
+                    ttmRepurchaseOfStock={e.ttmRepurchaseOfStock}
+                    yahooBuybackPosture={e.yahooBuybackPosture}
+                  />
                 </div>
               </td>
             );
@@ -491,13 +513,20 @@ export function EcosystemWatchlistTableRow({
               <td
                 key={colId}
                 className={cn(
-                  "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap",
+                  "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap align-top",
                   pegRatioTextClass(e.pegRatio),
                   stickyFirst,
                 )}
-                title="PEG · 「成長%」列で予想成長率"
+                title={`PEG · 「成長%」列で予想成長率\n\n${METRIC_HEADER_TIP.divAdjPeg}`}
               >
-                {fmtPegRatio(e.pegRatio)}
+                <div className="flex flex-col items-end gap-0.5 leading-tight">
+                  <span>{fmtPegRatio(e.pegRatio)}</span>
+                  {e.dividendAdjustedPeg != null && Number.isFinite(e.dividendAdjustedPeg) ? (
+                    <span className="text-[10px] font-mono text-muted-foreground" title={METRIC_HEADER_TIP.divAdjPeg}>
+                      D-PEG {e.dividendAdjustedPeg.toFixed(2)}
+                    </span>
+                  ) : null}
+                </div>
               </td>
             );
           case "egrowth":
@@ -554,20 +583,26 @@ export function EcosystemWatchlistTableRow({
                 className={`px-6 py-4 text-right font-mono font-bold whitespace-nowrap ${
                   e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? pctClass(e.latestAlpha) : "text-muted-foreground"
                 } ${stickyFirst}`}
+                title={ecosystemWatchlistAlphaCellTooltip(e)}
               >
-                {e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? (
-                  <>
-                    {e.latestAlpha > 0 ? "+" : ""}
-                    {e.latestAlpha.toFixed(2)}%
-                  </>
-                ) : (
-                  "—"
-                )}
+                <div className="flex flex-col items-end gap-1 min-w-[5rem]">
+                  {e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? (
+                    <span>
+                      {e.latestAlpha > 0 ? "+" : ""}
+                      {e.latestAlpha.toFixed(2)}%
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                  {e.alphaDailyHistory && e.alphaDailyHistory.length > 1 ? (
+                    <TrendMiniChart history={e.alphaDailyHistory} maxPoints={18} lastBarPulse={e.priceSource === "live"} />
+                  ) : null}
+                </div>
               </td>
             );
           case "cumTrend":
             return (
-              <td key={colId} className={`px-6 py-4 align-top min-w-[9rem] ${stickyFirst}`}>
+              <td key={colId} title={ecosystemCumulativeSparklineTooltip(e)} className={`px-6 py-4 align-top min-w-[9rem] ${stickyFirst}`}>
                 <div className="flex flex-col items-center gap-1">
                   {e.isUnlisted ? (
                     <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">

@@ -123,3 +123,40 @@ export function expectationCategoryToInvestmentNarrative(c: LynchCategory | null
   if (c === "SlowGrower" || c === "Cyclical") return "speculative";
   return "growth";
 }
+
+/**
+ * Dividend-Adjusted PEG: `PE / (Earnings growth % + Dividend yield %)`。
+ * `expectedGrowthDecimal` は小数（0.12 = 12%）。配当利回りは %（例 2.15）。
+ * 配当ゼロ・未取得は利回り 0 として分母に加算。分母が非正または成長率が取れないときは `pegRatio` を返す（有限かつ正のとき）。
+ */
+export function computeDividendAdjustedPeg(input: {
+  forwardPe: number | null;
+  trailingPe: number | null;
+  expectedGrowthDecimal: number | null;
+  dividendYieldPercent: number | null;
+  /** `resolveStockPegRatio` 等。配当込み分母が使えないときのフォールバック。 */
+  pegRatio?: number | null;
+}): number | null {
+  const pe = input.forwardPe ?? input.trailingPe;
+  if (pe == null || !Number.isFinite(pe) || pe <= 0) return null;
+
+  const peg = input.pegRatio;
+  const fallbackPeg =
+    peg != null && Number.isFinite(peg) && peg > 0 ? Math.round(peg * 10_000) / 10_000 : null;
+
+  const g = input.expectedGrowthDecimal;
+  const dRaw = input.dividendYieldPercent;
+  let dSafe = 0;
+  if (dRaw != null && Number.isFinite(dRaw)) {
+    if (dRaw < 0) return fallbackPeg;
+    dSafe = dRaw;
+  }
+
+  if (g == null || !Number.isFinite(g)) return fallbackPeg;
+
+  const growthPct = g * 100;
+  const denom = growthPct + dSafe;
+  if (!Number.isFinite(denom) || denom <= 0) return fallbackPeg;
+
+  return Math.round((pe / denom) * 10_000) / 10_000;
+}

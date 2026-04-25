@@ -84,7 +84,7 @@ export async function GET(request: Request) {
     let watchlistEvents: MarketEventRecord[] = [];
     try {
       const wr = await db.execute({
-        sql: `SELECT m.id AS member_id, m.ticker, m.is_unlisted, m.proxy_ticker, m.company_name, m.next_earnings_date, t.name AS theme_name
+        sql: `SELECT m.id AS member_id, m.ticker, m.is_unlisted, m.proxy_ticker, m.company_name, m.next_earnings_date, m.ex_dividend_date, t.name AS theme_name
               FROM theme_ecosystem_members m
               INNER JOIN investment_themes t ON m.theme_id = t.id
               WHERE t.user_id = ?
@@ -129,23 +129,42 @@ export async function GET(request: Request) {
         const snap = effTicker.length > 0 ? researchMap.get(effTicker.toUpperCase()) : undefined;
         const resYmd = snap?.nextEarningsDate != null ? snap.nextEarningsDate.trim().slice(0, 10) : null;
         const effectiveYmd = dbYmd ?? (resYmd && /^\d{4}-\d{2}-\d{2}$/.test(resYmd) ? resYmd : null);
-        if (effectiveYmd == null) continue;
-        if (effectiveYmd < winStart || effectiveYmd > winEnd) continue;
 
         const company = row["company_name"] != null ? String(row["company_name"]).trim() : "";
         const themeName = row["theme_name"] != null ? String(row["theme_name"]).trim() : "";
         const descParts = [themeName.length > 0 ? `テーマ: ${themeName}` : null, company.length > 0 ? company : null].filter(
           Boolean,
         ) as string[];
-        watchlistEvents.push({
-          id: `watchlist:${memberId}:earnings:${effectiveYmd}`,
-          event_date: `${effectiveYmd}T00:00:00.000Z`,
-          title: themeName.length > 0 ? `[${themeName}] ${ticker} 決算` : `${ticker} 決算`,
-          category: "Earnings",
-          importance: 2,
-          description: descParts.length > 0 ? descParts.join(" · ") : null,
-          source: "watchlist",
-        });
+        if (effectiveYmd != null && effectiveYmd >= winStart && effectiveYmd <= winEnd) {
+          watchlistEvents.push({
+            id: `watchlist:${memberId}:earnings:${effectiveYmd}`,
+            event_date: `${effectiveYmd}T00:00:00.000Z`,
+            title: themeName.length > 0 ? `[${themeName}] ${ticker} 決算` : `${ticker} 決算`,
+            category: "Earnings",
+            importance: 2,
+            description: descParts.length > 0 ? descParts.join(" · ") : null,
+            source: "watchlist",
+          });
+        }
+
+        const dbExYmd = ymdOrNull(row["ex_dividend_date"]);
+        const resExYmd =
+          snap?.exDividendDate != null && snap.exDividendDate.trim().length >= 10
+            ? snap.exDividendDate.trim().slice(0, 10)
+            : null;
+        const effectiveExYmd =
+          dbExYmd ?? (resExYmd != null && /^\d{4}-\d{2}-\d{2}$/.test(resExYmd) ? resExYmd : null);
+        if (effectiveExYmd != null && effectiveExYmd >= winStart && effectiveExYmd <= winEnd) {
+          watchlistEvents.push({
+            id: `watchlist:${memberId}:exdiv:${effectiveExYmd}`,
+            event_date: `${effectiveExYmd}T00:00:00.000Z`,
+            title: themeName.length > 0 ? `[${themeName}] ${ticker} 権利落ち` : `${ticker} 権利落ち`,
+            category: "ExDividend",
+            importance: 1,
+            description: descParts.length > 0 ? descParts.join(" · ") : null,
+            source: "watchlist",
+          });
+        }
       }
     } catch (we) {
       const wmsg = we instanceof Error ? we.message : String(we);

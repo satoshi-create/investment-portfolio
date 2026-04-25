@@ -1,6 +1,10 @@
 import type { Client } from "@libsql/client";
 
-import { fetchYahooInstrumentMetadata } from "@/src/lib/price-service";
+import {
+  fetchEquityResearchSnapshots,
+  fetchYahooInstrumentMetadata,
+  type EquityResearchSnapshot,
+} from "@/src/lib/price-service";
 
 /** メタ同期の再取得間隔（日） */
 const METADATA_STALE_DAYS = 30;
@@ -47,7 +51,13 @@ function listingPriceNeedsBackfill(raw: unknown): boolean {
 
 /**
  * 保有またはテーマエコシステムのいずれかで `listing_price` 欠損があるときのみチャート取得する。
+ * テーマ側は上場 `ticker` 一致、または未上場で `proxy_ticker` が一致する行を対象にする。
  */
+const THEME_MEMBER_YAHOO_TICKER_MATCH_SQL = `(
+  UPPER(TRIM(m.ticker)) = ?
+  OR (COALESCE(m.is_unlisted, 0) = 1 AND LENGTH(TRIM(COALESCE(m.proxy_ticker, ''))) > 0 AND UPPER(TRIM(m.proxy_ticker)) = ?)
+)`;
+
 async function userTickerNeedsListingPriceBackfill(db: Client, userId: string, tickerUpper: string): Promise<boolean> {
   const r = await db.execute({
     sql: `SELECT
@@ -56,10 +66,10 @@ async function userTickerNeedsListingPriceBackfill(db: Client, userId: string, t
                AND (listing_price IS NULL OR listing_price <= 0))
           + (SELECT COUNT(*) FROM theme_ecosystem_members m
              INNER JOIN investment_themes th ON m.theme_id = th.id
-             WHERE th.user_id = ? AND UPPER(TRIM(m.ticker)) = ?
+             WHERE th.user_id = ? AND ${THEME_MEMBER_YAHOO_TICKER_MATCH_SQL.replace(/\n\s*/g, " ")}
                AND (m.listing_price IS NULL OR m.listing_price <= 0))
           AS need_lp`,
-    args: [userId, tickerUpper, userId, tickerUpper],
+    args: [userId, tickerUpper, userId, tickerUpper, tickerUpper],
   });
   const row = r.rows[0] as Record<string, unknown> | undefined;
   const v = row?.need_lp ?? row?.["need_lp"];
@@ -193,8 +203,90 @@ export type SyncStockMetadataResult = {
   listingDate: string | null;
   marketCap: number | null;
   listingPrice: number | null;
+  /** Yahoo quoteSummary 由来の配当・決算カレンダー列の同期（055 マイグレーション後） */
+  yahooResearchOk?: boolean;
+  yahooResearchSyncedAt?: string | null;
+  yahooResearchError?: string;
   error?: string;
 };
+
+/**
+ * Yahoo `quoteSummary` のリサーチ指標を holdings / theme_ecosystem_members に書き込む。
+ * 既存の非 null 値は COALESCE で保持（手入力の next_earnings_date 等は上書きしない）。
+ */
+export async function syncYahooEquityResearchForTicker(
+  db: Client,
+  userId: string,
+  ticker: string,
+  providerSymbol?: string | null,
+): Promise<{
+  ok: boolean;
+  syncedAt: string | null;
+  snapshot?: EquityResearchSnapshot | null;
+  error?: string;
+}> {
+  const t = ticker.trim().toUpperCase();
+  if (t.length === 0) return { ok: false, syncedAt: null, error: "ticker required" };
+  const syncedAt = isoSyncNow();
+  let snap: EquityResearchSnapshot | null;
+  try {
+    const m = await fetchEquityResearchSnapshots([{ ticker: t, providerSymbol: providerSymbol ?? null }], {
+      concurrency: 1,
+      batchDelayMs: 0,
+    });
+    snap = m.get(t) ?? null;
+  } catch (e) {
+    return { ok: false, syncedAt: null, error: e instanceof Error ? e.message : String(e) };
+  }
+  if (snap == null) return { ok: false, syncedAt: null, error: "Yahoo quoteSummary returned no snapshot." };
+
+  const ne = snap.nextEarningsDate;
+  const ex = snap.exDividendDate;
+  const rec = snap.recordDate;
+  const adr = snap.annualDividendRate;
+  const dy = snap.dividendYieldPercent;
+
+  try {
+    await db.execute({
+      sql: `UPDATE holdings
+            SET next_earnings_date = COALESCE(next_earnings_date, ?),
+                ex_dividend_date = COALESCE(ex_dividend_date, ?),
+                record_date = COALESCE(record_date, ?),
+                annual_dividend_rate = COALESCE(annual_dividend_rate, ?),
+                dividend_yield_percent = COALESCE(dividend_yield_percent, ?),
+                yahoo_research_synced_at = ?
+            WHERE user_id = ? AND UPPER(TRIM(ticker)) = ?`,
+      args: [ne, ex, rec, adr, dy, syncedAt, userId, t],
+    });
+    await db.execute({
+      sql: `UPDATE theme_ecosystem_members
+            SET next_earnings_date = COALESCE(next_earnings_date, ?),
+                ex_dividend_date = COALESCE(ex_dividend_date, ?),
+                record_date = COALESCE(record_date, ?),
+                annual_dividend_rate = COALESCE(annual_dividend_rate, ?),
+                dividend_yield_percent = COALESCE(dividend_yield_percent, ?),
+                yahoo_research_synced_at = ?
+            WHERE id IN (
+              SELECT m.id FROM theme_ecosystem_members m
+              INNER JOIN investment_themes th ON m.theme_id = th.id
+              WHERE th.user_id = ? AND ${THEME_MEMBER_YAHOO_TICKER_MATCH_SQL.replace(/\n\s*/g, " ")}
+            )`,
+      args: [ne, ex, rec, adr, dy, syncedAt, userId, t, t],
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const low = msg.toLowerCase();
+    if (low.includes("no such column") && low.includes("ex_dividend_date")) {
+      return {
+        ok: false,
+        syncedAt: null,
+        error: "DB に Yahoo リサーチ列がありません。migrations/055_yahoo_equity_research_columns.sql を適用してください。",
+      };
+    }
+    throw e;
+  }
+  return { ok: true, syncedAt, snapshot: snap };
+}
 
 /**
  * ティッカー単位で Yahoo からメタを取得し、該当ユーザーの `holdings` と `theme_ecosystem_members` を更新。
@@ -232,11 +324,20 @@ export async function syncStockMetadata(
             WHERE id IN (
               SELECT m.id FROM theme_ecosystem_members m
               INNER JOIN investment_themes th ON m.theme_id = th.id
-              WHERE th.user_id = ? AND UPPER(TRIM(m.ticker)) = ?
+              WHERE th.user_id = ? AND ${THEME_MEMBER_YAHOO_TICKER_MATCH_SQL.replace(/\n\s*/g, " ")}
             )`,
-      args: [meta.listingDate, meta.marketCap, meta.listingPrice, syncedAt, userId, t],
+      args: [meta.listingDate, meta.marketCap, meta.listingPrice, syncedAt, userId, t, t],
     });
-    return { ok: true, listingDate: meta.listingDate, marketCap: meta.marketCap, listingPrice: meta.listingPrice };
+    const research = await syncYahooEquityResearchForTicker(db, userId, ticker, providerSymbol ?? null);
+    return {
+      ok: true,
+      listingDate: meta.listingDate,
+      marketCap: meta.marketCap,
+      listingPrice: meta.listingPrice,
+      yahooResearchOk: research.ok,
+      yahooResearchSyncedAt: research.syncedAt,
+      yahooResearchError: research.ok ? undefined : research.error,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return {
