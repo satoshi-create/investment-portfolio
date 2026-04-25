@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useId, useMemo, useState, useTransition } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import { X } from "lucide-react";
 
 import { executeTradeAction, listInvestmentThemesForUser } from "@/app/actions/trades";
@@ -86,7 +86,7 @@ function TradeEntryFormInner({
   fxUsdJpy,
   holdingOptions,
 }: Omit<Props, "open">) {
-  const [pending, startTransition] = useTransition();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const [ticker, setTicker] = useState(initial?.ticker ?? "");
@@ -227,41 +227,50 @@ function TradeEntryFormInner({
       setMessage("ティッカーを入力してください。");
       return;
     }
-    startTransition(async () => {
-      const res = await executeTradeAction({
-        userId,
-        ticker: ticker.trim(),
-        name: name.trim() || undefined,
-        accountName,
-        side,
-        quantity: q,
-        unitPriceLocal: p,
-        feeLocal: feeLocalNumber,
-        feeCurrency,
-        feesJpy: feesJpyComputed,
-        tradeDate,
-        categoryForNewHolding: category,
-        structureTheme: structureTheme.trim(),
-        structureSector: structureSector.trim(),
-        themeId: selectedThemeId.trim() || undefined,
-        reason: tradeReason.trim() || undefined,
-        expectationCategory,
-        shortTermExitRules:
-          side === "BUY"
-            ? {
-                stopLossPct: parseOptionalPositivePercentInput(stopLossPctInput),
-                targetProfitPct: parseOptionalPositivePercentInput(targetProfitPctInput),
-                tradeDeadline: tradeDeadlineInput.trim().length >= 10 ? tradeDeadlineInput.trim().slice(0, 10) : null,
-                exitRuleEnabled,
-              }
-            : undefined,
-      });
-      setMessage(res.message);
-      if (res.ok) {
-        onSuccess?.();
-        onClose();
+    setIsSubmitting(true);
+    void (async () => {
+      try {
+        const res = await executeTradeAction({
+          userId,
+          ticker: ticker.trim(),
+          name: name.trim() || undefined,
+          accountName,
+          side,
+          quantity: q,
+          unitPriceLocal: p,
+          feeLocal: feeLocalNumber,
+          feeCurrency,
+          feesJpy: feesJpyComputed,
+          tradeDate,
+          categoryForNewHolding: category,
+          structureTheme: structureTheme.trim(),
+          structureSector: structureSector.trim(),
+          themeId: selectedThemeId.trim() || undefined,
+          reason: tradeReason.trim() || undefined,
+          expectationCategory,
+          shortTermExitRules:
+            side === "BUY"
+              ? {
+                  stopLossPct: parseOptionalPositivePercentInput(stopLossPctInput),
+                  targetProfitPct: parseOptionalPositivePercentInput(targetProfitPctInput),
+                  tradeDeadline: tradeDeadlineInput.trim().length >= 10 ? tradeDeadlineInput.trim().slice(0, 10) : null,
+                  exitRuleEnabled,
+                }
+              : undefined,
+        });
+        setMessage(res.message);
+        if (res.ok) {
+          setIsSubmitting(false);
+          onSuccess?.();
+          onClose();
+          return;
+        }
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : "取引の記録に失敗しました");
+      } finally {
+        setIsSubmitting(false);
       }
-    });
+    })();
   };
 
   return (
@@ -270,7 +279,7 @@ function TradeEntryFormInner({
         type="button"
         aria-label="Close"
         className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
-        onClick={() => !pending && onClose()}
+        onClick={() => !isSubmitting && onClose()}
       />
       <div
         className="relative w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
@@ -281,7 +290,7 @@ function TradeEntryFormInner({
           <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">取引実行</h2>
           <button
             type="button"
-            onClick={() => !pending && onClose()}
+            onClick={() => !isSubmitting && onClose()}
             className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
           >
             <X size={18} />
@@ -601,17 +610,17 @@ function TradeEntryFormInner({
             <button
               type="button"
               onClick={() => onClose()}
-              disabled={pending}
+              disabled={isSubmitting}
               className="flex-1 rounded-lg border border-slate-600 py-2.5 text-xs font-bold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
               キャンセル
             </button>
             <button
               type="submit"
-              disabled={pending}
+              disabled={isSubmitting}
               className="flex-1 rounded-lg bg-cyan-600/90 py-2.5 text-xs font-bold text-white hover:bg-cyan-500 disabled:opacity-50"
             >
-              {pending ? "実行中…" : "実行"}
+              {isSubmitting ? "実行中…" : "実行"}
             </button>
           </div>
         </form>

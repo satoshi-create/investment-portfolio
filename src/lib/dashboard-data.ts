@@ -1708,6 +1708,21 @@ function computeThemeAverageUnrealizedPnlPercent(stocks: Stock[]): number {
 }
 
 /**
+ * テーマ fast スケルトンでエコ用 `fetchEquityResearchSnapshots` を省略しても、
+ * 保有と重なるティッカーはリサーチ由来の国名を使い、それ以外は instrument から米/日を推定してバッジ表示できるようにする。
+ */
+function resolveYahooCountryForEcosystemMember(
+  research: EquityResearchSnapshot | null,
+  instrumentKind: TickerInstrumentKind,
+): string | null {
+  const raw = research?.yahooCountry;
+  if (raw != null && String(raw).trim().length > 0) return String(raw).trim();
+  if (instrumentKind === "US_EQUITY") return "United States";
+  if (instrumentKind === "JP_LISTED_EQUITY" || instrumentKind === "JP_INVESTMENT_TRUST") return "Japan";
+  return null;
+}
+
+/**
  * `investment_themes` からテーマ行を取得（テーブル未作成時は null）。
  */
 export async function fetchInvestmentThemeRecord(
@@ -1844,7 +1859,7 @@ async function enrichEcosystemMemberRow(
     dividendYieldPercent,
     pegRatio,
   });
-  const yahooCountryEco = research?.yahooCountry ?? null;
+  const yahooCountryEco = resolveYahooCountryForEcosystemMember(research, instrumentKind);
   const ttmRepurchaseOfStockEco = research?.ttmRepurchaseOfStock ?? null;
   const consecutiveDividendYearsEco = research?.consecutiveDividendYears ?? null;
   const yahooBuybackPostureEco = research?.yahooBuybackPosture ?? null;
@@ -2181,7 +2196,7 @@ async function fetchEnrichedThemeEcosystem(
   themeCreatedAt: string | null,
   liveAlphaCtx: LiveAlphaBenchmarkContext,
   perf?: { enabled: boolean; requestId?: string | null },
-  options?: { fast?: boolean },
+  options?: { fast?: boolean; prefetchedResearchByTicker?: Map<string, EquityResearchSnapshot> },
 ): Promise<ThemeEcosystemWatchItem[]> {
   try {
     let rows: Record<string, unknown>[];
@@ -2457,8 +2472,9 @@ async function fetchEnrichedThemeEcosystem(
       })
       .filter((x) => x.length > 0);
     const fast = options?.fast === true;
+    const prefetched = options?.prefetchedResearchByTicker;
     const researchByTicker = fast
-      ? new Map()
+      ? new Map(prefetched ?? [])
       : await fetchEquityResearchSnapshots(
           [...new Set(researchTargets)].map((ticker) => ({ ticker, providerSymbol: null })),
           // Ecosystem watchlist can be large; prefer higher throughput here.
@@ -2776,7 +2792,7 @@ export async function getThemeDetailData(
       theme.createdAt != null ? String(theme.createdAt) : null,
       liveAlphaCtx,
       perf,
-      { fast },
+      { fast, prefetchedResearchByTicker: researchByTicker },
     );
   }
 

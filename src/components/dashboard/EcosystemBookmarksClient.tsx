@@ -48,6 +48,7 @@ import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
 import { isPostChasmStage } from "@/src/lib/adoption-stage";
 import { cn } from "@/src/lib/cn";
+import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import {
   applyEcosystemWatchlistUserHidden,
   loadEcosystemWatchlistHiddenColumns,
@@ -1222,7 +1223,13 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
                             </td>
                           </tr>
                         ) : null}
-                        <tr id={`eco-row-${e.id}`} className="group hover:bg-muted/45 transition-all scroll-mt-24">
+                        <tr
+                          id={`eco-row-${e.id}`}
+                          className={cn(
+                            "group hover:bg-muted/45 transition-all scroll-mt-24",
+                            regionDisplayFromYahooCountry(e.yahooCountry).rowBg,
+                          )}
+                        >
                           <EcosystemThemeTableMappedRow
                             visibleColumnIds={ecoVisibleColumnIds}
                             compactRows={ecoTableCompact}

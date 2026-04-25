@@ -273,7 +273,7 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
       <div className="p-5 border-b border-border bg-card/60">
         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-          Portfolio accounting
+          {/* Portfolio accounting */}
         </h3>
         <p className="text-[10px] text-muted-foreground mt-1">
           含み損益・損益率は平均取得単価と Yahoo 日足ベースの最新終値から算出。米株の円換算はダッシュボード取得の USD/JPY（JPY=X、失敗時フォールバック）を使用。

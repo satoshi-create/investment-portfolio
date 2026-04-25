@@ -4,6 +4,7 @@ import React from "react";
 import { CalendarClock, FileText, MessageSquare, Star } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
+import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
@@ -316,9 +317,10 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         ✨
                       </span>
                     ) : null}
+                    <RegionMarketBadge yahooCountry={e.yahooCountry} />
                     <span
                       className="shrink-0 font-bold font-mono text-foreground group-hover:text-blue-400 transition-colors"
-                      title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}`}
+                      title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}${e.yahooCountry ? ` · ${e.yahooCountry}` : ""}`}
                     >
                       {formatTickerForDisplay(e.ticker, e.instrumentKind)}
                     </span>

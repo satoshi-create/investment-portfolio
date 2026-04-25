@@ -3,6 +3,7 @@
 import React from "react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
+import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
 import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
@@ -175,11 +176,7 @@ export function EcosystemWatchlistTableRow({
                           ✨
                         </span>
                       ) : null}
-                      {region.flag ? (
-                        <span className="shrink-0 text-base leading-none" title={e.yahooCountry ?? undefined} aria-hidden>
-                          {region.flag}
-                        </span>
-                      ) : null}
+                      <RegionMarketBadge yahooCountry={e.yahooCountry} />
                       <span
                         className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono whitespace-nowrap truncate"
                         title={`Yahoo: ${yahooSymbolForTooltip(e.ticker, null)}${e.yahooCountry ? ` · ${e.yahooCountry}` : ""}`}

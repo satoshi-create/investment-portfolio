@@ -69,6 +69,7 @@ import { parseAlphaDailyHistoryJson, parseAlphaObservationDatesJson } from "@/sr
 import { parseYahooBuybackPostureJson } from "@/src/lib/yahoo-buyback-posture";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
+import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import {
   EarningsSummaryNoteEditorModal,
@@ -3162,7 +3163,10 @@ export function ThemePageClient({
                               ) : null}
                               <tr
                                 id={`eco-row-${e.id}`}
-                                className="group hover:bg-muted/45 transition-all scroll-mt-24"
+                                className={cn(
+                                  "group hover:bg-muted/45 transition-all scroll-mt-24",
+                                  regionDisplayFromYahooCountry(e.yahooCountry).rowBg,
+                                )}
                               >
                                 <EcosystemThemeTableMappedRow
                                   visibleColumnIds={ecoVisibleColumnIds}

@@ -70,6 +70,7 @@ import {
   nativeCurrencyForStock,
 } from "@/src/lib/format-display-currency";
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
+import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
 import { computeLiveAlphaDayPercent, fiveDayPulseForHoldingRow } from "@/src/lib/alpha-logic";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
@@ -91,6 +92,7 @@ import { InventoryTableColumnToolbar } from "@/src/components/dashboard/Inventor
 import { MetricHeaderHelp } from "@/src/components/dashboard/MetricHeaderHelp";
 import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
 import { appendTitleBlock, holdingDailyAlphaStoryTitle } from "@/src/lib/alpha-story-tooltip";
+import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
 
 type SortKey =
@@ -1747,6 +1749,7 @@ export function InventoryTable({
               const dd = drawdownOf(stock);
               const ecoKeep =
                 resolveEcosystemKeep != null ? resolveEcosystemKeep(stock.ticker) : null;
+              const rowRegion = regionDisplayFromYahooCountry(stock.yahooCountry);
               const rowHi =
                 highlightTicker != null &&
                 highlightTicker.trim().length > 0 &&
@@ -1757,6 +1760,7 @@ export function InventoryTable({
                   id={`inventory-row-${stock.ticker.trim().toUpperCase()}`}
                   className={cn(
                     "group hover:bg-muted/60 transition-all scroll-mt-24",
+                    rowRegion.rowBg,
                     rowHi ? "bg-cyan-500/12 ring-1 ring-cyan-500/40" : "",
                   )}
                 >
@@ -1786,9 +1790,12 @@ export function InventoryTable({
                                       ✨
                                     </span>
                                   ) : null}
+                                  <RegionMarketBadge yahooCountry={stock.yahooCountry} />
                                   <span
                                     className="min-w-0 truncate font-bold font-mono text-foreground group-hover:text-accent-cyan transition-colors"
-                                    title={`Yahoo: ${yahooSymbolForTooltip(stock.ticker, stock.providerSymbol)}`}
+                                    title={`Yahoo: ${yahooSymbolForTooltip(stock.ticker, stock.providerSymbol)}${
+                                      stock.yahooCountry ? ` · ${stock.yahooCountry}` : ""
+                                    }`}
                                   >
                                     {formatTickerForDisplay(stock.ticker, stock.instrumentKind)}
                                   </span>
