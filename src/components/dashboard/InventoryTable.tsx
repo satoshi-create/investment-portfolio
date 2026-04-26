@@ -31,7 +31,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import type { LynchCategory, Stock } from "@/src/types/investment";
+import type { LynchCategory, ResourceStructuralSyncData, Stock } from "@/src/types/investment";
 import {
   LYNCH_CATEGORY_KEYS,
   LYNCH_CATEGORY_LABEL_JA,
@@ -592,6 +592,7 @@ export function InventoryTable({
   livePricePollIntervalMs,
   onLivePricePoll,
   highlightTicker,
+  resourceSyncJudgments,
 }: {
   stocks: Stock[];
   totalHoldings: number;
@@ -617,6 +618,8 @@ export function InventoryTable({
   onLivePricePoll?: () => void | Promise<void>;
   /** ホーム検索など: 一致する行を強調しスクロール（大文字キー推奨） */
   highlightTicker?: string | null;
+  /** 江戸循環テーマ用: 資源との同期判定 */
+  resourceSyncJudgments?: ResourceStructuralSyncData["individualJudgments"] | null;
 }) {
   const { convert, viewCurrency, alphaDisplayMode } = useCurrencyConverter();
 
@@ -2173,12 +2176,39 @@ export function InventoryTable({
                             )}
                           </td>
                         );
-                      case "judgment":
+                      case "judgment": {
+                        const sync = resourceSyncJudgments?.[stock.ticker] ?? null;
                         return (
                           <td key={colId} className="px-4 py-4 text-center">
-                            <JudgmentBadge status={stock.judgmentStatus} reason={stock.judgmentReason} />
+                            <div className="flex flex-col items-center gap-1.5">
+                              <JudgmentBadge status={stock.judgmentStatus} reason={stock.judgmentReason} />
+                              {sync && sync.judgment && (
+                                <div
+                                  className={cn(
+                                    "rounded px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-tighter shadow-sm ring-1 ring-inset",
+                                    sync.judgment === "BUY_OPPORTUNITY"
+                                      ? "bg-amber-500/15 text-amber-300 ring-amber-500/30"
+                                      : sync.judgment === "OVERHEATED"
+                                        ? "bg-rose-500/15 text-rose-300 ring-rose-500/30"
+                                        : sync.judgment === "DECOUPLED"
+                                          ? "bg-slate-500/15 text-slate-300 ring-slate-500/30"
+                                          : "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+                                  )}
+                                  title={`物理資源との乖離: ${sync.spread > 0 ? "+" : ""}${sync.spread}pt`}
+                                >
+                                  {sync.judgment === "BUY_OPPORTUNITY"
+                                    ? "物理出遅れ"
+                                    : sync.judgment === "OVERHEATED"
+                                      ? "物理過熱"
+                                      : sync.judgment === "DECOUPLED"
+                                        ? "デカップル"
+                                        : "シンクロ"}
+                                </div>
+                              )}
+                            </div>
                           </td>
                         );
+                      }
                       case "deviation":
                         return (
                           <td

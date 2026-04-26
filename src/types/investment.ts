@@ -602,6 +602,38 @@ export type CumulativeAlphaPoint = {
   cumulative: number;
 };
 
+export type ResourceSyncJudgment = "BUY_OPPORTUNITY" | "OVERHEATED" | "SYNCING" | "DECOUPLED" | null;
+
+/** 江戸循環テーマ: 資源ETF vs エコシステム銘柄の正規化騰落率（同一アンカー）と乖離。 */
+export type ResourceStructuralSyncPoint = {
+  date: string;
+  /** GLD 終値基準・起点からの累積騰落率（%） */
+  gldPct: number;
+  slvPct: number;
+  cperPct: number;
+  /** GLD / SLV / CPER の単純平均（%） */
+  resourceCompositePct: number;
+  /** ウォッチ対象銘柄の同日騰落率の単純平均（%） */
+  ecosystemEquityAvgPct: number;
+  /** Eco 平均 − 資源複合（乖離、pt） */
+  spread: number;
+  /** 乖離の絶対値が直近窓平均+σを上回る領域（網掛け用） */
+  spreadWidening: boolean;
+};
+
+export type ResourceStructuralSyncData = {
+  points: ResourceStructuralSyncPoint[];
+  /** 全系列で採用した累積%の起点日 */
+  anchorYmd: string | null;
+  /** 系列に使ったエコシステムのティッカー（表示用） */
+  ecoTickersUsed: string[];
+  /** 銘柄ごとの最終判定 */
+  individualJudgments: Record<string, {
+    spread: number;
+    judgment: ResourceSyncJudgment;
+  }>;
+};
+
 /** `/themes/[theme]` 用: テーマメタ + 該当保有の Stock（ウェイトはテーマ内評価額ベース）。 */
 export type ThemeDetailData = {
   themeName: string;
@@ -650,6 +682,11 @@ export type ThemeDetailData = {
   themeStructuralTrendTotalPct: number | null;
   /** 上記系列の累積起点日（YYYY-MM-DD） */
   themeStructuralTrendStartDate: string | null;
+  /**
+   * 「江戸循環ネットワーク文明」専用: 資源ETF（GLD/SLV/CPER）とエコ銘柄の同期騰落・乖離系列。
+   * それ以外のテーマ・取得失敗時は null。
+   */
+  resourceStructuralSync: ResourceStructuralSyncData | null;
 };
 
 /** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */

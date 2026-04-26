@@ -35,7 +35,7 @@ import {
 } from "@/src/components/dashboard/EcosystemStructuralInsight";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
-import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
+import type { InvestmentThemeRecord, ResourceSyncJudgment, ThemeEcosystemWatchItem } from "@/src/types/investment";
 import { INVESTMENT_METRIC_TONE_TEXT_CLASS, investmentMetricToneForSignedPercent } from "@/src/types/investment";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 
@@ -234,6 +234,7 @@ export type EcosystemThemeTableMappedRowProps = {
   holderBadgeClass: (holder: string) => string;
   dividendCalendar: (months: number[]) => React.ReactNode;
   defensiveZClass: (z: number | null) => string;
+  resourceSync?: { spread: number; judgment: ResourceSyncJudgment } | null;
 };
 
 export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRowProps) {
@@ -281,6 +282,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
     holderBadgeClass,
     dividendCalendar,
     defensiveZClass,
+    resourceSync,
   } = props;
 
   return (
@@ -822,7 +824,32 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
           case "judgment":
             return (
               <td key={colId} className={`px-4 py-3 text-center align-middle ${stickyFirst}`}>
-                <JudgmentBadge status={e.judgmentStatus} reason={e.judgmentReason} />
+                <div className="flex flex-col items-center gap-1.5">
+                  <JudgmentBadge status={e.judgmentStatus} reason={e.judgmentReason} />
+                  {resourceSync && resourceSync.judgment && (
+                    <div
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-tighter shadow-sm ring-1 ring-inset",
+                        resourceSync.judgment === "BUY_OPPORTUNITY"
+                          ? "bg-amber-500/15 text-amber-300 ring-amber-500/30"
+                          : resourceSync.judgment === "OVERHEATED"
+                            ? "bg-rose-500/15 text-rose-300 ring-rose-500/30"
+                            : resourceSync.judgment === "DECOUPLED"
+                              ? "bg-slate-500/15 text-slate-300 ring-slate-500/30"
+                              : "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+                      )}
+                      title={`物理資源との乖離: ${resourceSync.spread > 0 ? "+" : ""}${resourceSync.spread}pt`}
+                    >
+                      {resourceSync.judgment === "BUY_OPPORTUNITY"
+                        ? "物理出遅れ"
+                        : resourceSync.judgment === "OVERHEATED"
+                          ? "物理過熱"
+                          : resourceSync.judgment === "DECOUPLED"
+                            ? "デカップル"
+                            : "シンクロ"}
+                    </div>
+                  )}
+                </div>
               </td>
             );
           case "deviation":

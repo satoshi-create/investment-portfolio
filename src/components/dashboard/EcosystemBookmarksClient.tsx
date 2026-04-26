@@ -1276,6 +1276,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
                             holderBadgeClass={holderBadgeClass}
                             dividendCalendar={dividendCalendar}
                             defensiveZClass={defensiveZClass}
+                            resourceSync={null}
                           />
                         </tr>
                       </React.Fragment>

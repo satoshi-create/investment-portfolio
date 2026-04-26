@@ -16,6 +16,7 @@ import type {
   ThemeEcosystemWatchItem,
   ThemeStructuralSparklineEntry,
   TickerInstrumentKind,
+  ResourceStructuralSyncData,
 } from "@/src/types/investment";
 import {
   benchmarkDailyReturnPercentByEndDate,
@@ -89,6 +90,8 @@ import {
   prefetchHoldingsInstrumentMetadata,
   prefetchThemeEcosystemInstrumentMetadata,
 } from "@/src/lib/instrument-metadata-sync";
+import { EDO_CIRCULAR_THEME_NAME, URBAN_MINING_THEME_NAME } from "@/src/lib/edo-theme-constants";
+import { fetchEdoResourceStructuralSyncData } from "@/src/lib/edo-resource-structural-sync";
 
 export { syncStockMetadata } from "@/src/lib/instrument-metadata-sync";
 export type { SyncStockMetadataResult } from "@/src/lib/instrument-metadata-sync";
@@ -2870,6 +2873,7 @@ export async function getThemeDetailData(
   let themeStructuralTrendStartDate: string | null = null;
   let structuralAlphaTotalPct: number | null = null;
   let cumulativeAlphaAnchorDate: string | null = null;
+  let resourceStructuralSync: ResourceStructuralSyncData | null = null;
 
   let themeSyntheticUsRatio: number | null = null;
   let themeSyntheticJpRatio: number | null = null;
@@ -3127,6 +3131,21 @@ export async function getThemeDetailData(
     themeStructuralTrendStartDate = ymdDaysAgoUtc(THEME_STRUCTURAL_TREND_LOOKBACK_DAYS);
   }
 
+  if (themeName === URBAN_MINING_THEME_NAME && ecosystem.length > 0) {
+    // 「都市鉱山×お宝銘柄」の場合に物理資源シンクロチャートを有効化
+    const tSync = perf.enabled ? Date.now() : 0;
+    try {
+      resourceStructuralSync = await fetchEdoResourceStructuralSyncData(ecosystem, { perf });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[getThemeDetailData] resourceStructuralSync failed: ${msg}`);
+      resourceStructuralSync = null;
+    }
+    if (perf.enabled && perf.requestId) {
+      console.log(`[perf] ${perf.requestId} resourceStructuralSync wallMs=${Date.now() - tSync}`);
+    }
+  }
+
   return {
     themeName,
     themeMissing: theme == null,
@@ -3152,6 +3171,7 @@ export async function getThemeDetailData(
     themeStructuralTrendSeries,
     themeStructuralTrendTotalPct,
     themeStructuralTrendStartDate,
+    resourceStructuralSync,
   };
 }
 

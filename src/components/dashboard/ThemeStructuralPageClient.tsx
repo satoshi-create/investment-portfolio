@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { toggleThemeEcosystemMemberBookmark, toggleThemeEcosystemMemberKept } from "@/app/actions/theme-ecosystem";
 import {
   type InvestmentThemeRecord,
+  type ResourceStructuralSyncData,
   type ThemeDetailData,
   type ThemeEcosystemWatchItem,
   type TickerInstrumentKind,
@@ -63,7 +64,7 @@ import {
   isThemeStructuralTrendPositiveUp,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
 } from "@/src/lib/alpha-logic";
-import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER } from "@/src/lib/edo-theme-constants";
+import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER, URBAN_MINING_THEME_NAME } from "@/src/lib/edo-theme-constants";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { parseAlphaDailyHistoryJson, parseAlphaObservationDatesJson } from "@/src/lib/eco-trend-daily";
 import { parseYahooBuybackPostureJson } from "@/src/lib/yahoo-buyback-posture";
@@ -94,6 +95,7 @@ import { AiUnicornMiningSchedule } from "@/src/components/dashboard/AiUnicornMin
 import { AiUnicornCreditSeam } from "@/src/components/dashboard/AiUnicornCreditSeam";
 import { SemiconductorSupplyChainObservationPanel } from "@/src/components/dashboard/SemiconductorSupplyChainObservationPanel";
 import { SaaSApocalypseLensPanel } from "@/src/components/dashboard/SaaSApocalypseLensPanel";
+import { ResourceStructuralSyncChart } from "@/src/components/dashboard/ResourceStructuralSyncChart";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
 import { ThemeMetaBlock } from "@/src/components/dashboard/ThemeMetaBlock";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
@@ -346,6 +348,17 @@ function ecosystemMatchesSearchQuery(
     e.moat ?? "",
   ];
   return hay.some((s) => s.toLowerCase().includes(n));
+}
+
+/** React/DOM key when `theme_ecosystem_members.id` is missing at runtime (e.g. partial SQL rows). */
+function ecosystemMemberRowKey(
+  e: ThemeEcosystemWatchItem,
+  idx: number,
+): string {
+  const id = e.id != null ? String(e.id).trim() : "";
+  if (id.length > 0) return id;
+  const t = String(e.ticker ?? "").trim();
+  return `eco-fallback-${idx}-${t.length > 0 ? t : "unknown"}`;
 }
 
 type ThemeDetailJson = ThemeDetailData & { userId?: string; error?: string };
@@ -649,6 +662,13 @@ function normalizeThemeDetailResponse(
       typeof rest.fxUsdJpy === "number" && Number.isFinite(rest.fxUsdJpy) && rest.fxUsdJpy > 0
         ? rest.fxUsdJpy
         : USD_JPY_RATE_FALLBACK,
+    resourceStructuralSync: ((): ResourceStructuralSyncData | null => {
+      const raw = (rest as ThemeDetailData).resourceStructuralSync;
+      if (raw == null || typeof raw !== "object") return null;
+      const pts = (raw as ResourceStructuralSyncData).points;
+      if (!Array.isArray(pts)) return null;
+      return raw as ResourceStructuralSyncData;
+    })(),
   };
 }
 
@@ -843,7 +863,19 @@ export function ThemePageClient({
         }
         const { userId: _u, error: _e, ...restFast } = jsonFast;
         if (signal.aborted) return;
-        setData(normalizeThemeDetailResponse(restFast));
+        setData((prev) => {
+          const next = normalizeThemeDetailResponse(restFast);
+          if (
+            prev != null &&
+            prev.themeName === URBAN_MINING_THEME_NAME &&
+            themeLabel.trim() === URBAN_MINING_THEME_NAME &&
+            next.resourceStructuralSync == null &&
+            prev.resourceStructuralSync != null
+          ) {
+            return { ...next, resourceStructuralSync: prev.resourceStructuralSync };
+          }
+          return next;
+        });
         setLoading(false);
 
         setHydratingFull(true);
@@ -2349,7 +2381,24 @@ export function ThemePageClient({
                 themeStructuralTrendUp={themeStructuralTrendUp}
                 resolveEcosystemKeep={resolveEcosystemKeepForTicker}
                 onToggleEcosystemKeep={(id) => void handleToggleEcosystemKeep(id)}
+                resourceSyncJudgments={data.resourceStructuralSync?.individualJudgments ?? null}
               />
+            ) : null}
+
+            {themeLabel.trim() === URBAN_MINING_THEME_NAME &&
+            data.resourceStructuralSync != null &&
+            data.resourceStructuralSync.points.length > 0 ? (
+              <ResourceStructuralSyncChart data={data.resourceStructuralSync} />
+            ) : null}
+
+            {/* デバッグ用: 都市鉱山テーマなのにチャートが出ない場合のみ表示 */}
+            {themeLabel.trim() === URBAN_MINING_THEME_NAME &&
+            (data.resourceStructuralSync == null || data.resourceStructuralSync.points.length === 0) ? (
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-[10px] text-amber-200/60 font-mono">
+                [Debug] Theme: {themeLabel} | SyncData: {data.resourceStructuralSync ? 'Present' : 'NULL'} | Points: {data.resourceStructuralSync?.points.length ?? 0}
+                <br />
+                ※ 資源同期チャートは「共通日足2日以上」で表示されます。
+              </div>
             ) : null}
 
             {stocks.length > 0 ||
@@ -2551,9 +2600,9 @@ export function ThemePageClient({
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                       {ecosystem
                         .filter((e) => e.isUnlisted)
-                        .map((e) => (
+                        .map((e, idx) => (
                           <UnicornCard
-                            key={e.id}
+                            key={ecosystemMemberRowKey(e, idx)}
                             item={e}
                             onToggleKeep={() => void handleToggleEcosystemKeep(e.id)}
                           />
@@ -3178,8 +3227,9 @@ export function ThemePageClient({
                             Number.isFinite(e.drawdownFromHigh90dPct)
                               ? e.drawdownFromHigh90dPct
                               : null;
+                          const ecoRowKey = ecosystemMemberRowKey(e, idx);
                           return (
-                            <React.Fragment key={e.id}>
+                            <React.Fragment key={ecoRowKey}>
                               {showFieldHeader ? (
                                 <tr className="bg-muted/90">
                                   <td
@@ -3195,7 +3245,7 @@ export function ThemePageClient({
                                 </tr>
                               ) : null}
                               <tr
-                                id={`eco-row-${e.id}`}
+                                id={`eco-row-${ecoRowKey}`}
                                 className={cn(
                                   "group hover:bg-muted/45 transition-all scroll-mt-24",
                                   regionDisplayFromYahooCountry(e.yahooCountry).rowBg,
@@ -3211,6 +3261,7 @@ export function ThemePageClient({
                                   isDefensiveTheme={isDefensiveTheme}
                                   themeLabel={themeLabel}
                                   theme={theme}
+                                  resourceSync={data.resourceStructuralSync?.individualJudgments[e.ticker] ?? null}
                                   ecoEditingId={ecoEditingId}
                                   ecoEditCompanyName={ecoEditCompanyName}
                                   setEcoEditCompanyName={setEcoEditCompanyName}
