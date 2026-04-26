@@ -7,6 +7,7 @@ import { Search, X } from "lucide-react";
 import { useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
 import type { EcosystemWatchlistSearchItem, Stock } from "@/src/types/investment";
 import { cn } from "@/src/lib/cn";
+import { normalizeSearchQuery } from "@/src/lib/search-normalize";
 
 const MAX_RESULTS = 12;
 
@@ -27,21 +28,22 @@ export function CockpitStockSearch({ className, compact = false }: { className?:
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const filtered = useMemo(() => {
-    const t = q.trim().toLowerCase();
+    const t = normalizeSearchQuery(q);
     if (t.length === 0) return [] as SearchRow[];
     const rows: SearchRow[] = [];
     for (const s of stocks) {
-      const tick = String(s.ticker ?? "").toLowerCase();
-      const name = String(s.name ?? "").toLowerCase();
-      if (tick.includes(t) || name.includes(t)) {
+      const tick = normalizeSearchQuery(String(s.ticker ?? ""));
+      const name = normalizeSearchQuery(String(s.name ?? ""));
+      const prov = normalizeSearchQuery(String(s.providerSymbol ?? ""));
+      if (tick.includes(t) || name.includes(t) || (prov.length > 0 && prov.includes(t))) {
         rows.push({ kind: "holding", stock: s });
         if (rows.length >= MAX_RESULTS) return rows;
       }
     }
     for (const item of ecosystem) {
-      const tick = item.ticker.toLowerCase();
-      const cn = item.companyName.toLowerCase();
-      const tn = item.themeName.toLowerCase();
+      const tick = normalizeSearchQuery(item.ticker);
+      const cn = normalizeSearchQuery(item.companyName);
+      const tn = normalizeSearchQuery(item.themeName);
       if (tick.includes(t) || cn.includes(t) || tn.includes(t)) {
         rows.push({ kind: "ecosystem", item });
         if (rows.length >= MAX_RESULTS) return rows;
@@ -100,7 +102,7 @@ export function CockpitStockSearch({ className, compact = false }: { className?:
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          placeholder="銘柄・テーマで検索…"
+          placeholder="銘柄名・コード・Yahoo記号・テーマで検索…"
           autoComplete="off"
           className={cn(
             "min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/70 outline-none",

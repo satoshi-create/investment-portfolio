@@ -121,7 +121,7 @@ export function StructuralEcosystemThead({
                   sortKey="asset"
                   align="left"
                   className={`px-6 py-4 min-w-[10rem] max-w-[14rem] ${sfirst} cursor-pointer select-none`}
-                  title="Sort"
+                  metricHelpText={METRIC_HEADER_TIP.asset}
                   label="Asset"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -149,7 +149,7 @@ export function StructuralEcosystemThead({
                   sortKey="listing"
                   align="center"
                   className={`px-3 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="初回取引日の年で並べ替え（DB / Yahoo の first trade 近似。IPO 年とは限らない）"
+                  metricHelpText={METRIC_HEADER_TIP.listing}
                   label="初取引"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -163,7 +163,7 @@ export function StructuralEcosystemThead({
                   sortKey="mktCap"
                   align="right"
                   className={`px-4 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="時価総額（参照: Yahoo Finance・取得／同期時点の値）"
+                  metricHelpText={METRIC_HEADER_TIP.mktCap}
                   label="MCAP"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -177,7 +177,7 @@ export function StructuralEcosystemThead({
                   sortKey="perfListed"
                   align="right"
                   className={`px-4 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="長期変動率（%）: 日足の系列上・最古日〜最新日（調整後終値が揃えば adj のペア）。IPO 公式リターンではありません。取得不能時のみ 現在価÷listing_price"
+                  metricHelpText={METRIC_HEADER_TIP.perfListed}
                   label="長期%"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -191,6 +191,7 @@ export function StructuralEcosystemThead({
                   sortKey="earnings"
                   align="center"
                   className={`px-4 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.earnings}
                   label="決算まで"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -198,7 +199,13 @@ export function StructuralEcosystemThead({
               );
             case "holder":
               return (
-                <SortableEcoWatchlistTh key={colId} id={colId} align="left" className={`px-6 py-4 whitespace-nowrap ${sfirst}`}>
+                <SortableEcoWatchlistTh
+                  key={colId}
+                  id={colId}
+                  align="left"
+                  className={`px-6 py-4 whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.holder}
+                >
                   <span className="pointer-events-none">Holder</span>
                 </SortableEcoWatchlistTh>
               );
@@ -210,7 +217,7 @@ export function StructuralEcosystemThead({
                   sortKey="dividend"
                   align="left"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="権利落ちまでの日数が近い順（未取得は末尾）。2回目クリックで昇順/降順切替"
+                  metricHelpText={METRIC_HEADER_TIP.dividend}
                   label="Dividend"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -224,7 +231,7 @@ export function StructuralEcosystemThead({
                   sortKey="payout"
                   align="right"
                   className={`px-4 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="年間DPS÷TTM EPS×100（Yahoo）。未取得は末尾"
+                  metricHelpText={METRIC_HEADER_TIP.payout}
                   label="性向"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -232,7 +239,13 @@ export function StructuralEcosystemThead({
               );
             case "defensiveRole":
               return (
-                <SortableEcoWatchlistTh key={colId} id={colId} align="left" className={`px-6 py-4 whitespace-nowrap ${sfirst}`}>
+                <SortableEcoWatchlistTh
+                  key={colId}
+                  id={colId}
+                  align="left"
+                  className={`px-6 py-4 whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.defensiveRole}
+                >
                   <span className="pointer-events-none">Defensive role</span>
                 </SortableEcoWatchlistTh>
               );
@@ -244,7 +257,7 @@ export function StructuralEcosystemThead({
                   sortKey="research"
                   align="left"
                   className={`px-6 py-4 cursor-pointer select-none ${sfirst}`}
-                  title="決算までの日数 → 配当落ちまでの日数 → 配当利回りで並べ替え"
+                  metricHelpText={METRIC_HEADER_TIP.research}
                   label="Research"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -252,7 +265,13 @@ export function StructuralEcosystemThead({
               );
             case "role":
               return (
-                <SortableEcoWatchlistTh key={colId} id={colId} align="left" className={`px-6 py-4 whitespace-nowrap ${sfirst}`}>
+                <SortableEcoWatchlistTh
+                  key={colId}
+                  id={colId}
+                  align="left"
+                  className={`px-6 py-4 whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.role}
+                >
                   <span className="pointer-events-none">江戸的役割</span>
                 </SortableEcoWatchlistTh>
               );
@@ -264,7 +283,7 @@ export function StructuralEcosystemThead({
                   sortKey="viScore"
                   align="center"
                   className={`px-3 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="垂直統合スコア（0–100）"
+                  metricHelpText={METRIC_HEADER_TIP.viScore}
                   label="VI"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -306,7 +325,7 @@ export function StructuralEcosystemThead({
                   sortKey="judgment"
                   align="center"
                   className={`px-4 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="投資優先度"
+                  metricHelpText={METRIC_HEADER_TIP.judgment}
                   label="判定"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -348,7 +367,7 @@ export function StructuralEcosystemThead({
                   sortKey="pe"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="Sort"
+                  metricHelpText={METRIC_HEADER_TIP.pe}
                   label="PE"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -376,7 +395,7 @@ export function StructuralEcosystemThead({
                   sortKey="egrowth"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="Yahoo 由来の予想 EPS 成長率（%）"
+                  metricHelpText={METRIC_HEADER_TIP.egrowth}
                   label="成長%"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -390,7 +409,7 @@ export function StructuralEcosystemThead({
                   sortKey="eps"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="Sort"
+                  metricHelpText={METRIC_HEADER_TIP.eps}
                   label="EPS"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -418,7 +437,7 @@ export function StructuralEcosystemThead({
                   sortKey="cumTrend"
                   align="center"
                   className={`px-6 py-4 cursor-pointer select-none ${sfirst}`}
-                  title="Sort"
+                  metricHelpText={METRIC_HEADER_TIP.cumTrend}
                   label="Cumulative trend"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -432,7 +451,7 @@ export function StructuralEcosystemThead({
                   sortKey="volRatio"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
-                  title="本日出来高 / 10 日平均出来高"
+                  metricHelpText={METRIC_HEADER_TIP.volumeRatio}
                   label="Vol 比"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
@@ -446,7 +465,7 @@ export function StructuralEcosystemThead({
                   sortKey="price"
                   align="right"
                   className={`px-6 py-4 cursor-pointer select-none ${sfirst}`}
-                  title="Sort"
+                  metricHelpText={METRIC_HEADER_TIP.priceLast}
                   label="Last"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}

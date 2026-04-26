@@ -634,6 +634,15 @@ export type ResourceStructuralSyncData = {
   }>;
 };
 
+/** 「都市鉱山×お宝銘柄」バナー: Yahoo 先物/指数シンボルの最新参照価格。 */
+export type UrbanMiningMetalSpotRow = {
+  labelJa: string;
+  yahooSymbol: string;
+  price: number | null;
+  changePct: number | null;
+  asOfDate: string | null;
+};
+
 /** `/themes/[theme]` 用: テーマメタ + 該当保有の Stock（ウェイトはテーマ内評価額ベース）。 */
 export type ThemeDetailData = {
   themeName: string;
@@ -687,6 +696,8 @@ export type ThemeDetailData = {
    * それ以外のテーマ・取得失敗時は null。
    */
   resourceStructuralSync: ResourceStructuralSyncData | null;
+  /** `URBAN_MINING_THEME_NAME` のみ。金/銀/銅の Yahoo 参照価格（未取得は null 行）。 */
+  urbanMiningMetalSpot: UrbanMiningMetalSpotRow[] | null;
 };
 
 /** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronDown, FileSpreadsheet, GripVertical, History } from "lucide-react";
+import { ChevronDown, FileSpreadsheet, GripVertical, History, Search } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -28,6 +28,7 @@ import {
   writeClosedTradesColOrderToStorage,
 } from "@/src/lib/closed-trades-column-order";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
+import { normalizeSearchQuery } from "@/src/lib/search-normalize";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 
 const jpyFmt = new Intl.NumberFormat("ja-JP", {
@@ -240,6 +241,21 @@ function colHeaderLabel(id: ClosedTradeColId, displayCurrency: "JPY" | "USD"): s
   }
 }
 
+function closedTradeRowMatchesQuery(r: ClosedTradeDashboardRow, q: string): boolean {
+  if (q.length === 0) return true;
+  const parts = [
+    r.ticker,
+    r.name,
+    r.tradeDate,
+    r.accountName,
+    r.market,
+    r.side,
+    r.verdictLabel ?? "",
+    r.reason ?? "",
+  ].map((x) => normalizeSearchQuery(String(x)));
+  return parts.some((p) => p.includes(q));
+}
+
 export function ClosedTradesTable({
   rows,
   displayCurrency = "JPY",
@@ -250,11 +266,11 @@ export function ClosedTradesTable({
   /** USD 表示用（円価 / fx）。 */
   fxUsdJpy?: number | null;
 }) {
-  const footer = useMemo(() => computeClosedTradesFooter(rows), [rows]);
   const [colOrder, setColOrder] = useState<ClosedTradeColId[]>(() => [...CLOSED_TRADE_COLUMN_IDS]);
   const [expandedReasonId, setExpandedReasonId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [tradeSearchQuery, setTradeSearchQuery] = useState("");
 
   useEffect(() => {
     setColOrder(readClosedTradesColOrderFromStorage());
@@ -277,9 +293,15 @@ export function ClosedTradesTable({
     });
   };
 
+  const filteredRows = useMemo(() => {
+    const q = normalizeSearchQuery(tradeSearchQuery);
+    if (q.length === 0) return rows;
+    return rows.filter((r) => closedTradeRowMatchesQuery(r, q));
+  }, [rows, tradeSearchQuery]);
+
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
-    const arr = [...rows];
+    const arr = [...filteredRows];
     const cmpStr = (a: string, b: string) => a.localeCompare(b, "ja");
     const cmpNum = (a: number | null, b: number | null) => {
       const ax = a == null || !Number.isFinite(a) ? null : a;
@@ -324,7 +346,9 @@ export function ClosedTradesTable({
       }
     });
     return arr;
-  }, [rows, sortDir, sortKey]);
+  }, [filteredRows, sortDir, sortKey]);
+
+  const footer = useMemo(() => computeClosedTradesFooter(sorted), [sorted]);
 
   function toggleSort(next: SortKey) {
     if (next === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -354,25 +378,46 @@ export function ClosedTradesTable({
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">取引履歴</h3>
             <p className="text-[10px] text-muted-foreground mt-0.5">
               完了済み売買（DB: trade_history・売却のみ）。現在価格は Yahoo 終値ベース（米国株は{" "}
-              <span className="font-mono text-muted-foreground/90">JPY=X</span> で円換算）。
+              <span className="font-mono text-muted-foreground/90">JPY=X</span> で円換算）。金額の JPY/USD
+              はログページ上部のトグルに連動します。
             </p>
             {rows.length > 0 ? (
               <p className="text-[10px] text-muted-foreground/90 mt-1.5">
-                各列見出し左のグリップ（縦点アイコン）をドラッグして列順を変更。表下のフッターに合計と min/max。列順はブラウザに保存されます。
+                各列見出し左のグリップ（縦点アイコン）をドラッグして列順を変更。表下のフッターは検索後の表示行に対する合計・min/max。CSV
+                は検索・並び順を反映した表示行のみ出力。列順はブラウザに保存されます。
               </p>
             ) : null}
           </div>
         </div>
         {rows.length > 0 ? (
-          <button
-            type="button"
-            onClick={handleCsvDownload}
-            className="inline-flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/50 transition-all"
-            title="現在の並び順で表示中の取引行を CSV でダウンロード"
-          >
-            <FileSpreadsheet size={14} />
-            CSV
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+            <label className="relative flex items-center min-w-[10rem] max-w-[18rem]">
+              <span className="sr-only">取引履歴を検索</span>
+              <Search
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none shrink-0"
+                aria-hidden
+              />
+              <input
+                type="search"
+                value={tradeSearchQuery}
+                onChange={(e) => setTradeSearchQuery(e.target.value)}
+                placeholder="銘柄・名前・日付・理由…"
+                className="w-full rounded-lg border border-border bg-muted/80 py-2 pl-8 pr-3 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/40"
+                autoComplete="off"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleCsvDownload}
+              disabled={sorted.length === 0}
+              className="inline-flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/50 transition-all disabled:opacity-40 disabled:pointer-events-none"
+              title="検索・並び順を反映した行のみ CSV でダウンロード"
+            >
+              <FileSpreadsheet size={14} />
+              CSV
+            </button>
+          </div>
         ) : null}
       </div>
       {rows.length === 0 ? (
@@ -385,6 +430,10 @@ export function ClosedTradesTable({
           <p className="text-[11px] leading-relaxed border-t border-border/60 pt-3">
             <span className="font-bold text-foreground/80">列の並べ替え（DnD）とフッター集計</span>は、売却完了行が 1 行以上あるときに表の下で利用できます（空のときは表を出していません）。
           </p>
+        </div>
+      ) : filteredRows.length === 0 ? (
+        <div className="px-5 py-8 text-sm text-muted-foreground">
+          検索に一致する取引がありません。条件を変えるか検索をクリアしてください。
         </div>
       ) : (
         <div className="overflow-x-auto">

@@ -969,6 +969,9 @@ export function InventoryTable({
     let trend5dN = 0;
     let volRatioSum = 0;
     let volRatioN = 0;
+    const priceViewSamples: number[] = [];
+    let priceViewWeightedNum = 0;
+    let priceViewWeightedDen = 0;
     for (const s of rows) {
       const pe = peOf(s);
       if (pe != null) {
@@ -1004,7 +1007,29 @@ export function InventoryTable({
         volRatioSum += vr;
         volRatioN += 1;
       }
+      const cp = s.currentPrice;
+      if (cp != null && Number.isFinite(cp) && cp > 0) {
+        const nat = nativeCurrencyForStock(s);
+        const pv = nat === viewCurrency ? cp : convert(cp, nat, viewCurrency);
+        if (Number.isFinite(pv) && pv > 0) {
+          priceViewSamples.push(pv);
+          const mv = s.marketValue;
+          if (mv > 0 && Number.isFinite(mv)) {
+            priceViewWeightedNum += pv * mv;
+            priceViewWeightedDen += mv;
+          }
+        }
+      }
     }
+
+    const priceViewWeightedMean =
+      priceViewWeightedDen > 0 && Number.isFinite(priceViewWeightedNum) ? priceViewWeightedNum / priceViewWeightedDen : null;
+    const priceViewSimpleMean =
+      priceViewSamples.length > 0
+        ? priceViewSamples.reduce((a, b) => a + b, 0) / priceViewSamples.length
+        : null;
+    const priceViewMin = priceViewSamples.length > 0 ? Math.min(...priceViewSamples) : null;
+    const priceViewMax = priceViewSamples.length > 0 ? Math.max(...priceViewSamples) : null;
 
     return {
       avgRuleOf40,
@@ -1021,8 +1046,13 @@ export function InventoryTable({
       avgVolRatioVisible: volRatioN > 0 ? volRatioSum / volRatioN : null,
       totalMarketValueVisible: totalMv,
       sumWeightVisible: sumWt,
+      priceViewWeightedMean,
+      priceViewSimpleMean,
+      priceViewMin,
+      priceViewMax,
+      priceViewCount: priceViewSamples.length,
     };
-  }, [sortedStocks]);
+  }, [sortedStocks, viewCurrency, convert]);
 
   function handleCsvDownload() {
     exportToCSV(stocksToCsvRows(sortedStocks), portfolioCsvFileName("portfolio"), STOCK_CSV_COLUMNS);
@@ -1312,7 +1342,7 @@ export function InventoryTable({
                             id={colId}
                             align="left"
                             className={`px-6 py-4 min-w-[12rem] max-w-[14rem] ${stickyFirst} cursor-pointer select-none`}
-                            title="Sort"
+                            metricHelpText={METRIC_HEADER_TIP.asset}
                           >
                             <button
                               type="button"
@@ -1330,7 +1360,7 @@ export function InventoryTable({
                             id={colId}
                             align="left"
                             className="px-3 py-4 min-w-[7.5rem] max-w-[10rem] cursor-pointer select-none"
-                            title="ピーター・リンチ6分類（①低成長〜⑥回復）"
+                            metricHelpText={METRIC_HEADER_TIP.lynch}
                           >
                             <button
                               type="button"
@@ -1348,7 +1378,7 @@ export function InventoryTable({
                             id={colId}
                             align="center"
                             className="px-2 py-4 w-10 text-center"
-                            title="ブックマーク（列の並べ替えのみドラッグ）"
+                            metricHelpText={METRIC_HEADER_TIP.bookmark}
                           >
                             <span className="pointer-events-none inline-flex justify-center" aria-hidden>
                               <Star className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1362,7 +1392,7 @@ export function InventoryTable({
                             id={colId}
                             align="center"
                             className="px-3 py-4 text-center cursor-pointer select-none whitespace-nowrap"
-                            title="初回取引日（年）で並べ替え（DB / Yahoo の first trade 近似。IPO 年とは限らない）"
+                            metricHelpText={METRIC_HEADER_TIP.listing}
                           >
                             <button
                               type="button"
@@ -1380,7 +1410,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="時価総額（参照: Yahoo Finance・同期時点。任意スケールの手入力も可）"
+                            metricHelpText={METRIC_HEADER_TIP.mktCap}
                           >
                             <button
                               type="button"
@@ -1398,7 +1428,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="長期変動率（%）: 日足の系列上・最古日〜最新日（adj ペア優先）。IPO 公式リターンではない。取得不能時のみ 現在価÷listing_price"
+                            metricHelpText={METRIC_HEADER_TIP.perfListed}
                           >
                             <button
                               type="button"
@@ -1416,7 +1446,7 @@ export function InventoryTable({
                             id={colId}
                             align="center"
                             className="px-4 py-4 text-center cursor-pointer select-none whitespace-nowrap"
-                            title="次回決算までの営業日数が小さいほど「近い」"
+                            metricHelpText={METRIC_HEADER_TIP.earnings}
                           >
                             <button
                               type="button"
@@ -1434,7 +1464,7 @@ export function InventoryTable({
                             id={colId}
                             align="left"
                             className="px-6 py-4 text-left cursor-pointer select-none min-w-[18rem]"
-                            title="配当利回り・配当日／Yahoo の連続配当年・自社株買い（TTM・期別はバッジホバー）。配当落ちが近い順でソート。"
+                            metricHelpText={METRIC_HEADER_TIP.research}
                           >
                             <button
                               type="button"
@@ -1488,7 +1518,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="ネットキャッシュ（現地通貨）。FMP 年次BS: 流動性資産−totalDebt。`npm run fetch:fmp` で ticker_efficiency_metrics に保存"
+                            metricHelpText={METRIC_HEADER_TIP.netCash}
                           >
                             <button
                               type="button"
@@ -1506,7 +1536,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="1株当たりネットキャッシュ = ネットC ÷ 希薄化株数（FMP quote）"
+                            metricHelpText={METRIC_HEADER_TIP.netCps}
                           >
                             <button
                               type="button"
@@ -1524,7 +1554,7 @@ export function InventoryTable({
                             id={colId}
                             align="center"
                             className="px-4 py-4 text-center cursor-pointer select-none whitespace-nowrap"
-                            title="投資優先度（ELITE → ACCUMULATE → WATCH → DANGER）"
+                            metricHelpText={METRIC_HEADER_TIP.judgment}
                           >
                             <button
                               type="button"
@@ -1640,7 +1670,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-6 py-4 text-right cursor-pointer select-none"
-                            title="Sort"
+                            metricHelpText={METRIC_HEADER_TIP.position}
                           >
                             <button
                               type="button"
@@ -1658,7 +1688,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="Trailing 優先、なければ Forward PER"
+                            metricHelpText={METRIC_HEADER_TIP.pe}
                           >
                             <button
                               type="button"
@@ -1694,7 +1724,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="Yahoo 由来の予想 EPS 成長率（年率イメージ・% 表示）"
+                            metricHelpText={METRIC_HEADER_TIP.egrowth}
                           >
                             <button
                               type="button"
@@ -1712,7 +1742,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
-                            title="Trailing 優先、なければ Forward EPS"
+                            metricHelpText={METRIC_HEADER_TIP.eps}
                           >
                             <button
                               type="button"
@@ -1730,7 +1760,7 @@ export function InventoryTable({
                             id={colId}
                             align="right"
                             className="px-4 py-4 text-right whitespace-nowrap"
-                            title="上段: 現在値 · 下段: 平均取得（あれば）· 現在と取得が有効なとき含み損益%（dashboard-data 由来）"
+                            metricHelpText={METRIC_HEADER_TIP.price}
                           >
                             <span className="pointer-events-none">Price</span>
                           </SortableInventoryTh>
@@ -2756,7 +2786,63 @@ export function InventoryTable({
                       </td>
                     );
                   case "price":
-                    return <td key={colId} className="px-4 py-3 align-top" />;
+                    return (
+                      <td
+                        key={colId}
+                        className="px-4 py-3 text-right align-top font-mono text-[11px] leading-tight"
+                        title="表示中の行について、現在株価をビュー通貨に換算した統計（時価加重平均・単純平均・min/max）"
+                      >
+                        {footerStats.priceViewCount > 0 ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                              Price ({viewCurrency})
+                            </span>
+                            {footerStats.priceViewWeightedMean != null ? (
+                              <span className="font-bold text-foreground/90 tabular-nums">
+                                加重{" "}
+                                {formatLocalPriceForView(
+                                  footerStats.priceViewWeightedMean,
+                                  viewCurrency,
+                                  viewCurrency,
+                                  convert,
+                                )}
+                              </span>
+                            ) : null}
+                            {footerStats.priceViewSimpleMean != null ? (
+                              <span className="text-[10px] text-muted-foreground tabular-nums">
+                                単純{" "}
+                                {formatLocalPriceForView(
+                                  footerStats.priceViewSimpleMean,
+                                  viewCurrency,
+                                  viewCurrency,
+                                  convert,
+                                )}
+                              </span>
+                            ) : null}
+                            {footerStats.priceViewMin != null && footerStats.priceViewMax != null ? (
+                              <span className="text-[10px] text-muted-foreground/90 tabular-nums max-w-[14rem] leading-tight">
+                                min{" "}
+                                {formatLocalPriceForView(
+                                  footerStats.priceViewMin,
+                                  viewCurrency,
+                                  viewCurrency,
+                                  convert,
+                                )}{" "}
+                               〜 max{" "}
+                                {formatLocalPriceForView(
+                                  footerStats.priceViewMax,
+                                  viewCurrency,
+                                  viewCurrency,
+                                  convert,
+                                )}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    );
                   default: {
                     const _exhaustive: never = colId;
                     return _exhaustive;

@@ -31,6 +31,7 @@ import {
   ecosystemCumulativeSparklineTooltip,
   ecosystemWatchlistAlphaCellTooltip,
 } from "@/src/lib/alpha-story-tooltip";
+import { downloadEcosystemCumulativeAlphaCsv } from "@/src/lib/ecosystem-cumulative-alpha-csv";
 import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
@@ -608,6 +609,18 @@ export function EcosystemWatchlistTableRow({
                   ) : (
                     "—"
                   )}
+                  {e.alphaHistory.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        downloadEcosystemCumulativeAlphaCsv(e, { themeLabel: themeLabel });
+                      }}
+                      className="text-[9px] font-bold uppercase tracking-wide text-cyan-400/90 border border-cyan-500/35 rounded px-1.5 py-0.5 hover:bg-cyan-500/10"
+                    >
+                      CSV
+                    </button>
+                  ) : null}
                   {e.alphaDailyHistory && e.alphaDailyHistory.length > 1 ? (
                     <TrendMiniChart history={e.alphaDailyHistory} maxPoints={18} lastBarPulse={e.priceSource === "live"} />
                   ) : null}

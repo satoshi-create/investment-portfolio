@@ -17,6 +17,7 @@ import type {
   ThemeStructuralSparklineEntry,
   TickerInstrumentKind,
   ResourceStructuralSyncData,
+  UrbanMiningMetalSpotRow,
 } from "@/src/types/investment";
 import {
   benchmarkDailyReturnPercentByEndDate,
@@ -2874,6 +2875,7 @@ export async function getThemeDetailData(
   let structuralAlphaTotalPct: number | null = null;
   let cumulativeAlphaAnchorDate: string | null = null;
   let resourceStructuralSync: ResourceStructuralSyncData | null = null;
+  let urbanMiningMetalSpot: UrbanMiningMetalSpotRow[] | null = null;
 
   let themeSyntheticUsRatio: number | null = null;
   let themeSyntheticJpRatio: number | null = null;
@@ -3146,6 +3148,39 @@ export async function getThemeDetailData(
     }
   }
 
+  if (themeName === URBAN_MINING_THEME_NAME) {
+    const defs: { labelJa: string; yahooSymbol: string }[] = [
+      { labelJa: "金 (COMEX GC=F)", yahooSymbol: "GC=F" },
+      { labelJa: "銀 (COMEX SI=F)", yahooSymbol: "SI=F" },
+      { labelJa: "銅 (COMEX HG=F)", yahooSymbol: "HG=F" },
+    ];
+    try {
+      urbanMiningMetalSpot = await Promise.all(
+        defs.map(async (d) => {
+          const r = await fetchLatestPriceWithChangePct(d.yahooSymbol, null);
+          const ok = r.close > 0 && Number.isFinite(r.close) && r.date.trim().length > 0;
+          return {
+            labelJa: d.labelJa,
+            yahooSymbol: d.yahooSymbol,
+            price: ok ? r.close : null,
+            changePct: r.changePct,
+            asOfDate: ok ? r.date.trim().slice(0, 10) : null,
+          };
+        }),
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[getThemeDetailData] urbanMiningMetalSpot failed: ${msg}`);
+      urbanMiningMetalSpot = defs.map((d) => ({
+        labelJa: d.labelJa,
+        yahooSymbol: d.yahooSymbol,
+        price: null,
+        changePct: null,
+        asOfDate: null,
+      }));
+    }
+  }
+
   return {
     themeName,
     themeMissing: theme == null,
@@ -3172,6 +3207,7 @@ export async function getThemeDetailData(
     themeStructuralTrendTotalPct,
     themeStructuralTrendStartDate,
     resourceStructuralSync,
+    urbanMiningMetalSpot,
   };
 }
 

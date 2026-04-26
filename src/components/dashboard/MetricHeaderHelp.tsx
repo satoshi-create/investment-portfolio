@@ -22,7 +22,10 @@ export function MetricHeaderHelp({ text, className }: { text: string; className?
           <Info className="h-3 w-3" strokeWidth={2.25} aria-hidden />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" className="text-left font-normal normal-case tracking-normal">
+      <TooltipContent
+        side="top"
+        className="text-left font-normal normal-case tracking-normal max-w-[min(22rem,calc(100vw-2rem))] whitespace-pre-wrap text-xs leading-snug"
+      >
         {text}
       </TooltipContent>
     </Tooltip>

@@ -16,6 +16,7 @@ import {
   ecosystemCumulativeSparklineTooltip,
   ecosystemMappedAlphaCellTooltip,
 } from "@/src/lib/alpha-story-tooltip";
+import { downloadEcosystemCumulativeAlphaCsv } from "@/src/lib/ecosystem-cumulative-alpha-csv";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { cn } from "@/src/lib/cn";
@@ -956,14 +957,28 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                   e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? pctClass(e.latestAlpha) : "text-muted-foreground"
                 } ${stickyFirst}`}
               >
-                {e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? (
-                  <>
-                    {e.latestAlpha > 0 ? "+" : ""}
-                    {e.latestAlpha.toFixed(2)}%
-                  </>
-                ) : (
-                  "—"
-                )}
+                <div className="flex flex-col items-end gap-1">
+                  {e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? (
+                    <span>
+                      {e.latestAlpha > 0 ? "+" : ""}
+                      {e.latestAlpha.toFixed(2)}%
+                    </span>
+                  ) : (
+                    <span>—</span>
+                  )}
+                  {e.alphaHistory.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        downloadEcosystemCumulativeAlphaCsv(e, { themeLabel: themeLabel });
+                      }}
+                      className="text-[9px] font-bold uppercase tracking-wide text-cyan-400/90 border border-cyan-500/35 rounded px-1.5 py-0.5 hover:bg-cyan-500/10"
+                    >
+                      CSV
+                    </button>
+                  ) : null}
+                </div>
               </td>
             );
           case "cumTrend":

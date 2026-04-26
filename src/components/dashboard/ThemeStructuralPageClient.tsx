@@ -38,6 +38,7 @@ import {
   type ThemeDetailData,
   type ThemeEcosystemWatchItem,
   type TickerInstrumentKind,
+  type UrbanMiningMetalSpotRow,
   INVESTMENT_METRIC_TONE_TEXT_CLASS,
   investmentMetricToneForSignedPercent,
 } from "@/src/types/investment";
@@ -668,6 +669,31 @@ function normalizeThemeDetailResponse(
       const pts = (raw as ResourceStructuralSyncData).points;
       if (!Array.isArray(pts)) return null;
       return raw as ResourceStructuralSyncData;
+    })(),
+    urbanMiningMetalSpot: ((): UrbanMiningMetalSpotRow[] | null => {
+      const raw = (rest as { urbanMiningMetalSpot?: unknown }).urbanMiningMetalSpot;
+      if (!Array.isArray(raw) || raw.length === 0) return null;
+      const out: UrbanMiningMetalSpotRow[] = [];
+      for (const row of raw) {
+        if (row == null || typeof row !== "object") continue;
+        const o = row as Record<string, unknown>;
+        const labelJa = typeof o.labelJa === "string" ? o.labelJa : typeof o.label_ja === "string" ? o.label_ja : "";
+        const yahooSymbol = typeof o.yahooSymbol === "string" ? o.yahooSymbol : "";
+        const price = typeof o.price === "number" && Number.isFinite(o.price) && o.price > 0 ? o.price : null;
+        const changePct =
+          typeof o.changePct === "number" && Number.isFinite(o.changePct) ? o.changePct
+          : typeof o.change_pct === "number" && Number.isFinite(o.change_pct) ? o.change_pct
+          : null;
+        const asOfDate =
+          typeof o.asOfDate === "string" && o.asOfDate.length >= 10
+            ? o.asOfDate.slice(0, 10)
+            : typeof o.as_of_date === "string" && o.as_of_date.length >= 10
+              ? o.as_of_date.slice(0, 10)
+              : null;
+        if (labelJa.length === 0 || yahooSymbol.length === 0) continue;
+        out.push({ labelJa, yahooSymbol, price, changePct, asOfDate });
+      }
+      return out.length > 0 ? out : null;
     })(),
   };
 }
@@ -2383,6 +2409,53 @@ export function ThemePageClient({
                 onToggleEcosystemKeep={(id) => void handleToggleEcosystemKeep(id)}
                 resourceSyncJudgments={data.resourceStructuralSync?.individualJudgments ?? null}
               />
+            ) : null}
+
+            {themeLabel.trim() === URBAN_MINING_THEME_NAME && data.urbanMiningMetalSpot != null ? (
+              <section className="rounded-2xl border border-amber-500/25 bg-card/50 p-4 md:p-5 shadow-lg">
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  金・銀・銅 参照相場（Yahoo Finance）
+                </h2>
+                <p className="text-[9px] text-muted-foreground/90 mt-1 mb-3 font-mono">
+                  COMEX 先物シンボル（GC=F / SI=F / HG=F）の日足最新終値（Yahoo は USD 建て）。表示金額はページ上部の USD/JPY
+                  トグルに合わせて換算します。前日比%は直近2営業日終値から算出（%は価格の％変化で通貨によらず同値）。
+                </p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {data.urbanMiningMetalSpot.map((row) => (
+                    <div
+                      key={row.yahooSymbol}
+                      className="rounded-xl border border-border bg-background/40 px-3 py-2.5"
+                    >
+                      <p className="text-[10px] font-bold text-muted-foreground">{row.labelJa}</p>
+                      <p className="mt-1 font-mono text-sm font-bold text-foreground tabular-nums">
+                        {row.price != null && Number.isFinite(row.price) && row.price > 0
+                          ? formatLocalPriceForView(row.price, "USD", viewCurrency, convert)
+                          : "—"}
+                      </p>
+                      <p className="mt-0.5 text-[10px] font-mono text-muted-foreground">
+                        {row.changePct != null && Number.isFinite(row.changePct) ? (
+                          <span
+                            className={
+                              row.changePct > 0
+                                ? "text-emerald-400"
+                                : row.changePct < 0
+                                  ? "text-rose-400"
+                                  : "text-muted-foreground"
+                            }
+                          >
+                            {row.changePct > 0 ? "+" : ""}
+                            {row.changePct.toFixed(2)}% 1D
+                          </span>
+                        ) : (
+                          <span>前日比 —</span>
+                        )}
+                        {row.asOfDate ? <span className="ml-2">as of {row.asOfDate}</span> : null}
+                      </p>
+                      <p className="mt-1 text-[9px] font-mono text-muted-foreground/80">{row.yahooSymbol}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
             ) : null}
 
             {themeLabel.trim() === URBAN_MINING_THEME_NAME &&
