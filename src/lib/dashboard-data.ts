@@ -1924,6 +1924,7 @@ async function enrichEcosystemMemberRow(
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([recordedAt, alphaValue]) => ({ recordedAt, alphaValue }));
 
+  let usedYahooFallbackForAlphaSeries = false;
   let lastClose: number | null = null;
   const lastHist = histRs.rows[histRs.rows.length - 1];
   if (lastHist?.close_price != null && Number.isFinite(Number(lastHist.close_price))) {
@@ -1937,11 +1938,13 @@ async function enrichEcosystemMemberRow(
         const live = await fetchRecentDatedDailyAlphasVsBenchmark(effectiveTicker, 120, bench, null);
         if (live.rows.length >= 2) {
           datedRows = live.rows;
+          usedYahooFallbackForAlphaSeries = true;
           if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
             lastClose = live.lastClose;
           }
         } else if (live.rows.length > 0 && datedRows.length === 0) {
           datedRows = live.rows;
+          usedYahooFallbackForAlphaSeries = true;
           if (live.lastClose != null && Number.isFinite(live.lastClose) && live.lastClose > 0) {
             lastClose = live.lastClose;
           }
@@ -1964,6 +1967,46 @@ async function enrichEcosystemMemberRow(
   const alphaCumulativeObservationDates = cumPoints.map((p) => p.date);
   const latestAlpha = alphaHistory.length > 0 ? alphaHistory[alphaHistory.length - 1]! : null;
   const alphaObservationStartDate = cumPoints[0]?.date ?? null;
+
+  {
+    const raw = process.env.DEBUG_ECOSYSTEM_ALPHA_TICKER?.trim();
+    if (raw && raw.length > 0 && effectiveTicker.length > 0) {
+      const norm = (s: string) => s.replace(/\.T$/i, "").toUpperCase();
+      const match =
+        norm(effectiveTicker) === norm(raw) || effectiveTicker.toUpperCase() === raw.toUpperCase();
+      if (match) {
+        const tailN = 15;
+        const dailyTail = datedRows.slice(-tailN);
+        const cumTail = cumPoints.slice(-tailN);
+        const maxAbsDailyAll = datedRows.length
+          ? Math.max(...datedRows.map((r) => Math.abs(Number(r.alphaValue))))
+          : 0;
+        console.log(
+          JSON.stringify(
+            {
+              tag: "enrichEcosystemMemberAlpha",
+              effectiveTicker,
+              debugMatchTicker: raw,
+              usedYahooFallbackForAlphaSeries,
+              fast,
+              inPortfolio,
+              alphaHistoryDbRowCount: histRs.rows.length,
+              startDate,
+              maxAbsDailyAll,
+              dailyAlphaTail: dailyTail.map((r) => ({
+                recordedAt: r.recordedAt,
+                alphaValue: r.alphaValue,
+              })),
+              cumulativeAlphaTail: cumTail.map((p) => ({ date: p.date, cumulative: p.cumulative })),
+              latestCumulative: latestAlpha,
+            },
+            null,
+            2,
+          ),
+        );
+      }
+    }
+  }
 
   /**
    * Last 列: エコシステム銘柄も保有と同様、ライブ quote を優先し、失敗時は直近日足終値へフォールバック。
@@ -2940,7 +2983,7 @@ export async function getThemeDetailData(
         const benchDays = Math.min(180, Math.max(70, spanDays + 45));
         const [vooBars, topixBars] = await Promise.all([
           fetchPriceHistory(SIGNAL_BENCHMARK_TICKER, benchDays, null),
-          fetchPriceHistory(TOPIX_ETF_BENCHMARK_TICKER, benchDays, null),
+          fetchPriceHistory(TOPIX_ETF_BENCHMARK_TICKER, benchDays, null, { forAlpha: true }),
         ]);
         const vooRet = benchmarkDailyReturnPercentByEndDate(vooBars);
         const topixRet = benchmarkDailyReturnPercentByEndDate(topixBars);

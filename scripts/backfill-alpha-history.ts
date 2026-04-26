@@ -6,13 +6,8 @@
 import { config } from "dotenv";
 
 import { defaultProfileUserId } from "../src/lib/authorize-signals";
-import {
-  computeAlphaPercent,
-  dailyReturnPercent,
-  defaultBenchmarkTickerForTicker,
-  SIGNAL_BENCHMARK_TICKER,
-} from "../src/lib/alpha-logic";
-import { upsertAlphaHistoryRow } from "../src/lib/db-operations";
+import { backfillAlphaHistoryForTicker } from "../src/lib/alpha-history-reconcile";
+import { defaultBenchmarkTickerForTicker, SIGNAL_BENCHMARK_TICKER } from "../src/lib/alpha-logic";
 import { getDb, isDbConfigured } from "../src/lib/db";
 import { generateSignalsForUser } from "../src/lib/generate-signals";
 import { fetchHoldingsWithProviderForUser } from "../src/lib/holdings-queries";
@@ -25,11 +20,6 @@ config();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function sharedSortedDates(stockBars: PriceBar[], benchBars: PriceBar[]): string[] {
-  const benchSet = new Set(benchBars.map((b) => b.date));
-  return [...new Set(stockBars.map((b) => b.date).filter((d) => benchSet.has(d)))].sort();
-}
-
 async function backfillOneHolding(
   db: Awaited<ReturnType<typeof getDb>>,
   userId: string,
@@ -38,39 +28,14 @@ async function backfillOneHolding(
   benchmarkTicker: string,
   days: number,
 ): Promise<number> {
-  const benchByDate = new Map(benchBars.map((b) => [b.date, b.close]));
-  const stockBars = await fetchPriceHistory(holding.ticker, days, holding.providerSymbol);
-  const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
-  const shared = sharedSortedDates(stockBars, benchBars);
-  if (shared.length < 2) return 0;
-
-  let written = 0;
-  for (let i = 1; i < shared.length; i++) {
-    const dPrev = shared[i - 1]!;
-    const dCur = shared[i]!;
-    const s0 = stockBy.get(dPrev);
-    const s1 = stockBy.get(dCur);
-    const b0 = benchByDate.get(dPrev);
-    const b1 = benchByDate.get(dCur);
-    if (s0 == null || s1 == null || b0 == null || b1 == null) continue;
-
-    const rStock = dailyReturnPercent(s0, s1);
-    const rBench = dailyReturnPercent(b0, b1);
-    const alpha = computeAlphaPercent(rStock, rBench);
-    if (alpha === null) continue;
-
-    await upsertAlphaHistoryRow(db, {
-      userId,
-      ticker: holding.ticker,
-      holdingId: holding.id,
-      recordedAtYmd: dCur,
-      closePrice: s1,
-      alphaValue: alpha,
-      benchmarkTicker,
-    });
-    written += 1;
-  }
-  return written;
+  return backfillAlphaHistoryForTicker(
+    db,
+    userId,
+    { ticker: holding.ticker, providerSymbol: holding.providerSymbol, holdingId: holding.id },
+    benchBars,
+    benchmarkTicker,
+    days,
+  );
 }
 
 const backfillDays = Math.max(5, Math.min(120, Math.floor(Number(process.env.BACKFILL_DAYS ?? "30") || 30)));
@@ -111,7 +76,7 @@ async function main() {
       let benchBars = benchBarsCache.get(benchmarkTicker) ?? null;
       if (!benchBars) {
         process.stdout.write(`(fetch ${benchmarkTicker}) `);
-        benchBars = await fetchPriceHistory(benchmarkTicker, backfillDays, null);
+        benchBars = await fetchPriceHistory(benchmarkTicker, backfillDays, null, { forAlpha: true });
         benchBarsCache.set(benchmarkTicker, benchBars);
       }
       if (benchBars.length < 2) {

@@ -10,7 +10,11 @@ import {
   classifyTickerInstrument,
   computeAlphaPercent,
   dailyReturnPercent,
+  defaultBenchmarkTickerForTicker,
+  imputeSpikeChronologicalDailyAlphaNumbers,
+  imputeSpikeDatedAlphaRows,
   roundAlphaMetric,
+  spikeImputeOptionsForStockAndBenchmark,
   SIGNAL_BENCHMARK_TICKER,
   utcTodayYmd,
   type DatedAlphaRow,
@@ -155,6 +159,15 @@ function autoYahooSymbolForFallbacks(ticker: string): string {
   return toYahooFinanceSymbol(ticker, null);
 }
 
+/**
+ * 日次 Alpha 用: 米株等は未調整終値のまま、日本株・投信は分割調整後（adj 優先）に揃え分母と分子のベース。
+ * （関数名に `use` 接頭辞を付けない — ESLint react-hooks/rules-of-hooks 回避）
+ */
+function tickerPrefersAdjustedClosesForAlpha(ticker: string): boolean {
+  const k = classifyTickerInstrument(ticker.trim());
+  return k === "JP_LISTED_EQUITY" || k === "JP_INVESTMENT_TRUST";
+}
+
 /** Alternate Yahoo symbols for JP codes when `.T` returns no series (extend as needed). */
 function yahooSymbolFallbacks(primary: string, ticker: string): string[] {
   const raw = ticker.trim();
@@ -179,17 +192,76 @@ async function fetchChartClosesWithFallbacks(yahooSymbol: string, ticker: string
 }
 
 /**
+ * Yahoo 日足（`return: "array"`）の調整後終値（なければ名目終値）を 1 本/日。分割スパイク向け outlier フィルタ付き。
+ */
+async function fetchChartArrayAdjustedCloses(yahooSymbol: string, calendarDays: number): Promise<PriceBar[]> {
+  const days = Math.max(1, Math.floor(Number.isFinite(calendarDays) ? calendarDays : 1));
+  const { period1, period2 } = periodRangeForCalendarDays(days);
+  const result = (await yahooFinance.chart(
+    yahooSymbol,
+    {
+      period1,
+      period2,
+      interval: "1d",
+      return: "array",
+    },
+    { validateResult: false },
+  )) as { quotes?: ChartArrayQuote[] };
+  const daily = collectSortedDailyBarsFromChartQuotes(result.quotes ?? []);
+  const out: PriceBar[] = [];
+  for (const b of daily) {
+    const p = effectiveSortedBarPrice(b);
+    if (p == null) continue;
+    out.push({ date: b.ymd, close: p });
+  }
+  return out;
+}
+
+async function fetchChartAdjustedClosesWithFallbacks(yahooSymbol: string, ticker: string, calendarDays: number): Promise<PriceBar[]> {
+  let lastErr: unknown;
+  for (const sym of yahooSymbolFallbacks(yahooSymbol, ticker)) {
+    try {
+      const bars = await fetchChartArrayAdjustedCloses(sym, calendarDays);
+      if (bars.length > 0) return bars;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  for (const sym of yahooSymbolFallbacks(yahooSymbol, ticker)) {
+    try {
+      const bars = await fetchChartCloses(sym, calendarDays);
+      if (bars.length > 0) return bars;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr !== undefined) logSkip(yahooSymbol, "all Yahoo adjusted+close symbol attempts failed", lastErr);
+  return [];
+}
+
+/**
  * Load daily bars: uses explicit provider symbol only (no .T fallbacks), or auto-resolution + JP fallbacks.
+ * `forAlpha` かつ日本向けのとき `adjclose` 系（outlier 除去後）を優先し、分割直後の偽リターンを抑える。
  */
 async function fetchBarsForInstrument(
   ticker: string,
   providerSymbol: string | null | undefined,
   calendarDays: number,
   logContext: string,
+  options?: { forAlpha?: boolean },
 ): Promise<PriceBar[]> {
+  const forAlpha = options?.forAlpha === true;
+  const useAdj = forAlpha && tickerPrefersAdjustedClosesForAlpha(ticker);
   const manual = trimProvider(providerSymbol);
   if (manual != null) {
     try {
+      if (useAdj) {
+        const adj = await fetchChartArrayAdjustedCloses(manual, calendarDays);
+        if (adj.length > 0) return adj;
+        const raw = await fetchChartCloses(manual, calendarDays);
+        if (raw.length === 0) logSkip(logContext, `no daily bars (provider_symbol=${manual}, adj empty; close also empty)`);
+        return raw;
+      }
       const bars = await fetchChartCloses(manual, calendarDays);
       if (bars.length === 0) logSkip(logContext, `no daily bars (provider_symbol=${manual})`);
       return bars;
@@ -203,6 +275,9 @@ async function fetchBarsForInstrument(
   if (!yahooSymbol) {
     logSkip(logContext, "empty symbol");
     return [];
+  }
+  if (useAdj) {
+    return fetchChartAdjustedClosesWithFallbacks(yahooSymbol, ticker, calendarDays);
   }
   return fetchChartClosesWithFallbacks(yahooSymbol, ticker, calendarDays);
 }
@@ -1129,10 +1204,12 @@ async function fetchChartCloses(yahooSymbol: string, calendarDays: number): Prom
   return bars;
 }
 
-async function fetchBarsForBenchmark(benchmarkTicker: string, calendarDays: number): Promise<PriceBar[]> {
-  const sym = toYahooFinanceSymbol(benchmarkTicker, null);
-  if (!sym) return [];
-  return fetchChartClosesWithFallbacks(sym, benchmarkTicker, calendarDays);
+async function fetchBarsForBenchmark(
+  benchmarkTicker: string,
+  calendarDays: number,
+  options?: { forAlpha?: boolean },
+): Promise<PriceBar[]> {
+  return fetchBarsForInstrument(benchmarkTicker, null, calendarDays, `bench=${benchmarkTicker}`, options);
 }
 
 /**
@@ -1567,18 +1644,25 @@ export async function fetchLatestHoldingsPriceSnapshots(
 
 /**
  * Daily closes for backfill (~`days` trading sessions; uses extra calendar window).
+ * `forAlpha: true` のとき日本株/投信/1306.T は調整後列を使い、かつ**系列単体では slice しない**（与ベンチの共有日付で caller がカットする）。
  */
 export async function fetchPriceHistory(
   ticker: string,
   days: number,
   providerSymbol?: string | null,
+  options?: { forAlpha?: boolean },
 ): Promise<PriceBar[]> {
   const manual = trimProvider(providerSymbol);
   const logLabel = manual ?? ticker;
   const safeDays = Math.max(1, Math.floor(Number.isFinite(days) ? days : 1));
   const calendarWindow = Math.max(30, Math.ceil(safeDays * 2));
+  const forAlpha = options?.forAlpha === true;
   try {
-    const bars = await fetchBarsForInstrument(ticker, providerSymbol, calendarWindow, logLabel);
+    const bars = await fetchBarsForInstrument(ticker, providerSymbol, calendarWindow, logLabel, { forAlpha });
+    if (bars.length === 0) return [];
+    if (forAlpha) {
+      return bars;
+    }
     if (bars.length <= safeDays) return bars;
     return bars.slice(-safeDays);
   } catch (e) {
@@ -1602,10 +1686,12 @@ export async function fetchRecentDailyAlphaSeriesVsBenchmark(
   providerSymbol?: string | null,
 ): Promise<{ alphas: number[]; lastClose: number | null }> {
   const safeDays = Math.max(15, Math.min(120, Math.floor(Number.isFinite(calendarDays) ? calendarDays : 45)));
+  const forAlpha =
+    tickerPrefersAdjustedClosesForAlpha(ticker) || tickerPrefersAdjustedClosesForAlpha(benchmarkTicker);
   try {
     const [stockBars, benchBars] = await Promise.all([
-      fetchPriceHistory(ticker, safeDays, providerSymbol),
-      fetchPriceHistory(benchmarkTicker, safeDays, null),
+      fetchPriceHistory(ticker, safeDays, providerSymbol, { forAlpha: true }),
+      fetchPriceHistory(benchmarkTicker, safeDays, null, { forAlpha: true }),
     ]);
     if (stockBars.length < 2 || benchBars.length < 2) {
       const last = stockBars.length > 0 ? stockBars[stockBars.length - 1]!.close : null;
@@ -1613,11 +1699,14 @@ export async function fetchRecentDailyAlphaSeriesVsBenchmark(
     }
     const benchByDate = new Map(benchBars.map((b) => [b.date, b.close]));
     const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
-    const shared = sharedSortedDatesForBenchmarkOverlap(stockBars, benchBars);
+    let shared = sharedSortedDatesForBenchmarkOverlap(stockBars, benchBars);
     if (shared.length < 2) {
       return { alphas: [], lastClose: stockBars[stockBars.length - 1]!.close };
     }
-    const alphas: number[] = [];
+    if (shared.length > safeDays) {
+      shared = shared.slice(-safeDays);
+    }
+    const rawAlphas: number[] = [];
     for (let i = 1; i < shared.length; i++) {
       const dPrev = shared[i - 1]!;
       const dCur = shared[i]!;
@@ -1630,8 +1719,14 @@ export async function fetchRecentDailyAlphaSeriesVsBenchmark(
       const rBench = dailyReturnPercent(b0, b1);
       const alpha = computeAlphaPercent(rStock, rBench);
       if (alpha === null) continue;
-      alphas.push(roundAlphaMetric(alpha));
+      rawAlphas.push(roundAlphaMetric(alpha));
     }
+    const alphas = forAlpha
+      ? imputeSpikeChronologicalDailyAlphaNumbers(
+          rawAlphas,
+          spikeImputeOptionsForStockAndBenchmark(ticker, benchmarkTicker),
+        )
+      : rawAlphas;
     const lastClose =
       stockBy.get(shared[shared.length - 1]!) ?? stockBars[stockBars.length - 1]!.close ?? null;
     return { alphas, lastClose };
@@ -1651,10 +1746,12 @@ export async function fetchRecentDatedDailyAlphasVsBenchmark(
   providerSymbol?: string | null,
 ): Promise<{ rows: DatedAlphaRow[]; lastClose: number | null }> {
   const safeDays = Math.max(15, Math.min(120, Math.floor(Number.isFinite(calendarDays) ? calendarDays : 45)));
+  const forAlpha =
+    tickerPrefersAdjustedClosesForAlpha(ticker) || tickerPrefersAdjustedClosesForAlpha(benchmarkTicker);
   try {
     const [stockBars, benchBars] = await Promise.all([
-      fetchPriceHistory(ticker, safeDays, providerSymbol),
-      fetchPriceHistory(benchmarkTicker, safeDays, null),
+      fetchPriceHistory(ticker, safeDays, providerSymbol, { forAlpha: true }),
+      fetchPriceHistory(benchmarkTicker, safeDays, null, { forAlpha: true }),
     ]);
     if (stockBars.length < 2 || benchBars.length < 2) {
       const last = stockBars.length > 0 ? stockBars[stockBars.length - 1]!.close : null;
@@ -1662,11 +1759,14 @@ export async function fetchRecentDatedDailyAlphasVsBenchmark(
     }
     const benchByDate = new Map(benchBars.map((b) => [b.date, b.close]));
     const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
-    const shared = sharedSortedDatesForBenchmarkOverlap(stockBars, benchBars);
+    let shared = sharedSortedDatesForBenchmarkOverlap(stockBars, benchBars);
     if (shared.length < 2) {
       return { rows: [], lastClose: stockBars[stockBars.length - 1]!.close };
     }
-    const rows: DatedAlphaRow[] = [];
+    if (shared.length > safeDays) {
+      shared = shared.slice(-safeDays);
+    }
+    const rowDraft: DatedAlphaRow[] = [];
     for (let i = 1; i < shared.length; i++) {
       const dPrev = shared[i - 1]!;
       const dCur = shared[i]!;
@@ -1679,8 +1779,14 @@ export async function fetchRecentDatedDailyAlphasVsBenchmark(
       const rBench = dailyReturnPercent(b0, b1);
       const alpha = computeAlphaPercent(rStock, rBench);
       if (alpha === null) continue;
-      rows.push({ recordedAt: dCur, alphaValue: roundAlphaMetric(alpha) });
+      rowDraft.push({ recordedAt: dCur, alphaValue: roundAlphaMetric(alpha) });
     }
+    const rows = forAlpha
+      ? imputeSpikeDatedAlphaRows(
+          rowDraft,
+          spikeImputeOptionsForStockAndBenchmark(ticker, benchmarkTicker),
+        )
+      : rowDraft;
     const lastClose =
       stockBy.get(shared[shared.length - 1]!) ?? stockBars[stockBars.length - 1]!.close ?? null;
     return { rows, lastClose };
@@ -1732,9 +1838,10 @@ export async function fetchLatestAlphaSnapshot(input: {
   benchmarkTicker?: string;
 }): Promise<LatestAlphaPriceRow | null> {
   const { holdingId, ticker } = input;
-  const benchTicker = input.benchmarkTicker ?? SIGNAL_BENCHMARK_TICKER;
+  const benchTicker = input.benchmarkTicker ?? defaultBenchmarkTickerForTicker(ticker);
   const manual = trimProvider(input.providerSymbol);
   const stockLog = manual ?? ticker;
+  const forAlpha = tickerPrefersAdjustedClosesForAlpha(ticker) || tickerPrefersAdjustedClosesForAlpha(benchTicker);
 
   if (!ticker.trim() && manual == null) {
     logSkip(`holdingId=${holdingId}`, "empty ticker");
@@ -1749,8 +1856,8 @@ export async function fetchLatestAlphaSnapshot(input: {
 
   try {
     const [stockBars, benchBars] = await Promise.all([
-      fetchBarsForInstrument(ticker, input.providerSymbol, 90, `holding=${holdingId}`),
-      fetchBarsForBenchmark(benchTicker, 90),
+      fetchBarsForInstrument(ticker, input.providerSymbol, 90, `holding=${holdingId}`, { forAlpha }),
+      fetchBarsForBenchmark(benchTicker, 90, { forAlpha }),
     ]);
 
     const stockDates = [...new Set(stockBars.map((b) => b.date))].sort();

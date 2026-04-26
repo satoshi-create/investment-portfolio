@@ -300,10 +300,158 @@ export function portfolioAverageFxNeutralDailyAlphaPct(stocks: { alphaHistory: r
  */
 export const ALPHA_HISTORY_PERSIST_ABS_MAX = 20;
 
+/**
+ * 日本株等で DB / 価格ズレ由来の「日次 Alpha の垂直跳躍」を緩めるための、営業日同士の変化量閾値（%pt）。
+ * 前日比でこれを超える日は {@link imputeSpikeDatedAlphaRows} で前後の平均（または隣接）に置換する。
+ */
+export const SPIKE_DAILY_ALPHA_IMPUTE_JUMP_ABS = 16;
+
+/**
+ * 単一観測日の日次 |Alpha| だけでスパイク扱いする床（%pt）。Yahoo 不整合の巨大リターン差分向け。
+ */
+export const SPIKE_DAILY_ALPHA_IMPUTE_LEVEL_ABS = 22;
+
+/**
+ * 日本市場（上場株・投信、および JP ベンチマーク併用）向け: 上記より厳しめ。権利落ち・Yahoo 列ズレの偽 10〜40% 日次αを減らす。
+ */
+export const SPIKE_DAILY_ALPHA_IMPUTE_JUMP_ABS_JP = 9;
+
+/** JP 文脈の単日 |日次α| 床（%pt）。相対 TOPIX/1306 では単日 12% 超は実務上ほぼ異常データ。 */
+export const SPIKE_DAILY_ALPHA_IMPUTE_LEVEL_ABS_JP = 12;
+
+function isJapanInstrumentForSpikeImpute(ticker: string): boolean {
+  const k = classifyTickerInstrument(ticker);
+  return k === "JP_LISTED_EQUITY" || k === "JP_INVESTMENT_TRUST";
+}
+
+/**
+ * 自株 or ベンチのいずれかが日本枠のとき、JP 用の厳しめ impute 閾値。それ以外は従来の %pt。
+ */
+export function spikeImputeOptionsForStockAndBenchmark(
+  stockTicker: string,
+  benchmarkTicker: string,
+): { jumpAbs: number; levelAbs: number } {
+  if (isJapanInstrumentForSpikeImpute(stockTicker) || isJapanInstrumentForSpikeImpute(benchmarkTicker)) {
+    return {
+      jumpAbs: SPIKE_DAILY_ALPHA_IMPUTE_JUMP_ABS_JP,
+      levelAbs: SPIKE_DAILY_ALPHA_IMPUTE_LEVEL_ABS_JP,
+    };
+  }
+  return { jumpAbs: SPIKE_DAILY_ALPHA_IMPUTE_JUMP_ABS, levelAbs: SPIKE_DAILY_ALPHA_IMPUTE_LEVEL_ABS };
+}
+
 /** `true` のとき `alpha_history` へ書かない（異常に大きい日次 Alpha）。 */
 export function shouldRejectDailyAlphaForPersistence(alpha: number): boolean {
   if (!Number.isFinite(alpha)) return true;
   return Math.abs(alpha) > ALPHA_HISTORY_PERSIST_ABS_MAX;
+}
+
+const SPIKE_IMPUTE_MAX_PASSES = 5;
+
+/**
+ * 単日レベル・前日比ジャンプの検出 → 前後**始点系列**上の隣接平均で置換を、系列が安定するまで最大 {@link SPIKE_IMPUTE_MAX_PASSES} 回繰り返す。
+ * 1 パスだけだと、巨大日を 0% 付近に直した直後に、翌日が「生の前日」に対する偽ジャンプ扱いになり針が残る（典型: 3/31 偽 40% → 4/1 が再スパイク）ため。
+ */
+function imputeSpikeChronologicalValues(
+  orig: number[],
+  options: { jumpAbs: number; levelAbs: number },
+): number[] {
+  const { jumpAbs, levelAbs } = options;
+  let current = orig.slice();
+  for (let pass = 0; pass < SPIKE_IMPUTE_MAX_PASSES; pass++) {
+    const n = current.length;
+    if (n === 0) return [];
+    const spiked = new Set<number>();
+    for (let i = 0; i < n; i++) {
+      const v = current[i]!;
+      if (!Number.isFinite(v)) {
+        spiked.add(i);
+        continue;
+      }
+      if (Math.abs(v) > levelAbs) {
+        spiked.add(i);
+        continue;
+      }
+      if (i > 0) {
+        const p = current[i - 1]!;
+        if (Number.isFinite(p) && Math.abs(v - p) > jumpAbs) {
+          spiked.add(i);
+        }
+      }
+    }
+    if (spiked.size === 0) {
+      return current;
+    }
+    const out = current.slice();
+    for (const i of spiked) {
+      const prev = i > 0 ? current[i - 1]! : null;
+      const next = i < n - 1 ? current[i + 1]! : null;
+      let a = 0;
+      let c = 0;
+      if (prev != null && Number.isFinite(prev)) {
+        a += prev;
+        c += 1;
+      }
+      if (next != null && Number.isFinite(next)) {
+        a += next;
+        c += 1;
+      }
+      out[i] = c > 0 ? roundAlphaMetric(a / c) : 0;
+    }
+    let anyChange = false;
+    for (let i = 0; i < n; i++) {
+      if (out[i] !== current[i]) {
+        anyChange = true;
+        break;
+      }
+    }
+    current = out;
+    if (!anyChange) {
+      return current;
+    }
+  }
+  return current;
+}
+
+/**
+ * 日次 Alpha 系列（観測日付付き）のスパイクを、前隣接観測日の**平均**で置換。累積チャートの可視的な針飛び向け。
+ */
+export function imputeSpikeDatedAlphaRows(
+  rows: DatedAlphaRow[],
+  options?: { jumpAbs?: number; levelAbs?: number },
+): DatedAlphaRow[] {
+  const j = options?.jumpAbs ?? SPIKE_DAILY_ALPHA_IMPUTE_JUMP_ABS;
+  const l = options?.levelAbs ?? SPIKE_DAILY_ALPHA_IMPUTE_LEVEL_ABS;
+  if (rows.length === 0) return [];
+  const sorted = [...rows]
+    .map((r) => ({
+      ymd: toYmd(r.recordedAt),
+      alpha: Number(r.alphaValue),
+    }))
+    .filter((r) => r.ymd.length === 10)
+    .sort((a, b) => a.ymd.localeCompare(b.ymd));
+  if (sorted.length === 0) return [];
+  const vals = imputeSpikeChronologicalValues(
+    sorted.map((x) => x.alpha),
+    { jumpAbs: j, levelAbs: l },
+  );
+  return sorted.map((r, i) => ({ recordedAt: r.ymd, alphaValue: vals[i]! }));
+}
+
+/**
+ * 暦日ラベルなしの日次 Alpha 配列向け。古→新の順（`alpha_history` の日付昇順系列と同じ想定）。
+ * `options` 省略時は従来の営業日同士（米株中心）の閾値。JP 日次列は `spikeImputeOptionsForStockAndBenchmark` を渡す。
+ */
+export function imputeSpikeChronologicalDailyAlphaNumbers(
+  alphas: number[],
+  options?: { jumpAbs: number; levelAbs: number },
+): number[] {
+  if (alphas.length === 0) return [];
+  const o =
+    options != null
+      ? options
+      : { jumpAbs: SPIKE_DAILY_ALPHA_IMPUTE_JUMP_ABS, levelAbs: SPIKE_DAILY_ALPHA_IMPUTE_LEVEL_ABS };
+  return imputeSpikeChronologicalValues(alphas, o);
 }
 
 /**

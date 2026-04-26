@@ -1,9 +1,12 @@
 import type { Client } from "@libsql/client";
 
 import {
+  classifyTickerInstrument,
   computeAlphaPercent,
   dailyReturnPercent,
   defaultBenchmarkTickerForTicker,
+  imputeSpikeDatedAlphaRows,
+  spikeImputeOptionsForStockAndBenchmark,
   SIGNAL_BENCHMARK_TICKER,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
 } from "@/src/lib/alpha-logic";
@@ -148,9 +151,9 @@ export async function backfillAlphaHistoryForTicker(
   options?: BackfillAlphaHistoryOptions,
 ): Promise<number> {
   const benchByDate = new Map(benchBars.map((b) => [b.date, b.close]));
-  const stockBars = await fetchPriceHistory(args.ticker, days, args.providerSymbol ?? null);
+  const stockBars = await fetchPriceHistory(args.ticker, days, args.providerSymbol ?? null, { forAlpha: true });
   const stockBy = new Map(stockBars.map((b) => [b.date, b.close]));
-  const shared = sharedSortedDates(stockBars, benchBars);
+  let shared = sharedSortedDates(stockBars, benchBars);
   if (shared.length < 2) {
     signalsDebug("backfillAlphaHistoryForTicker: insufficient overlapping dates", {
       ticker: args.ticker,
@@ -161,15 +164,22 @@ export async function backfillAlphaHistoryForTicker(
     });
     return 0;
   }
+  const safeDays = Math.max(1, days);
+  if (shared.length > safeDays) {
+    shared = shared.slice(-safeDays);
+  }
 
   const onlyDates = options?.onlyRecordedAtYmds;
   const restrictDates = onlyDates != null && onlyDates.size > 0;
 
-  let written = 0;
+  const kind = classifyTickerInstrument(args.ticker);
+  const isJp = kind === "JP_LISTED_EQUITY" || kind === "JP_INVESTMENT_TRUST";
+
+  type RowDraft = { dCur: string; s1: number; alpha: number };
+  const drafts: RowDraft[] = [];
   for (let i = 1; i < shared.length; i++) {
     const dPrev = shared[i - 1]!;
     const dCur = shared[i]!;
-    if (restrictDates && !onlyDates!.has(dCur)) continue;
 
     const s0 = stockBy.get(dPrev);
     const s1 = stockBy.get(dCur);
@@ -180,7 +190,26 @@ export async function backfillAlphaHistoryForTicker(
     const rStock = dailyReturnPercent(s0, s1);
     const rBench = dailyReturnPercent(b0, b1);
     const alpha = computeAlphaPercent(rStock, rBench);
-    if (alpha === null) continue;
+    if (alpha == null) continue;
+    drafts.push({ dCur, s1, alpha });
+  }
+
+  const dated = drafts.map((d) => ({ recordedAt: d.dCur, alphaValue: d.alpha }));
+  const imputed = isJp
+    ? imputeSpikeDatedAlphaRows(dated, spikeImputeOptionsForStockAndBenchmark(args.ticker, benchmarkTicker))
+    : dated;
+  const draftByYmd = new Map(drafts.map((d) => [d.dCur, d]));
+
+  let written = 0;
+  for (const r of imputed) {
+    const dCur = r.recordedAt.length >= 10 ? r.recordedAt.slice(0, 10) : r.recordedAt;
+    if (dCur.length !== 10) continue;
+    if (restrictDates && !onlyDates!.has(dCur)) continue;
+    const draft = draftByYmd.get(dCur);
+    if (draft == null) continue;
+    const alpha = r.alphaValue;
+    if (alpha == null || !Number.isFinite(alpha)) continue;
+    const s1 = draft.s1;
 
     try {
       await upsertAlphaHistoryRow(db, {
@@ -235,7 +264,14 @@ export async function reconcileAlphaHistoryForWatchlistTickers(
   db: Client,
   userId: string,
   targets: AlphaWatchTarget[],
-  options?: { days?: number; delayMs?: number; maxTickers?: number; forceRebackfillYmd?: string },
+  options?: {
+    days?: number;
+    delayMs?: number;
+    maxTickers?: number;
+    forceRebackfillYmd?: string;
+    /** 薄い履歴判定を飛ばし、Yahoo から全期間を再 upsert（スパイク修正スクリプト用） */
+    forceFullRebackfill?: boolean;
+  },
 ): Promise<ReconcileWatchlistAlphaResult> {
   /** 直近 90 日窓 + 営業日ズレを吸収するため、既定はテーマ窓より長めに取る。 */
   const days =
@@ -251,6 +287,7 @@ export async function reconcileAlphaHistoryForWatchlistTickers(
   const backfilledTickers: string[] = [];
   const benchBarsCache = new Map<string, PriceBar[]>();
 
+  const forceFull = options?.forceFullRebackfill === true;
   const capped = targets.slice(0, maxTickers);
 
   for (let i = 0; i < capped.length; i++) {
@@ -260,11 +297,11 @@ export async function reconcileAlphaHistoryForWatchlistTickers(
       const total = await countAlphaHistoryTotal(db, userId, t.ticker, benchmarkTicker);
       const recent = await countAlphaHistoryRecent(db, userId, t.ticker, benchmarkTicker);
       const latestYmd = await getLatestAlphaHistoryYmd(db, userId, t.ticker, benchmarkTicker);
-      if (!needsBackfill(total, recent, latestYmd) && forceYmd == null) continue;
+      if (!forceFull && !needsBackfill(total, recent, latestYmd) && forceYmd == null) continue;
 
       let benchBars = benchBarsCache.get(benchmarkTicker) ?? null;
       if (!benchBars) {
-        benchBars = await fetchPriceHistory(benchmarkTicker, days, null);
+        benchBars = await fetchPriceHistory(benchmarkTicker, days, null, { forAlpha: true });
         benchBarsCache.set(benchmarkTicker, benchBars);
       }
       if (benchBars.length < 2) break;
@@ -343,7 +380,7 @@ export async function reconcileAlphaHistoryForUser(
 
     let benchBars = benchBarsCache.get(benchmarkTicker) ?? null;
     if (!benchBars) {
-      benchBars = await fetchPriceHistory(benchmarkTicker, days, null);
+      benchBars = await fetchPriceHistory(benchmarkTicker, days, null, { forAlpha: true });
       benchBarsCache.set(benchmarkTicker, benchBars);
       signalsDebug("fetched benchmark bars for reconcile", { benchmark: benchmarkTicker, count: benchBars.length, days });
     }
