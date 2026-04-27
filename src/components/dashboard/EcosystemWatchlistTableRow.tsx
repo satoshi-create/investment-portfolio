@@ -27,6 +27,12 @@ import {
 import { cn } from "@/src/lib/cn";
 import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
+import {
+  expectationCategoryBadgeClass,
+  expectationCategoryBadgeShortJa,
+} from "@/src/lib/expectation-category";
+import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
+import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
 import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
 import {
   ecosystemCumulativeSparklineTooltip,
@@ -43,7 +49,9 @@ import {
   totalReturnYieldRatioTextClass,
 } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
+import { ECOSYSTEM_ASSET_COL_WIDTH_CLASS } from "@/src/lib/ecosystem-watchlist-table-layout";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
+import { LYNCH_CATEGORY_LABEL_JA } from "@/src/types/investment";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 
 function fmtDdCol(v: number | null): string {
@@ -193,7 +201,11 @@ export function EcosystemWatchlistTableRow({
             return (
               <td
                 key={colId}
-                className={`px-6 py-4 align-top min-w-[11rem] max-w-[22rem] ${stickyFirst}`}
+                className={cn(
+                  "box-border px-6 py-4 align-top overflow-hidden",
+                  ECOSYSTEM_ASSET_COL_WIDTH_CLASS,
+                  stickyFirst,
+                )}
               >
                 <div className="flex flex-col gap-1">
                   <div className="flex flex-row flex-nowrap items-center gap-2 min-w-0">
@@ -350,6 +362,48 @@ export function EcosystemWatchlistTableRow({
                 </div>
               </td>
             );
+          case "lynch": {
+            const computedLynch = getLynchCategoryFromWatchItem(e);
+            const hintLines =
+              computedLynch != null
+                ? lynchAlignmentHintLines({
+                    lynchCategory: computedLynch,
+                    expectedGrowth: e.expectedGrowth,
+                    trailingPe: e.trailingPe,
+                    forwardPe: e.forwardPe,
+                    dividendYieldPercent: e.dividendYieldPercent,
+                  })
+                : [];
+            return (
+              <td
+                key={colId}
+                className={`px-3 py-4 align-top min-w-[7.5rem] max-w-[11rem] text-left ${stickyFirst}`}
+              >
+                <div className="flex flex-col gap-1">
+                  {computedLynch ? (
+                    <span
+                      className={`w-fit text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(computedLynch)}`}
+                      title={LYNCH_CATEGORY_LABEL_JA[computedLynch]}
+                    >
+                      {expectationCategoryBadgeShortJa(computedLynch)}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">—</span>
+                  )}
+                  {hintLines.length > 0 ? (
+                    <ul className="mt-0.5 space-y-0.5 text-[9px] leading-snug text-amber-700/90 dark:text-amber-400/85 list-disc pl-3.5">
+                      {hintLines.map((line, hi) => (
+                        <li key={hi}>{line}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <p className="text-[8px] text-muted-foreground leading-snug">
+                    自動分類（DB の手動値は未使用）
+                  </p>
+                </div>
+              </td>
+            );
+          }
           case "holder":
             return (
               <td key={colId} className={`px-6 py-4 align-top whitespace-nowrap ${stickyFirst}`}>

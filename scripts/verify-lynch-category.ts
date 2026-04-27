@@ -5,11 +5,14 @@ import assert from "node:assert/strict";
 
 import {
   aggregateLynchCategoryCounts,
+  aggregateLynchCategoryCountsForWatchItems,
   getLynchCategory,
+  getLynchCategoryFromWatchItem,
   isLynchCyclicalSector,
   sortLynchToolbarSegments,
+  themeEcosystemWatchItemToLynchInput,
 } from "../src/lib/lynch-category-computed";
-import type { Stock } from "../src/types/investment";
+import type { Stock, ThemeEcosystemWatchItem } from "../src/types/investment";
 
 function eq(actual: unknown, expected: unknown, msg?: string) {
   assert.equal(actual, expected, msg);
@@ -146,5 +149,27 @@ eq(snap.unset, 0);
 const ord = sortLynchToolbarSegments(snap);
 eq(ord[0], "Cyclical");
 eq(ord[1], "FastGrower");
+
+/** 観測行テスト用: `getLynchCategoryFromWatchItem` が読むプロパティ以外は未使用 */
+function asWatch(p: Pick<ThemeEcosystemWatchItem, "field" | "expectedGrowth"> & Partial<ThemeEcosystemWatchItem>): ThemeEcosystemWatchItem {
+  return p as ThemeEcosystemWatchItem;
+}
+
+const wCyclical = asWatch({ field: "Semiconductors", expectedGrowth: 0.25 });
+const inp = themeEcosystemWatchItemToLynchInput(wCyclical);
+eq(inp.sector, null);
+eq(inp.secondaryTag, "Semiconductors");
+eq(inp.netCash, null);
+eq(getLynchCategoryFromWatchItem(wCyclical), "Cyclical");
+
+eq(getLynchCategoryFromWatchItem(asWatch({ field: "Software", expectedGrowth: 0.25 })), "FastGrower");
+
+const wSnap = aggregateLynchCategoryCountsForWatchItems([
+  asWatch({ field: "Steel", expectedGrowth: 0.1 }),
+  asWatch({ field: "Software", expectedGrowth: 0.25 }),
+]);
+eq(wSnap.total, 2);
+eq(wSnap.byCategory.Cyclical, 1);
+eq(wSnap.byCategory.FastGrower, 1);
 
 console.log("verify-lynch-category: OK");

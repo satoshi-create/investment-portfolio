@@ -1,14 +1,70 @@
 /**
- * ピーター・リンチ6分類のルールベース自動判定（Inventory / Strategy のリンチ円グラフ）。
+ * ピーター・リンチ6分類のルールベース自動判定（Inventory / Strategy / 観測 Ecosystem）。
  *
- * DB の `holdings.expectation_category` は取引フォーム等で従来通り利用可能だが、
- * Inventory 列・ツールバー集計・Strategy「リンチ分類（評価額）」は本モジュールの判定を用いる。
+ * DB の `expectation_category` は取引フォーム等で利用可能だが、
+ * Inventory・観測テーブル・Strategy「リンチ分類（評価額）」の表示は本モジュールの判定を用いる。
  *
  * 複数ルールに該当する場合の優先順位（先にマッチしたものを採用）:
  * Cyclical → Turnaround → FastGrower → Stalwart → SlowGrower → AssetPlay
  */
 import { lynchCategorySortRank } from "@/src/lib/expectation-category";
-import { LYNCH_CATEGORY_KEYS, type LynchCategory, type Stock } from "@/src/types/investment";
+import {
+  LYNCH_CATEGORY_KEYS,
+  type LynchCategory,
+  type Stock,
+  type ThemeEcosystemWatchItem,
+} from "@/src/types/investment";
+
+/** `getLynchCategoryFromInput` が読むフィールドのみ（Stock / 観測行の両方からマッピング） */
+export type LynchCategoryAutomationInput = {
+  /** DB `holdings.sector` 相当。観測行では通常 null。 */
+  sector: string | null;
+  /**
+   * 保有: `structure_tags` 2 番目等。観測: **`field`（分類タグ）を流用**。
+   * Cyclical キーワードはここに含まれる文字列も対象。`field` は業種セクターとは限らず
+   * 「AIデータセンター」等のテーマラベルになり得るため **誤って Cyclical になるリスク**がある。
+   */
+  secondaryTag: string;
+  expectedGrowth: number | null;
+  trailingEps: number | null;
+  forwardEps: number | null;
+  marketCap: number | null;
+  priceToBook: number | null;
+  annualDividendRate: number | null;
+  dividendYieldPercent: number | null;
+  /** 観測行は現状 null 固定（FMP ネットC を載せない限り AssetPlay の「ネットC÷時価」枝は不成立） */
+  netCash: number | null;
+};
+
+export function stockToLynchInput(s: Stock): LynchCategoryAutomationInput {
+  return {
+    sector: s.sector,
+    secondaryTag: (s.secondaryTag ?? "").trim() || "Other",
+    expectedGrowth: s.expectedGrowth,
+    trailingEps: s.trailingEps,
+    forwardEps: s.forwardEps,
+    marketCap: s.marketCap,
+    priceToBook: s.priceToBook,
+    annualDividendRate: s.annualDividendRate,
+    dividendYieldPercent: s.dividendYieldPercent,
+    netCash: s.netCash,
+  };
+}
+
+export function themeEcosystemWatchItemToLynchInput(e: ThemeEcosystemWatchItem): LynchCategoryAutomationInput {
+  return {
+    sector: null,
+    secondaryTag: e.field.trim() || "Other",
+    expectedGrowth: e.expectedGrowth,
+    trailingEps: e.trailingEps,
+    forwardEps: e.forwardEps,
+    marketCap: e.marketCap,
+    priceToBook: e.priceToBook,
+    annualDividendRate: e.annualDividendRate,
+    dividendYieldPercent: e.dividendYieldPercent,
+    netCash: null,
+  };
+}
 
 /** `holdings.market_cap` は米株を想定し USD 名目（Yahoo / 手入力のスケールと一致させる） */
 const STALWART_MARKET_CAP_USD_MIN = 100_000_000_000;
@@ -16,18 +72,14 @@ const STALWART_MARKET_CAP_USD_MIN = 100_000_000_000;
 /** AssetPlay: ネットキャッシュ ÷ 時価総額がこの閾値以上なら「ネットC比率が高い」とみなす */
 const ASSET_PLAY_NET_CASH_TO_MCAP_MIN = 0.1;
 
-function sectorRaw(stock: Stock): string {
-  const s = (stock.sector ?? stock.secondaryTag ?? "").trim();
+function sectorLowerFromInput(input: LynchCategoryAutomationInput): string {
+  const s = (input.sector ?? input.secondaryTag ?? "").trim().toLowerCase();
   return s;
 }
 
-function sectorLower(stock: Stock): string {
-  return sectorRaw(stock).toLowerCase();
-}
-
 /** Yahoo 等の表記ゆれを吸収し、市況セクターに該当すれば true */
-export function isLynchCyclicalSector(stock: Stock): boolean {
-  const s = sectorLower(stock);
+export function isLynchCyclicalSectorFromInput(input: LynchCategoryAutomationInput): boolean {
+  const s = sectorLowerFromInput(input);
   if (!s) return false;
   if (s.includes("semiconductor")) return true;
   if (s.includes("steel")) return true;
@@ -37,48 +89,52 @@ export function isLynchCyclicalSector(stock: Stock): boolean {
   return false;
 }
 
-function isTurnaround(stock: Stock): boolean {
-  const t = stock.trailingEps;
-  const f = stock.forwardEps;
+/** @deprecated 互換: `isLynchCyclicalSectorFromInput(stockToLynchInput(s))` と同義 */
+export function isLynchCyclicalSector(stock: Stock): boolean {
+  return isLynchCyclicalSectorFromInput(stockToLynchInput(stock));
+}
+
+function isTurnaround(input: LynchCategoryAutomationInput): boolean {
+  const t = input.trailingEps;
+  const f = input.forwardEps;
   if (t == null || f == null || !Number.isFinite(t) || !Number.isFinite(f)) return false;
   return t < 0 && f > 0;
 }
 
-function isFastGrower(stock: Stock): boolean {
-  const g = stock.expectedGrowth;
+function isFastGrower(input: LynchCategoryAutomationInput): boolean {
+  const g = input.expectedGrowth;
   if (g == null || !Number.isFinite(g)) return false;
   return g > 0.2;
 }
 
-function isStalwart(stock: Stock): boolean {
-  const mc = stock.marketCap;
-  const g = stock.expectedGrowth;
+function isStalwart(input: LynchCategoryAutomationInput): boolean {
+  const mc = input.marketCap;
+  const g = input.expectedGrowth;
   if (mc == null || !Number.isFinite(mc) || mc <= STALWART_MARKET_CAP_USD_MIN) return false;
   if (g == null || !Number.isFinite(g)) return false;
   return g >= 0.1 && g < 0.15;
 }
 
-/** 配当あり: 年間配当レートまたは利回りのいずれかが正 */
-function hasDividendSignal(stock: Stock): boolean {
-  const a = stock.annualDividendRate;
+function hasDividendSignal(input: LynchCategoryAutomationInput): boolean {
+  const a = input.annualDividendRate;
   if (a != null && Number.isFinite(a) && a > 0) return true;
-  const y = stock.dividendYieldPercent;
+  const y = input.dividendYieldPercent;
   if (y != null && Number.isFinite(y) && y > 0) return true;
   return false;
 }
 
-function isSlowGrower(stock: Stock): boolean {
-  const g = stock.expectedGrowth;
+function isSlowGrower(input: LynchCategoryAutomationInput): boolean {
+  const g = input.expectedGrowth;
   if (g == null || !Number.isFinite(g)) return false;
   if (g >= 0.05) return false;
-  return hasDividendSignal(stock);
+  return hasDividendSignal(input);
 }
 
-function isAssetPlay(stock: Stock): boolean {
-  const pbr = stock.priceToBook;
+function isAssetPlay(input: LynchCategoryAutomationInput): boolean {
+  const pbr = input.priceToBook;
   if (pbr != null && Number.isFinite(pbr) && pbr > 0 && pbr < 1) return true;
-  const nc = stock.netCash;
-  const mc = stock.marketCap;
+  const nc = input.netCash;
+  const mc = input.marketCap;
   if (
     nc != null &&
     mc != null &&
@@ -92,30 +148,34 @@ function isAssetPlay(stock: Stock): boolean {
   return false;
 }
 
-export function getLynchCategory(stock: Stock): LynchCategory | null {
-  if (isLynchCyclicalSector(stock)) return "Cyclical";
-  if (isTurnaround(stock)) return "Turnaround";
-  if (isFastGrower(stock)) return "FastGrower";
-  if (isStalwart(stock)) return "Stalwart";
-  if (isSlowGrower(stock)) return "SlowGrower";
-  if (isAssetPlay(stock)) return "AssetPlay";
+export function getLynchCategoryFromInput(input: LynchCategoryAutomationInput): LynchCategory | null {
+  if (isLynchCyclicalSectorFromInput(input)) return "Cyclical";
+  if (isTurnaround(input)) return "Turnaround";
+  if (isFastGrower(input)) return "FastGrower";
+  if (isStalwart(input)) return "Stalwart";
+  if (isSlowGrower(input)) return "SlowGrower";
+  if (isAssetPlay(input)) return "AssetPlay";
   return null;
 }
 
-/** Inventory ツールバー「すべて」: 母集団と優先順位の要約（`title` / ツールチップ用） */
-export const LYNCH_RULE_TOOLTIP_ALL_JA =
-  "リンチによる行の絞り込みを解除し、列は通常表示に戻ります。件数はダッシュボードから渡る保有一覧（Inventory の stocks・行フィルター前の全件）です。自動分類の優先順位は「市況関連 → 業績回復 → 急成長 → 優良 → 低成長 → 資産株」。DB の expectation_category は参照しません。";
+export function getLynchCategory(stock: Stock): LynchCategory | null {
+  return getLynchCategoryFromInput(stockToLynchInput(stock));
+}
 
-/** 「未分類」バケットの説明 */
+export function getLynchCategoryFromWatchItem(e: ThemeEcosystemWatchItem): LynchCategory | null {
+  return getLynchCategoryFromInput(themeEcosystemWatchItemToLynchInput(e));
+}
+
+/** 保有・観測テーブル共通（`title` 用）。件数の母集団は呼び出し側で行フィルター前の全行。 */
+export const LYNCH_RULE_TOOLTIP_ALL_JA =
+  "リンチによる行の絞り込みを解除し、列は通常表示に戻ります。件数はテーブルに渡る行の全件（検索・市場フィルター等の絞り込み前）です。自動分類の優先順位は「市況関連 → 業績回復 → 急成長 → 優良 → 低成長 → 資産株」。DB の expectation_category は参照しません。";
+
 export const LYNCH_RULE_TOOLTIP_UNSET_JA =
   "上記6分類のいずれの条件も満たさない銘柄です（データ欠損で判定不能な場合も含み得ます）。DB の手動分類は使用しません。";
 
-/**
- * 各分類ボタンのホバー説明（`getLynchCategory` の単一ルールに対応。複合時は優先順位で一つに決まります）。
- */
 export const LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA: Record<LynchCategory, string> = {
   Cyclical:
-    "市況関連: sector またはタグ由来のセクター表記に、半導体・自動車・鉄鋼・エネルギー／石油ガス等のキーワードが含まれる場合（大小文字・表記ゆれを吸収）。優先順位は最上位。",
+    "市況関連: sector またはタグ由来のセクター表記に、半導体・自動車・鉄鋼・エネルギー／石油ガス等のキーワードが含まれる場合（大小文字・表記ゆれを吸収）。観測行では `field` をセクター文字列代わりに使うためテーマラベル由来の誤検出があり得ます。優先順位は最上位。",
   Turnaround:
     "業績回復: 実績EPS（trailing）が負かつ予想EPS（forward）が正のとき。Cyclical の次に判定。",
   FastGrower:
@@ -125,30 +185,40 @@ export const LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA: Record<LynchCategory, string> = 
   SlowGrower:
     "低成長: 予想成長率が 5% 未満 かつ 配当あり（年間配当レートまたは配当利回りが正）のとき。",
   AssetPlay:
-    "資産株: PBR が 1 未満（正の PBR のみ）、または ネットキャッシュ÷時価総額 が 10% 以上のとき。",
+    "資産株: PBR が 1 未満（正の PBR のみ）、または ネットキャッシュ÷時価総額 が 10% 以上のとき。観測行はネットC未連携のため PBR 枝のみ有効になりやすい。",
 };
 
 export type LynchCategoryCountSnapshot = {
-  /** `stocks` 配列の件数（Inventory では行フィルター前の props 全件） */
   total: number;
   unset: number;
   byCategory: Record<LynchCategory, number>;
 };
 
-export function aggregateLynchCategoryCounts(stocks: readonly Stock[]): LynchCategoryCountSnapshot {
+export function aggregateLynchCategoryFromInputs(
+  inputs: readonly LynchCategoryAutomationInput[],
+): LynchCategoryCountSnapshot {
   let unset = 0;
   const byCategory = Object.fromEntries(LYNCH_CATEGORY_KEYS.map((k) => [k, 0])) as Record<LynchCategory, number>;
-  for (const s of stocks) {
-    const c = getLynchCategory(s);
+  for (const inp of inputs) {
+    const c = getLynchCategoryFromInput(inp);
     if (c == null) unset += 1;
     else byCategory[c] += 1;
   }
-  return { total: stocks.length, unset, byCategory };
+  return { total: inputs.length, unset, byCategory };
+}
+
+export function aggregateLynchCategoryCounts(stocks: readonly Stock[]): LynchCategoryCountSnapshot {
+  return aggregateLynchCategoryFromInputs(stocks.map(stockToLynchInput));
+}
+
+export function aggregateLynchCategoryCountsForWatchItems(
+  items: readonly ThemeEcosystemWatchItem[],
+): LynchCategoryCountSnapshot {
+  return aggregateLynchCategoryFromInputs(items.map(themeEcosystemWatchItemToLynchInput));
 }
 
 export type LynchToolbarSegmentKey = "__unset__" | LynchCategory;
 
-/** 「すべて」以外のセグメントを件数降順で並べる（同数は `lynchCategorySortRank` 昇順＝未分類は末尾寄り） */
 export function sortLynchToolbarSegments(snapshot: LynchCategoryCountSnapshot): LynchToolbarSegmentKey[] {
   const entries: { key: LynchToolbarSegmentKey; count: number }[] = [
     { key: "__unset__", count: snapshot.unset },

@@ -5,6 +5,7 @@
  */
 export const ECOSYSTEM_WATCHLIST_COLUMN_IDS = [
   "asset",
+  "lynch",
   "trend5d",
   "listing",
   "mktCap",
@@ -78,7 +79,17 @@ export function normalizeEcosystemWatchlistColumnOrder(raw: string[]): Ecosystem
     out.push(mapped as EcosystemWatchlistColId);
   }
   for (const cid of ECOSYSTEM_WATCHLIST_COLUMN_IDS) {
-    if (!seen.has(cid)) out.push(cid);
+    if (seen.has(cid)) continue;
+    if (cid === "lynch") {
+      const ai = out.indexOf("asset");
+      if (ai >= 0) {
+        out.splice(ai + 1, 0, "lynch");
+        seen.add("lynch");
+        continue;
+      }
+    }
+    out.push(cid);
+    seen.add(cid);
   }
   return out;
 }

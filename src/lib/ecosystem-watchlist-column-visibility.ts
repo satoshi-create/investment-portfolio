@@ -16,6 +16,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
   string
 > = {
   asset: "Asset",
+  lynch: "リンチ",
   trend5d: "5D",
   listing: "初取引",
   mktCap: "MCAP",

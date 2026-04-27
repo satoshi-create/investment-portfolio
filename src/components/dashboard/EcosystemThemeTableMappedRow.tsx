@@ -45,8 +45,19 @@ import {
   totalReturnYieldRatioTextClass,
 } from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
+import { ECOSYSTEM_ASSET_COL_WIDTH_CLASS } from "@/src/lib/ecosystem-watchlist-table-layout";
+import {
+  expectationCategoryBadgeClass,
+  expectationCategoryBadgeShortJa,
+} from "@/src/lib/expectation-category";
+import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
+import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
 import type { InvestmentThemeRecord, ResourceSyncJudgment, ThemeEcosystemWatchItem } from "@/src/types/investment";
-import { INVESTMENT_METRIC_TONE_TEXT_CLASS, investmentMetricToneForSignedPercent } from "@/src/types/investment";
+import {
+  INVESTMENT_METRIC_TONE_TEXT_CLASS,
+  investmentMetricToneForSignedPercent,
+  LYNCH_CATEGORY_LABEL_JA,
+} from "@/src/types/investment";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 
 function fmtVolumeRatioCell(r: number | null): string {
@@ -320,8 +331,8 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td
                 key={colId}
                 className={cn(
-                  "px-6 py-3 align-top min-w-0",
-                  compactRows ? "max-w-[15rem]" : "max-w-[18rem]",
+                  "box-border px-6 py-3 align-top min-w-0 overflow-hidden",
+                  ECOSYSTEM_ASSET_COL_WIDTH_CLASS,
                   stickyFirst,
                 )}
               >
@@ -615,6 +626,48 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                 </div>
               </td>
             );
+          case "lynch": {
+            const computedLynch = getLynchCategoryFromWatchItem(e);
+            const hintLines =
+              computedLynch != null
+                ? lynchAlignmentHintLines({
+                    lynchCategory: computedLynch,
+                    expectedGrowth: e.expectedGrowth,
+                    trailingPe: e.trailingPe,
+                    forwardPe: e.forwardPe,
+                    dividendYieldPercent: e.dividendYieldPercent,
+                  })
+                : [];
+            return (
+              <td
+                key={colId}
+                className={`px-3 py-3 align-top min-w-[7.5rem] max-w-[11rem] text-left ${stickyFirst}`}
+              >
+                <div className="flex flex-col gap-1">
+                  {computedLynch ? (
+                    <span
+                      className={`w-fit text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(computedLynch)}`}
+                      title={LYNCH_CATEGORY_LABEL_JA[computedLynch]}
+                    >
+                      {expectationCategoryBadgeShortJa(computedLynch)}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">—</span>
+                  )}
+                  {hintLines.length > 0 ? (
+                    <ul className="mt-0.5 space-y-0.5 text-[9px] leading-snug text-amber-700/90 dark:text-amber-400/85 list-disc pl-3.5">
+                      {hintLines.map((line, hi) => (
+                        <li key={hi}>{line}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <p className="text-[8px] text-muted-foreground leading-snug">
+                    自動分類（DB の手動値は未使用）
+                  </p>
+                </div>
+              </td>
+            );
+          }
           case "trend5d": {
             const { series, hasIntradayPulse } = fiveDayPulseForEcosystem(e);
             return (

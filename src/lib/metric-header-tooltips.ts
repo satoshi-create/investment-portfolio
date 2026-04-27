@@ -30,7 +30,7 @@ export const METRIC_HEADER_TIP = {
   asset:
     "銘柄識別子・地域バッジ・（テーマ時）エコキープ。ティッカーは `classifyTickerInstrument` に基づき表示用整形。",
   lynch:
-    "ピーター・リンチ6分類（Inventory はルールベース自動分類。DB の expectation_category は本列では参照しません。取引フォーム等では従来どおり手動値を利用）。",
+    "ピーター・リンチ6分類（保有 Inventory・観測 Ecosystem はルールベース自動分類。DB の expectation_category は本列では参照しません。取引フォーム等では従来どおり手動値を利用）。",
   listing:
     "上場（初回取引）日の年で並べ替え。値は DB / Yahoo first trade の近似で、公式 IPO 日とは限りません。",
   mktCap:

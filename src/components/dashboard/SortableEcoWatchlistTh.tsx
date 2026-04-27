@@ -15,6 +15,7 @@ export function SortableEcoWatchlistTh({
   align = "left",
   title,
   metricHelpText,
+  disableColumnReorder,
   children,
 }: {
   id: EcosystemWatchlistColId;
@@ -23,9 +24,14 @@ export function SortableEcoWatchlistTh({
   title?: string;
   /** 指定時は `th` の `title` を付けず Radix ツールチップ（二重表示防止） */
   metricHelpText?: string;
+  /** リンチレンズ中は列ドラッグを無効化 */
+  disableColumnReorder?: boolean;
   children: React.ReactNode;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled: disableColumnReorder,
+  });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -38,10 +44,16 @@ export function SortableEcoWatchlistTh({
       <div className={`flex w-full items-center gap-1 ${justify}`}>
         <button
           type="button"
-          className="cursor-grab touch-none shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted/60 hover:text-foreground active:cursor-grabbing"
+          className={`touch-none shrink-0 rounded p-0.5 text-muted-foreground ${
+            disableColumnReorder
+              ? "cursor-not-allowed opacity-40"
+              : "cursor-grab hover:bg-muted/60 hover:text-foreground active:cursor-grabbing"
+          }`}
           {...attributes}
-          {...listeners}
-          aria-label="列をドラッグして並べ替え"
+          {...(disableColumnReorder ? {} : listeners)}
+          aria-label={disableColumnReorder ? "リンチレンズ中は列の並べ替え不可" : "列をドラッグして並べ替え"}
+          aria-disabled={disableColumnReorder}
+          disabled={disableColumnReorder}
           onClick={(ev) => ev.stopPropagation()}
         >
           <GripVertical className="h-3.5 w-3.5" aria-hidden />

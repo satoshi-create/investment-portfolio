@@ -57,7 +57,6 @@ import {
   ADOPTION_STAGE_META,
   adoptionStageRank,
   adoptionStageTooltip,
-  isPostChasmStage,
   parseAdoptionStage,
   summarizeThemeAdoptionMaturity,
 } from "@/src/lib/adoption-stage";
@@ -141,6 +140,16 @@ import {
   StructuralEcosystemThead,
   type StructuralEcoSortKey,
 } from "@/src/components/dashboard/StructuralEcosystemThead";
+import { EcosystemLynchFilterBar } from "@/src/components/dashboard/EcosystemLynchFilterBar";
+import { EcosystemWatchlistValuationCluster } from "@/src/components/dashboard/EcosystemWatchlistValuationCluster";
+import {
+  ECOSYSTEM_LYNCH_LENS_COLUMNS,
+  ecosystemLynchLensKeyFromFilter,
+} from "@/src/lib/ecosystem-lynch-lens-columns";
+import { ECOSYSTEM_ASSET_COL_WIDTH_CLASS } from "@/src/lib/ecosystem-watchlist-table-layout";
+import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import { lynchCategorySortRank } from "@/src/lib/expectation-category";
+import type { LynchCategory } from "@/src/types/investment";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
 
@@ -715,14 +724,11 @@ export function ThemePageClient({
   >(null);
   const [ecoShowValueCols, setEcoShowValueCols] = useState(false);
   const [patrolOn, setPatrolOn] = useState(false);
-  /** アーリーマジョリティ以降のみ（キャズム超え・割安性フィルターと AND） */
-  const [postChasmOnly, setPostChasmOnly] = useState(false);
   const [ecosystemSearchQuery, setEcosystemSearchQuery] = useState("");
+  const [ecoLynchFilter, setEcoLynchFilter] = useState<"" | "__unset__" | LynchCategory>("");
   const [ecoMarketFilter, setEcoMarketFilter] = useState<"all" | "jp" | "us">(
     "all",
   );
-  const [ecoPeMin, setEcoPeMin] = useState("");
-  const [ecoPeMax, setEcoPeMax] = useState("");
   const [ecoEpsPositiveOnly, setEcoEpsPositiveOnly] = useState(false);
   const [addTicker, setAddTicker] = useState("");
   const [addImportance, setAddImportance] = useState<"standard" | "major">(
@@ -1496,9 +1502,6 @@ export function ThemePageClient({
     if (ecoBookmarksOnly) {
       out = out.filter((e) => e.isBookmarked === true);
     }
-    if (postChasmOnly) {
-      out = out.filter((e) => isPostChasmStage(e.adoptionStage));
-    }
     if (patrolOn) {
       out = out.filter((e) => {
         const z = e.alphaDeviationZ;
@@ -1519,31 +1522,20 @@ export function ThemePageClient({
     if (isDefensiveTheme && holderFilterSet.size > 0) {
       out = out.filter((e) => ecosystemMatchesHolderFilter(e));
     }
-    const peMin = ecoPeMin.trim().length > 0 ? Number(ecoPeMin) : null;
-    const peMax = ecoPeMax.trim().length > 0 ? Number(ecoPeMax) : null;
-    const hasPeMin = peMin != null && Number.isFinite(peMin);
-    const hasPeMax = peMax != null && Number.isFinite(peMax);
-    if (hasPeMin || hasPeMax || ecoEpsPositiveOnly) {
+    if (ecoEpsPositiveOnly) {
       out = out.filter((e) => {
-        const pe = ecoPeOf(e);
         const eps = ecoEpsOf(e);
-        if (ecoEpsPositiveOnly) {
-          if (eps == null) return false;
-          if (!(eps > 0)) return false;
-        }
-        if (hasPeMin) {
-          if (pe == null) return false;
-          if (pe < (peMin as number)) return false;
-        }
-        if (hasPeMax) {
-          if (pe == null) return false;
-          if (pe > (peMax as number)) return false;
-        }
-        return true;
+        if (eps == null) return false;
+        return eps > 0;
       });
     }
     if (ecoHideIncompleteQuotes) {
       out = out.filter((e) => ecoHasUsableQuote(e));
+    }
+    if (ecoLynchFilter === "__unset__") {
+      out = out.filter((e) => getLynchCategoryFromWatchItem(e) == null);
+    } else if (ecoLynchFilter !== "") {
+      out = out.filter((e) => getLynchCategoryFromWatchItem(e) === ecoLynchFilter);
     }
     return out;
   }, [
@@ -1551,15 +1543,13 @@ export function ThemePageClient({
     ecoBookmarksOnly,
     ecoHideIncompleteQuotes,
     patrolOn,
-    postChasmOnly,
     ecosystemSearchQuery,
     ecoMarketFilter,
     holderFilterSet,
     isDefensiveTheme,
     ecosystemMatchesHolderFilter,
-    ecoPeMin,
-    ecoPeMax,
     ecoEpsPositiveOnly,
+    ecoLynchFilter,
   ]);
 
   const themeAdoptionMaturity = useMemo(
@@ -1635,6 +1625,12 @@ export function ThemePageClient({
       }
 
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
+      if (ecoSortKey === "lynch") {
+        const ra = lynchCategorySortRank(getLynchCategoryFromWatchItem(a));
+        const rb = lynchCategorySortRank(getLynchCategoryFromWatchItem(b));
+        if (ra !== rb) return dir * (ra - rb);
+        return dir * cmpStr(a.ticker, b.ticker);
+      }
       if (ecoSortKey === "earnings") return dir * cmpNum(ecoEarningsSortValue(a), ecoEarningsSortValue(b));
       if (ecoSortKey === "listing")
         return dir * cmpStr(ecoListingYmdKey(a) ?? "\uFFFF", ecoListingYmdKey(b) ?? "\uFFFF");
@@ -1715,10 +1711,24 @@ export function ThemePageClient({
     [ecoColumnOrder, isDefensiveTheme, ecoShowValueCols],
   );
 
-  const ecoVisibleColumnIds = useMemo(
-    () => applyEcosystemWatchlistUserHidden(ecoBaseVisibleColumnIds, ecoHiddenColumnIds),
-    [ecoBaseVisibleColumnIds, ecoHiddenColumnIds],
-  );
+  const ecoLynchLensKey = ecosystemLynchLensKeyFromFilter(ecoLynchFilter);
+  const ecoLynchLensColumnIds = useMemo(() => {
+    if (!ecoLynchLensKey) return null;
+    const preset = [...ECOSYSTEM_LYNCH_LENS_COLUMNS[ecoLynchLensKey]];
+    const allowed = new Set(ecoBaseVisibleColumnIds);
+    const inter = preset.filter((id) => allowed.has(id));
+    const fallback = (["asset", "lynch", "alpha"] as const).filter((id) => allowed.has(id));
+    return inter.length > 0 ? inter : fallback;
+  }, [ecoLynchLensKey, ecoBaseVisibleColumnIds]);
+
+  const columnToolbarEcoBaseIds = ecoLynchLensColumnIds ?? ecoBaseVisibleColumnIds;
+
+  const ecoVisibleColumnIds = useMemo(() => {
+    if (ecoLynchLensColumnIds) {
+      return applyEcosystemWatchlistUserHidden(ecoLynchLensColumnIds, ecoHiddenColumnIds);
+    }
+    return applyEcosystemWatchlistUserHidden(ecoBaseVisibleColumnIds, ecoHiddenColumnIds);
+  }, [ecoBaseVisibleColumnIds, ecoHiddenColumnIds, ecoLynchLensColumnIds]);
 
   const ecosystemColSpan = ecoVisibleColumnIds.length;
 
@@ -1728,6 +1738,7 @@ export function ThemePageClient({
   );
 
   function handleEcoColumnDragEnd(event: DragEndEvent) {
+    if (ecoLynchLensKey != null) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setEcoColumnOrder((items) => {
@@ -1768,7 +1779,8 @@ export function ThemePageClient({
         next === "research" ||
         next === "peg" ||
         next === "pbr" ||
-        next === "trr"
+        next === "trr" ||
+        next === "lynch"
           ? "asc"
           : "desc",
       );
@@ -2426,13 +2438,16 @@ export function ThemePageClient({
                   </div>
                 ) : null}
                 <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
-                  <div className="p-5 border-b border-border flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between bg-card/50">
-                    <div className="flex items-start gap-2 min-w-0">
+                  {/*
+                    カード上段: タイトルと CSV を分離（CSV はデータ出力のためフィルター帯から外す）
+                  */}
+                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-card/50 p-5">
+                    <div className="flex min-w-0 items-start gap-2">
                       <Layers
                         size={16}
                         className="text-amber-500/90 shrink-0 mt-0.5"
                       />
-                      <div>
+                      <div className="min-w-0">
                         <h2
                           id="theme-ecosystem-heading"
                           className="text-xs font-bold text-muted-foreground uppercase tracking-widest"
@@ -2446,9 +2461,25 @@ export function ThemePageClient({
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2 shrink-0 w-full sm:w-auto">
-                      <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
-                        <label className="relative flex items-center min-w-[12rem] flex-1 sm:flex-initial sm:max-w-[16rem]">
+                    <button
+                      type="button"
+                      onClick={handleEcosystemCsvDownload}
+                      disabled={ecosystemSorted.length === 0}
+                      className="inline-flex shrink-0 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted/70 disabled:pointer-events-none disabled:opacity-40 transition-colors"
+                      title="表示中の行（フィルター・並び順反映）を UTF-8 BOM 付き CSV でダウンロード"
+                      aria-label="表示中の行を UTF-8 BOM 付き CSV でダウンロード"
+                    >
+                      <FileSpreadsheet size={18} className="shrink-0" aria-hidden />
+                    </button>
+                  </div>
+                  {/*
+                    ツールバー 1 段目: 検索・市場・ブックマーク等のよく使う絞り込み + 列・密度（右寄せで常時視認）
+                    ツールバー 2 段目: 値・割安クラスタ（分析含む）+ リンチセグメント
+                  */}
+                  <div className="space-y-3 border-b border-border bg-card/30 px-4 py-3 sm:px-5">
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                        <label className="relative flex min-w-0 max-w-full flex-1 basis-[12rem] items-center sm:max-w-[18rem]">
                           <span className="sr-only">エコシステム検索</span>
                           <Search
                             size={14}
@@ -2536,197 +2567,138 @@ export function ThemePageClient({
                           <CircleSlash className="h-3.5 w-3.5 shrink-0" aria-hidden />
                           株価未取得を隠す
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setEcoShowValueCols((v) => !v)}
-                          className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
-                            ecoShowValueCols
-                              ? "text-amber-400 border-amber-500/50 bg-amber-500/10"
-                              : "text-muted-foreground border-border hover:bg-muted/70"
-                          }`}
-                          title="日次 Alpha 乖離（σ）と 90 日高値比"
-                        >
-                          乖離・落率
-                        </button>
-                        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2 py-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            分析
-                          </span>
-                          <div className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setEcoSortModeOpen((v) => !v)}
-                              className={cn(
-                                "rounded-md border px-2 py-1 text-[11px] font-bold transition-colors",
-                                "border-border bg-muted/70 text-foreground hover:bg-card/60",
-                                "focus:outline-none focus:ring-1 focus:ring-cyan-500/40",
-                              )}
-                              aria-label="Ecosystem 分析ソート"
-                              title="CUM・A / 乖離 / 落率を組み合わせて優先順位を作る"
-                            >
-                              {ecoSortModeLabel(ecoSortMode)}
-                            </button>
-                            {ecoSortModeOpen ? (
-                              <div
-                                className="absolute right-0 mt-2 w-[22rem] max-w-[86vw] rounded-xl border border-border bg-popover/95 shadow-2xl z-30 overflow-hidden"
-                                role="listbox"
-                                aria-label="分析ソート選択肢"
-                              >
-                                {(
-                                  [
-                                    "column",
-                                    "dip_rank",
-                                    "deep_value_rank",
-                                  ] as const
-                                ).map((mode) => {
-                                  const selected = mode === ecoSortMode;
-                                  const hovered = mode === ecoSortModeHover;
-                                  return (
-                                    <button
-                                      key={mode}
-                                      type="button"
-                                      role="option"
-                                      aria-selected={selected}
-                                      onMouseEnter={() => setEcoSortModeHover(mode)}
-                                      onMouseLeave={() => setEcoSortModeHover(null)}
-                                      onClick={() => {
-                                        setEcoSortMode(mode);
-                                        setEcoSortModeOpen(false);
-                                      }}
-                                      className={cn(
-                                        "w-full text-left px-3 py-2.5 border-b border-border/80",
-                                        "hover:bg-card/60 transition-colors",
-                                        selected
-                                          ? "bg-cyan-500/10"
-                                          : "bg-transparent",
-                                      )}
-                                      title={ecoSortModeHelp(mode)}
-                                    >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                          <p
-                                            className={cn(
-                                              "text-[11px] font-bold",
-                                              selected
-                                                ? "text-cyan-200"
-                                                : "text-foreground",
-                                            )}
-                                          >
-                                            {ecoSortModeLabel(mode)}
-                                          </p>
-                                          <p
-                                            className={cn(
-                                              "text-[10px] leading-relaxed mt-1",
-                                              hovered || selected
-                                                ? "text-muted-foreground"
-                                                : "text-muted-foreground",
-                                            )}
-                                          >
-                                            {ecoSortModeHelp(mode)}
-                                          </p>
-                                        </div>
-                                        {selected ? (
-                                          <span className="text-[10px] font-bold text-cyan-300 shrink-0">
-                                            選択中
-                                          </span>
-                                        ) : null}
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                                <div className="px-3 py-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setEcoSortModeOpen(false)}
-                                    className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
-                                  >
-                                    閉じる
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2 py-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            PE
-                          </span>
-                          <input
-                            inputMode="decimal"
-                            value={ecoPeMin}
-                            onChange={(e) => setEcoPeMin(e.target.value)}
-                            placeholder="min"
-                            className="w-14 rounded-md border border-border bg-muted/70 px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
-                            aria-label="PE 最小"
-                          />
-                          <span className="text-[10px] text-muted-foreground">-</span>
-                          <input
-                            inputMode="decimal"
-                            value={ecoPeMax}
-                            onChange={(e) => setEcoPeMax(e.target.value)}
-                            placeholder="max"
-                            className="w-14 rounded-md border border-border bg-muted/70 px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
-                            aria-label="PE 最大"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setEcoEpsPositiveOnly((v) => !v)}
-                          className={cn(
-                            "text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors",
-                            ecoEpsPositiveOnly
-                              ? "text-rose-200 border-rose-500/45 bg-rose-500/10"
-                              : "text-muted-foreground border-border hover:bg-muted/70",
-                          )}
-                          title="EPS > 0（黒字）の銘柄のみ"
-                        >
-                          黒字のみ
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPatrolOn((p) => !p)}
-                          className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
-                            patrolOn
-                              ? "text-cyan-400 border-cyan-500/50 bg-cyan-500/10"
-                              : "text-muted-foreground border-border hover:bg-muted/70"
-                          }`}
-                          title="Alpha 乖離が大きい負け、または高値からの下落が大きい銘柄のみ"
-                        >
-                          割安パトロール
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPostChasmOnly((p) => !p)}
-                          className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-colors ${
-                            postChasmOnly
-                              ? "text-emerald-400 border-emerald-500/50 bg-emerald-500/10"
-                              : "text-muted-foreground border-border hover:bg-muted/70"
-                          }`}
-                          title="アーリーマジョリティ・レイトマジョリティのみ（キャズムより先＝普及が進んだ層）"
-                        >
-                          キャズム超え
-                        </button>
+                      </div>
+                      <div className="shrink-0 rounded-lg border border-border/80 bg-card/40 p-1.5">
                         <EcosystemWatchlistColumnToolbar
-                          baseVisibleColumnIds={ecoBaseVisibleColumnIds}
+                          baseVisibleColumnIds={columnToolbarEcoBaseIds}
                           hiddenColumnIds={ecoHiddenColumnIds}
                           setHiddenColumnIds={persistEcoHiddenColumnIds}
                           compactTable={ecoTableCompact}
                           setCompactTable={persistEcoTableCompact}
                           isDefensiveTheme={isDefensiveTheme}
                         />
-                        <button
-                          type="button"
-                          onClick={handleEcosystemCsvDownload}
-                          disabled={ecosystemSorted.length === 0}
-                          className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/70 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                          title="表示中の行（フィルター・並び順反映）を UTF-8 BOM 付き CSV でダウンロード"
-                        >
-                          <FileSpreadsheet size={14} className="shrink-0" />
-                          CSVダウンロード
-                        </button>
                       </div>
+                    </div>
+                    <div className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between xl:gap-3">
+                      <EcosystemWatchlistValuationCluster
+                        ecoShowValueCols={ecoShowValueCols}
+                        onToggleValueCols={() => setEcoShowValueCols((v) => !v)}
+                        ecoEpsPositiveOnly={ecoEpsPositiveOnly}
+                        onToggleEpsPositive={() => setEcoEpsPositiveOnly((v) => !v)}
+                        patrolOn={patrolOn}
+                        onTogglePatrol={() => setPatrolOn((p) => !p)}
+                        analysisSlot={
+                          <>
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground whitespace-nowrap shrink-0">
+                              分析
+                            </span>
+                            <div className="relative min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => setEcoSortModeOpen((v) => !v)}
+                                className={cn(
+                                  "rounded-md border px-2 py-1 text-[11px] font-bold transition-colors",
+                                  "border-border bg-muted/70 text-foreground hover:bg-card/60",
+                                  "focus:outline-none focus:ring-1 focus:ring-cyan-500/40",
+                                )}
+                                aria-label="Ecosystem 分析ソート"
+                                title="CUM・A / 乖離 / 落率を組み合わせて優先順位を作る"
+                              >
+                                {ecoSortModeLabel(ecoSortMode)}
+                              </button>
+                              {ecoSortModeOpen ? (
+                                <div
+                                  className="absolute left-0 z-30 mt-2 w-[22rem] max-w-[86vw] rounded-xl border border-border bg-popover/95 shadow-2xl overflow-hidden sm:left-auto sm:right-0"
+                                  role="listbox"
+                                  aria-label="分析ソート選択肢"
+                                >
+                                  {(
+                                    [
+                                      "column",
+                                      "dip_rank",
+                                      "deep_value_rank",
+                                    ] as const
+                                  ).map((mode) => {
+                                    const selected = mode === ecoSortMode;
+                                    const hovered = mode === ecoSortModeHover;
+                                    return (
+                                      <button
+                                        key={mode}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={selected}
+                                        onMouseEnter={() => setEcoSortModeHover(mode)}
+                                        onMouseLeave={() => setEcoSortModeHover(null)}
+                                        onClick={() => {
+                                          setEcoSortMode(mode);
+                                          setEcoSortModeOpen(false);
+                                        }}
+                                        className={cn(
+                                          "w-full text-left px-3 py-2.5 border-b border-border/80",
+                                          "hover:bg-card/60 transition-colors",
+                                          selected
+                                            ? "bg-cyan-500/10"
+                                            : "bg-transparent",
+                                        )}
+                                        title={ecoSortModeHelp(mode)}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="min-w-0">
+                                            <p
+                                              className={cn(
+                                                "text-[11px] font-bold",
+                                                selected
+                                                  ? "text-cyan-200"
+                                                  : "text-foreground",
+                                              )}
+                                            >
+                                              {ecoSortModeLabel(mode)}
+                                            </p>
+                                            <p
+                                              className={cn(
+                                                "text-[10px] leading-relaxed mt-1",
+                                                hovered || selected
+                                                  ? "text-muted-foreground"
+                                                  : "text-muted-foreground",
+                                              )}
+                                            >
+                                              {ecoSortModeHelp(mode)}
+                                            </p>
+                                          </div>
+                                          {selected ? (
+                                            <span className="text-[10px] font-bold text-cyan-300 shrink-0">
+                                              選択中
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                  <div className="px-3 py-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEcoSortModeOpen(false)}
+                                      className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                      閉じる
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </>
+                        }
+                      />
+                      <div className="min-w-0 max-w-full xl:max-w-[min(100%,56rem)]">
+                        <EcosystemLynchFilterBar
+                          ecosystem={ecosystem}
+                          lynchFilter={ecoLynchFilter}
+                          onLynchFilterChange={setEcoLynchFilter}
+                        />
+                      </div>
+                    </div>
                       {isDefensiveTheme && defensiveHolders.length > 0 ? (
-                        <div className="mt-3 space-y-2">
+                        <div className="space-y-2 border-t border-border/60 pt-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                               HOLDER フィルター（複数選択）
@@ -2839,24 +2811,24 @@ export function ThemePageClient({
                           ) : null}
                         </div>
                       ) : null}
-                      <p className="text-[10px] font-mono text-muted-foreground text-right flex flex-wrap items-center justify-end gap-2">
+                    <p className="flex flex-wrap items-center justify-end gap-2 text-right font-mono text-[10px] text-muted-foreground">
                         {hydratingFull ? (
-                          <span className="text-cyan-400/90 font-sans font-bold normal-case tracking-normal animate-pulse">
+                          <span className="font-sans font-bold normal-case tracking-normal animate-pulse text-cyan-400/90">
                             Alpha・Research 読込中…
                           </span>
                         ) : null}
                         <span>
-                          {                          patrolOn ||
-                          postChasmOnly ||
+                          {patrolOn ||
                           ecoBookmarksOnly ||
                           ecoHideIncompleteQuotes ||
                           ecosystemSearchQuery.trim().length > 0 ||
-                          ecoMarketFilter !== "all"
+                          ecoMarketFilter !== "all" ||
+                          ecoEpsPositiveOnly ||
+                          ecoLynchFilter !== ""
                             ? `表示 ${ecosystemSorted.length} / 全 ${ecosystem.length} 銘柄`
                             : `計 ${ecosystem.length} 銘柄`}
                         </span>
                       </p>
-                    </div>
                   </div>
                   <div
                     className={cn(
@@ -2870,25 +2842,24 @@ export function ThemePageClient({
                       collisionDetection={closestCenter}
                       onDragEnd={handleEcoColumnDragEnd}
                     >
-                      <table className="w-full text-left text-sm">
+                      <table className="w-full table-fixed text-left text-sm">
                         <SortableContext items={ecoVisibleColumnIds} strategy={horizontalListSortingStrategy}>
                           <StructuralEcosystemThead
                             ecoVisibleColumnIds={ecoVisibleColumnIds}
                             toggleEcoSort={toggleEcoSort}
                             ecoSortMark={ecoSortMark}
+                            disableColumnReorder={ecoLynchLensKey != null}
                           />
                         </SortableContext>
                       <tbody className="divide-y divide-border/50">
                         {ecosystemSorted.length === 0 &&
                         (patrolOn ||
-                          postChasmOnly ||
                           ecoBookmarksOnly ||
                           ecoHideIncompleteQuotes ||
                           ecosystemSearchQuery.trim().length > 0 ||
                           ecoMarketFilter !== "all" ||
-                          ecoPeMin.trim().length > 0 ||
-                          ecoPeMax.trim().length > 0 ||
-                          ecoEpsPositiveOnly) ? (
+                          ecoEpsPositiveOnly ||
+                          ecoLynchFilter !== "") ? (
                           <tr>
                             <td
                               colSpan={ecosystemColSpan}
@@ -2900,17 +2871,13 @@ export function ThemePageClient({
                                 const marketOnly =
                                   ecoMarketFilter !== "all" &&
                                   !patrolOn &&
-                                  !postChasmOnly &&
                                   !q;
                                 const quoteOnly =
                                   ecoHideIncompleteQuotes &&
                                   !patrolOn &&
-                                  !postChasmOnly &&
                                   !ecoBookmarksOnly &&
                                   !q &&
                                   ecoMarketFilter === "all" &&
-                                  ecoPeMin.trim().length === 0 &&
-                                  ecoPeMax.trim().length === 0 &&
                                   !ecoEpsPositiveOnly;
                                 if (quoteOnly) {
                                   return "現在株価が取得できている銘柄がありません。フィルターを解除するか、後で再試行してください。";
@@ -2922,10 +2889,7 @@ export function ThemePageClient({
                                 if (marketOnly && ecoMarketFilter === "us") {
                                   return "米国市場に該当する銘柄がありません。";
                                 }
-                                if (postChasmOnly && !patrolOn) {
-                                  return "キャズム超え（アーリー／レイトマジョリティ）に該当する銘柄がありません。DB の adoption_stage を設定してください。";
-                                }
-                                if (patrolOn && !postChasmOnly) {
+                                if (patrolOn) {
                                   return "割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。";
                                 }
                                 return "フィルター条件に合う銘柄がありません。";
@@ -2959,15 +2923,26 @@ export function ThemePageClient({
                               {showFieldHeader ? (
                                 <tr className="bg-muted/90">
                                   <td
-                                    className={`px-6 py-2 min-w-[10rem] max-w-[14rem] sticky left-0 z-[19] bg-muted/90 border-r border-border/90 border-b border-border shadow-[2px_0_10px_rgba(0,0,0,0.35)] text-[10px] font-bold uppercase tracking-wider text-cyan-500/90`}
+                                    colSpan={ecosystemColSpan}
+                                    className="border-b border-border bg-muted/90 p-0"
                                   >
-                                    {field}
+                                    <div className="flex w-full min-w-0 items-stretch">
+                                      <div
+                                        className={cn(
+                                          stickyTdFirst,
+                                          ECOSYSTEM_ASSET_COL_WIDTH_CLASS,
+                                          "box-border border-r border-border/90 px-6 py-2 text-[10px] font-bold uppercase tracking-wider text-cyan-500/90 shadow-[2px_0_10px_rgba(0,0,0,0.35)]",
+                                          "z-[19] bg-muted/90",
+                                        )}
+                                      >
+                                        {field}
+                                      </div>
+                                      <div
+                                        className="min-h-[2.25rem] min-w-0 flex-1 bg-muted/90"
+                                        aria-hidden
+                                      />
+                                    </div>
                                   </td>
-                                  <td
-                                    colSpan={Math.max(1, ecosystemColSpan - 1)}
-                                    className="border-b border-border bg-muted/90 px-6 py-2"
-                                    aria-hidden
-                                  />
                                 </tr>
                               ) : null}
                               <tr
