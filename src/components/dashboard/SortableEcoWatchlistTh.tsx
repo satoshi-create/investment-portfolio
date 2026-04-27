@@ -40,8 +40,14 @@ export function SortableEcoWatchlistTh({
   const justify =
     align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
   return (
-    <th ref={setNodeRef} style={style} className={className} title={metricHelpText ? undefined : title} scope="col">
-      <div className={`flex w-full items-center gap-1 ${justify}`}>
+    <th
+      ref={setNodeRef}
+      style={style}
+      className={cn("align-middle", className)}
+      title={metricHelpText ? undefined : title}
+      scope="col"
+    >
+      <div className={cn("flex w-full min-h-[2.25rem] items-center gap-1", justify)}>
         <button
           type="button"
           className={`touch-none shrink-0 rounded p-0.5 text-muted-foreground ${
@@ -63,15 +69,21 @@ export function SortableEcoWatchlistTh({
             "min-w-0",
             align === "right" && "text-right",
             align === "center" && "text-center",
-            metricHelpText && "flex min-w-0 items-start gap-0.5",
-            metricHelpText && align === "right" && "justify-end",
-            metricHelpText && align === "center" && "items-center justify-center",
+            metricHelpText &&
+              cn(
+                "flex min-w-0 gap-0.5",
+                align === "center" ? "items-center justify-center" : "items-start",
+                align === "right" && "justify-end",
+              ),
           )}
         >
           {metricHelpText ? (
             <>
               <div className="min-w-0 flex-1 text-inherit">{children}</div>
-              <MetricHeaderHelp text={metricHelpText} className="shrink-0 mt-0.5" />
+              <MetricHeaderHelp
+                text={metricHelpText}
+                className={cn("shrink-0", align === "center" ? "mt-0" : "mt-0.5")}
+              />
             </>
           ) : (
             children

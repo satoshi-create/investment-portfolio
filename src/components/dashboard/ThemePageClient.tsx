@@ -146,6 +146,11 @@ import {
   ECOSYSTEM_LYNCH_LENS_COLUMNS,
   ecosystemLynchLensKeyFromFilter,
 } from "@/src/lib/ecosystem-lynch-lens-columns";
+import {
+  mergeEcosystemLynchLensHiddenForDisplay,
+  type EcoLynchLensColumnUiByFilter,
+  type EcoLynchLensUiFilterKey,
+} from "@/src/lib/ecosystem-lynch-lens-column-ui";
 import { ECOSYSTEM_ASSET_COL_WIDTH_CLASS } from "@/src/lib/ecosystem-watchlist-table-layout";
 import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
 import { lynchCategorySortRank } from "@/src/lib/expectation-category";
@@ -759,6 +764,9 @@ export function ThemePageClient({
   const [ecoEarningsSummarySaving, setEcoEarningsSummarySaving] = useState(false);
   const [ecoBookmarksOnly, setEcoBookmarksOnly] = useState(false);
   const [ecoHideIncompleteQuotes, setEcoHideIncompleteQuotes] = useState(false);
+  /** リンチレンズ: 分類キーごとの手動追加列・分類内のみの非表示 */
+  const [ecoLynchLensColumnUiByFilter, setEcoLynchLensColumnUiByFilter] =
+    useState<EcoLynchLensColumnUiByFilter>({});
   const [ecoColumnOrder, setEcoColumnOrder] = useState<EcosystemWatchlistColId[]>(
     DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER,
   );
@@ -1721,14 +1729,101 @@ export function ThemePageClient({
     return inter.length > 0 ? inter : fallback;
   }, [ecoLynchLensKey, ecoBaseVisibleColumnIds]);
 
-  const columnToolbarEcoBaseIds = ecoLynchLensColumnIds ?? ecoBaseVisibleColumnIds;
+  const columnToolbarEcoBaseIds = ecoBaseVisibleColumnIds;
 
   const ecoVisibleColumnIds = useMemo(() => {
-    if (ecoLynchLensColumnIds) {
-      return applyEcosystemWatchlistUserHidden(ecoLynchLensColumnIds, ecoHiddenColumnIds);
+    if (ecoLynchLensColumnIds == null) {
+      return applyEcosystemWatchlistUserHidden(ecoBaseVisibleColumnIds, ecoHiddenColumnIds);
     }
-    return applyEcosystemWatchlistUserHidden(ecoBaseVisibleColumnIds, ecoHiddenColumnIds);
-  }, [ecoBaseVisibleColumnIds, ecoHiddenColumnIds, ecoLynchLensColumnIds]);
+    const fk = ecoLynchFilter as EcoLynchLensUiFilterKey;
+    const { extras, hidden } = ecoLynchLensColumnUiByFilter[fk] ?? { extras: [], hidden: [] };
+    const mergedHidden = mergeEcosystemLynchLensHiddenForDisplay(hidden, ecoHiddenColumnIds);
+    const withExtras = Array.from(new Set([...ecoLynchLensColumnIds, ...extras]));
+    return applyEcosystemWatchlistUserHidden(withExtras, mergedHidden);
+  }, [
+    ecoBaseVisibleColumnIds,
+    ecoHiddenColumnIds,
+    ecoLynchLensColumnIds,
+    ecoLynchFilter,
+    ecoLynchLensColumnUiByFilter,
+  ]);
+
+  const effectiveHiddenColumnIds = useMemo(() => {
+    const visibleSet = new Set(ecoVisibleColumnIds);
+    return ecoBaseVisibleColumnIds.filter((id) => !visibleSet.has(id));
+  }, [ecoBaseVisibleColumnIds, ecoVisibleColumnIds]);
+
+  const handleEcoHiddenColumnIdsChange = useCallback(
+    (nextHidden: EcosystemWatchlistColId[]) => {
+      const addedHidden = nextHidden.filter((id) => !effectiveHiddenColumnIds.includes(id));
+      const removedHidden = effectiveHiddenColumnIds.filter((id) => !nextHidden.includes(id));
+
+      if (ecoLynchLensColumnIds != null && ecoLynchFilter !== "") {
+        const fk = ecoLynchFilter as EcoLynchLensUiFilterKey;
+        const slice = ecoLynchLensColumnUiByFilter[fk] ?? { extras: [], hidden: [] };
+
+        if (addedHidden.length > 0) {
+          const id = addedHidden[0]!;
+          if (slice.extras.includes(id)) {
+            setEcoLynchLensColumnUiByFilter((prev) => {
+              const cur = prev[fk] ?? { extras: [], hidden: [] };
+              return {
+                ...prev,
+                [fk]: { extras: cur.extras.filter((x) => x !== id), hidden: cur.hidden },
+              };
+            });
+          } else if (!slice.hidden.includes(id)) {
+            setEcoLynchLensColumnUiByFilter((prev) => {
+              const cur = prev[fk] ?? { extras: [], hidden: [] };
+              return { ...prev, [fk]: { extras: cur.extras, hidden: [...cur.hidden, id] } };
+            });
+          }
+          return;
+        }
+        if (removedHidden.length > 0) {
+          const id = removedHidden[0]!;
+          if (slice.hidden.includes(id)) {
+            setEcoLynchLensColumnUiByFilter((prev) => {
+              const cur = prev[fk] ?? { extras: [], hidden: [] };
+              return {
+                ...prev,
+                [fk]: { extras: cur.extras, hidden: cur.hidden.filter((x) => x !== id) },
+              };
+            });
+          } else if (ecoHiddenColumnIds.includes(id)) {
+            persistEcoHiddenColumnIds(ecoHiddenColumnIds.filter((x) => x !== id));
+          } else if (!ecoLynchLensColumnIds.includes(id)) {
+            setEcoLynchLensColumnUiByFilter((prev) => {
+              const cur = prev[fk] ?? { extras: [], hidden: [] };
+              if (cur.extras.includes(id)) return prev;
+              return { ...prev, [fk]: { extras: [...cur.extras, id], hidden: cur.hidden } };
+            });
+          }
+        }
+        return;
+      }
+
+      if (addedHidden.length > 0) {
+        const id = addedHidden[0]!;
+        if (!ecoHiddenColumnIds.includes(id)) {
+          persistEcoHiddenColumnIds([...ecoHiddenColumnIds, id]);
+        }
+      } else if (removedHidden.length > 0) {
+        const id = removedHidden[0]!;
+        if (ecoHiddenColumnIds.includes(id)) {
+          persistEcoHiddenColumnIds(ecoHiddenColumnIds.filter((x) => x !== id));
+        }
+      }
+    },
+    [
+      effectiveHiddenColumnIds,
+      ecoLynchLensColumnIds,
+      ecoLynchFilter,
+      ecoLynchLensColumnUiByFilter,
+      ecoHiddenColumnIds,
+      persistEcoHiddenColumnIds,
+    ],
+  );
 
   const ecosystemColSpan = ecoVisibleColumnIds.length;
 
@@ -1772,6 +1867,7 @@ export function ThemePageClient({
       setEcoSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setEcoSortKey(next);
+      if (next === "lynch") persistEcoTableCompact(true);
       setEcoSortDir(
         next === "earnings" ||
         next === "dividend" ||
@@ -2571,8 +2667,8 @@ export function ThemePageClient({
                       <div className="shrink-0 rounded-lg border border-border/80 bg-card/40 p-1.5">
                         <EcosystemWatchlistColumnToolbar
                           baseVisibleColumnIds={columnToolbarEcoBaseIds}
-                          hiddenColumnIds={ecoHiddenColumnIds}
-                          setHiddenColumnIds={persistEcoHiddenColumnIds}
+                          hiddenColumnIds={effectiveHiddenColumnIds}
+                          setHiddenColumnIds={handleEcoHiddenColumnIdsChange}
                           compactTable={ecoTableCompact}
                           setCompactTable={persistEcoTableCompact}
                           isDefensiveTheme={isDefensiveTheme}

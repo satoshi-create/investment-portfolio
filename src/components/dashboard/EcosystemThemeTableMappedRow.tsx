@@ -641,12 +641,12 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`px-3 py-3 align-top min-w-[7.5rem] max-w-[11rem] text-left ${stickyFirst}`}
+                className={`px-3 py-3 align-middle min-w-[7.5rem] max-w-[11rem] text-center ${stickyFirst}`}
               >
-                <div className="flex flex-col gap-1">
+                <div className="mx-auto flex max-w-full flex-col items-center gap-1 text-center">
                   {computedLynch ? (
                     <span
-                      className={`w-fit text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(computedLynch)}`}
+                      className={`inline-flex w-fit text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(computedLynch)}`}
                       title={LYNCH_CATEGORY_LABEL_JA[computedLynch]}
                     >
                       {expectationCategoryBadgeShortJa(computedLynch)}
@@ -655,7 +655,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                     <span className="text-[10px] text-muted-foreground">—</span>
                   )}
                   {hintLines.length > 0 ? (
-                    <ul className="mt-0.5 space-y-0.5 text-[9px] leading-snug text-amber-700/90 dark:text-amber-400/85 list-disc pl-3.5">
+                    <ul className="mt-0.5 w-full space-y-0.5 text-left text-[9px] leading-snug text-amber-700/90 dark:text-amber-400/85 list-disc pl-3.5">
                       {hintLines.map((line, hi) => (
                         <li key={hi}>{line}</li>
                       ))}
@@ -739,8 +739,8 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "holder":
             return (
-              <td key={colId} className={`px-6 py-3 align-top ${stickyFirst}`}>
-                <div className="flex flex-wrap gap-1.5">
+              <td key={colId} className={`px-6 py-3 align-middle ${stickyFirst}`}>
+                <div className="flex min-h-[2.5rem] flex-wrap content-center items-center justify-center gap-1.5">
                   {e.holderTags.length > 0 ? (
                     e.holderTags.map((h) => (
                       <span key={h} className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${holderBadgeClass(h)}`} title={h}>
@@ -751,7 +751,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                     <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </div>
-                <div className="mt-2 text-[10px] text-muted-foreground md:hidden">{e.countryName}</div>
+                <div className="mt-2 text-center text-[10px] text-muted-foreground md:hidden">{e.countryName}</div>
               </td>
             );
           case "dividend":
@@ -994,13 +994,13 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td
                 key={colId}
                 className={cn(
-                  "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums align-top",
+                  "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums align-middle",
                   pegRatioTextClass(peg),
                   stickyFirst,
                 )}
                 title="PEG · 「成長%」列で予想成長率"
               >
-                <div className="flex flex-col items-end gap-0.5 leading-tight">
+                <div className="flex min-h-[2.25rem] flex-col items-end justify-center gap-0.5 leading-tight">
                   <div className="flex items-center justify-end gap-0.5">
                     {pegLynchTreasureEligible(peg) ? (
                       <span title="お宝（PEG < 1）">
@@ -1127,46 +1127,50 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "price":
             return (
-              <td key={colId} className={`min-w-[8rem] whitespace-nowrap px-6 py-3 text-right align-top ${stickyFirst}`}>
-                <div className="flex flex-col items-end gap-1">
-                  <span className="font-mono text-xs text-foreground">{formatEcoPriceForView(e)}</span>
-                  {!e.inPortfolio ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onOpenTrade({
-                          ticker: e.isUnlisted && e.proxyTicker ? e.proxyTicker : e.ticker,
-                          name: e.companyName || undefined,
-                          theme: themeLabel,
-                          themeId: theme?.id ?? e.themeId,
-                          quantityDefault: 1,
-                          ...(e.currentPrice != null && Number.isFinite(e.currentPrice) && e.currentPrice > 0
-                            ? { unitPrice: e.currentPrice }
-                            : {}),
-                        })
-                      }
-                      className="rounded-md border border-cyan-500/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-cyan-400 hover:bg-cyan-500/10"
-                    >
-                      Trade
-                    </button>
-                  ) : null}
-                  <div className="flex items-center gap-1">
-                    {ecoEditingId !== e.id ? (
+              <td key={colId} className={`min-w-[8rem] whitespace-nowrap px-6 py-3 text-right align-middle ${stickyFirst}`}>
+                <div className="flex min-h-[3.25rem] flex-col items-end justify-center gap-1.5">
+                  <span className="font-mono text-xs text-foreground tabular-nums leading-none">
+                    {formatEcoPriceForView(e)}
+                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    {!e.inPortfolio ? (
                       <button
                         type="button"
-                        onClick={() => beginEditEcosystem(e)}
-                        className="rounded-md border border-border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground hover:bg-muted/70"
+                        onClick={() =>
+                          onOpenTrade({
+                            ticker: e.isUnlisted && e.proxyTicker ? e.proxyTicker : e.ticker,
+                            name: e.companyName || undefined,
+                            theme: themeLabel,
+                            themeId: theme?.id ?? e.themeId,
+                            quantityDefault: 1,
+                            ...(e.currentPrice != null && Number.isFinite(e.currentPrice) && e.currentPrice > 0
+                              ? { unitPrice: e.currentPrice }
+                              : {}),
+                          })
+                        }
+                        className="rounded-md border border-cyan-500/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-cyan-400 hover:bg-cyan-500/10"
                       >
-                        Edit
+                        Trade
                       </button>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={() => void deleteEcoMember(e.id, e.ticker)}
-                      className="rounded-md border border-rose-500/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-400 hover:bg-rose-500/10"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {ecoEditingId !== e.id ? (
+                        <button
+                          type="button"
+                          onClick={() => beginEditEcosystem(e)}
+                          className="rounded-md border border-border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground hover:bg-muted/70"
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void deleteEcoMember(e.id, e.ticker)}
+                        className="rounded-md border border-rose-500/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-400 hover:bg-rose-500/10"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               </td>

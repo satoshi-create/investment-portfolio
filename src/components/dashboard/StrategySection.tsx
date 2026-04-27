@@ -3,16 +3,13 @@
 import React, { useMemo } from "react";
 import { GitBranch, Radar } from "lucide-react";
 
-import type { LynchCategory, Stock, StructureTagSlice } from "@/src/types/investment";
-import { LYNCH_CATEGORY_LABEL_JA } from "@/src/types/investment";
+import type { Stock, StructureTagSlice } from "@/src/types/investment";
 import { roundAlphaMetric } from "@/src/lib/alpha-logic";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
-import { lynchCategorySortRank } from "@/src/lib/expectation-category";
-import { getLynchCategory } from "@/src/lib/lynch-category-computed";
 import { StatBox } from "@/src/components/dashboard/StatBox";
+import { LynchAllocationPiePanel } from "@/src/components/dashboard/LynchAllocationPiePanel";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { formatJpyValueForView } from "@/src/lib/format-display-currency";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 const SATELLITE_TARGET_MIN = 6;
 const SATELLITE_TARGET_MAX = 10;
@@ -164,90 +161,6 @@ function satelliteGaugeClass(count: number): string {
   return "border-rose-500/40 bg-rose-500/5";
 }
 
-/** インべントリのバッジ色に近い塗り（recharts 用） */
-const LYNCH_PIE_FILL: Record<LynchCategory, string> = {
-  SlowGrower: "#64748b",
-  Stalwart: "#38bdf8",
-  FastGrower: "#34d399",
-  AssetPlay: "#fbbf24",
-  Cyclical: "#a78bfa",
-  Turnaround: "#fb923c",
-};
-const LYNCH_PIE_UNSET = "#475569";
-
-type LynchPieRow = {
-  key: string;
-  name: string;
-  value: number;
-  fill: string;
-  pct: number;
-  count: number;
-};
-
-function buildLynchPieRows(stocks: Stock[]): LynchPieRow[] {
-  const rows = stocks.filter(
-    (s) => s.quantity > 0 && Number.isFinite(s.marketValue) && s.marketValue > 0,
-  );
-  if (rows.length === 0) return [];
-
-  const byKey = new Map<string, { mv: number; count: number }>();
-  for (const s of rows) {
-    const k = getLynchCategory(s) ?? "__unset__";
-    const cur = byKey.get(k) ?? { mv: 0, count: 0 };
-    cur.mv += s.marketValue;
-    cur.count += 1;
-    byKey.set(k, cur);
-  }
-  const total = [...byKey.values()].reduce((acc, x) => acc + x.mv, 0);
-  if (total <= 0) return [];
-
-  const out: LynchPieRow[] = [];
-  for (const [key, { mv, count }] of byKey) {
-    const pct = (mv / total) * 100;
-    let name: string;
-    let fill: string;
-    if (key === "__unset__") {
-      name = "未分類";
-      fill = LYNCH_PIE_UNSET;
-    } else {
-      name = LYNCH_CATEGORY_LABEL_JA[key as LynchCategory];
-      fill = LYNCH_PIE_FILL[key as LynchCategory];
-    }
-    out.push({ key, name, value: mv, fill, pct, count });
-  }
-  out.sort(
-    (a, b) =>
-      lynchCategorySortRank(a.key === "__unset__" ? null : (a.key as LynchCategory)) -
-      lynchCategorySortRank(b.key === "__unset__" ? null : (b.key as LynchCategory)),
-  );
-  return out;
-}
-
-function LynchPieTooltip({
-  active,
-  payload,
-  viewCurrency,
-  convert,
-}: {
-  active?: boolean;
-  payload?: ReadonlyArray<{ payload?: LynchPieRow }>;
-  viewCurrency: "USD" | "JPY";
-  convert: (amount: number, from: "USD" | "JPY", to: "USD" | "JPY") => number;
-}) {
-  if (!active || payload == null || payload.length === 0) return null;
-  const p = payload[0]?.payload;
-  if (p == null) return null;
-  return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2 text-[10px] shadow-lg">
-      <p className="font-bold text-foreground">{p.name}</p>
-      <p className="font-mono text-muted-foreground mt-1 tabular-nums">
-        {formatJpyValueForView(p.value, viewCurrency, convert)}（{p.pct.toFixed(1)}%）
-      </p>
-      <p className="text-muted-foreground mt-0.5">{p.count} 銘柄</p>
-    </div>
-  );
-}
-
 type Props = {
   structureBySector: StructureTagSlice[];
   /** リンチ構成（評価額ウェイト）。省略時は円グラフを出さない。 */
@@ -277,7 +190,6 @@ export function StrategySection({
 }: Props) {
   const { convert, viewCurrency } = useCurrencyConverter();
   const hasSectors = structureBySector.length > 0;
-  const lynchPieRows = useMemo(() => buildLynchPieRows(stocks), [stocks]);
   const sortedSectors = useMemo(() => sortSectorsForBalanceBar(structureBySector), [structureBySector]);
   const gcBalance = useMemo(() => growthCyclicalFromSortedSectors(sortedSectors), [sortedSectors]);
   const gcStatus = useMemo(() => growthCyclicalBalanceStatus(gcBalance.growthPct), [gcBalance.growthPct]);
@@ -486,77 +398,8 @@ export function StrategySection({
               )}
             </div>
 
-            <div
-              className="mt-8 lg:mt-0 border-t border-border pt-6 lg:border-t-0 lg:border-l lg:border-border lg:pt-0 lg:pl-8"
-              aria-labelledby="lynch-allocation-heading"
-            >
-              <h4
-                id="lynch-allocation-heading"
-                className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1"
-              >
-                リンチ分類（評価額）
-              </h4>
-              <p className="text-[9px] text-muted-foreground mb-3 leading-relaxed">
-                数量 &gt; 0 かつ評価額がある銘柄のみ。シェアは円ベース評価額の合計に対する比率です。分類は Inventory
-                と同じルールベース自動判定です。DB の expectation_category は参照しません。
-              </p>
-              {lynchPieRows.length > 0 ? (
-                <>
-                  <div className="h-[200px] w-full max-w-[280px] mx-auto lg:mx-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={lynchPieRows}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={52}
-                          outerRadius={80}
-                          paddingAngle={1}
-                          stroke="rgba(148,163,184,0.35)"
-                          strokeWidth={1}
-                        >
-                          {lynchPieRows.map((row) => (
-                            <Cell key={row.key} fill={row.fill} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          content={({ active, payload }) => (
-                            <LynchPieTooltip
-                              active={active}
-                              payload={payload}
-                              viewCurrency={viewCurrency}
-                              convert={convert}
-                            />
-                          )}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <ul className="mt-3 space-y-1.5 max-w-[280px] mx-auto lg:mx-0">
-                    {lynchPieRows.map((row) => (
-                      <li
-                        key={row.key}
-                        className="flex justify-between gap-2 text-[10px] font-bold uppercase tracking-tighter"
-                      >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="inline-block h-2 w-2 shrink-0 rounded-full border border-white/10"
-                            style={{ backgroundColor: row.fill }}
-                          />
-                          <span className="truncate text-foreground/85">{row.name}</span>
-                        </span>
-                        <span className="font-mono text-foreground/85 shrink-0 tabular-nums">
-                          {row.pct.toFixed(1)}%
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground">評価額のある保有がありません。</p>
-              )}
+            <div className="mt-8 lg:mt-0 border-t border-border pt-6 lg:border-t-0 lg:border-l lg:border-border lg:pt-0 lg:pl-8">
+              <LynchAllocationPiePanel stocks={stocks} bare />
             </div>
           </div>
       </div>

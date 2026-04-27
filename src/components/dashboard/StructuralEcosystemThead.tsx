@@ -65,13 +65,13 @@ function EcoSortTh({
     align === "right"
       ? "bg-transparent p-0 min-w-0 text-right font-[inherit] text-inherit"
       : align === "center"
-        ? "bg-transparent p-0 min-w-0 font-[inherit] text-inherit"
+        ? "bg-transparent p-0 min-w-0 text-center font-[inherit] text-inherit"
         : "bg-transparent p-0 min-w-0 text-left font-[inherit] text-inherit";
   const sortBtnClsNoHelp =
     align === "right"
       ? "inline-flex max-w-full min-w-0 items-start text-right font-[inherit] text-inherit"
       : align === "center"
-        ? "inline-flex max-w-full min-w-0 items-center font-[inherit] text-inherit"
+        ? "inline-flex max-w-full min-w-0 items-center justify-center text-center font-[inherit] text-inherit"
         : "inline-flex max-w-full min-w-0 items-center text-left font-[inherit] text-inherit";
   return (
     <SortableEcoWatchlistTh
@@ -84,8 +84,8 @@ function EcoSortTh({
       {metricHelpText ? (
         <div
           className={cn(
-            "flex w-full min-w-0 items-start gap-0.5",
-            align === "right" && "justify-end text-right",
+            "flex w-full min-w-0 gap-0.5",
+            align === "right" && "items-start justify-end text-right",
             align === "center" && "items-center justify-center text-center",
             align === "left" && "items-center text-left",
           )}
@@ -96,7 +96,10 @@ function EcoSortTh({
               {ecoSortMark(sortKey)}
             </span>
           </button>
-          <MetricHeaderHelp text={metricHelpText} className="shrink-0 mt-0.5" />
+          <MetricHeaderHelp
+            text={metricHelpText}
+            className={cn("shrink-0", align === "center" ? "mt-0" : "mt-0.5")}
+          />
         </div>
       ) : (
         <button type="button" className={sortBtnClsNoHelp} onClick={() => toggleEcoSort(sortKey)}>
@@ -149,8 +152,8 @@ export function StructuralEcosystemThead({
                   key={colId}
                   id={colId}
                   sortKey="lynch"
-                  align="left"
-                  className={`px-3 py-4 min-w-[7.5rem] max-w-[10rem] cursor-pointer select-none ${sfirst}`}
+                  align="center"
+                  className={`align-middle px-3 py-4 min-w-[7.5rem] max-w-[10rem] cursor-pointer select-none text-center ${sfirst}`}
                   metricHelpText={METRIC_HEADER_TIP.lynch}
                   label="リンチ"
                   toggleEcoSort={toggleEcoSort}

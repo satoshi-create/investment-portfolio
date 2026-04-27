@@ -1247,162 +1247,168 @@ export function InventoryTable({
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
-      <div className="p-5 border-b border-border flex justify-between items-center bg-card/60">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-card/50 p-5">
         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Inventory Status
         </h3>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {onTradeNew ? (
+        <button
+          type="button"
+          onClick={handleCsvDownload}
+          disabled={sortedStocks.length === 0}
+          className="inline-flex shrink-0 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground transition-colors hover:bg-muted/70 disabled:pointer-events-none disabled:opacity-40"
+          title="表示中の銘柄（フィルター・並び順反映）を CSV でダウンロード"
+          aria-label="表示中の銘柄を UTF-8 BOM 付き CSV でダウンロード"
+        >
+          <FileSpreadsheet size={18} className="shrink-0" aria-hidden />
+        </button>
+      </div>
+      <div className="space-y-3 border-b border-border bg-card/30 px-4 py-3 sm:px-5">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {onTradeNew ? (
+              <button
+                type="button"
+                onClick={onTradeNew}
+                className="text-[10px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-3 py-2 rounded-lg hover:bg-accent-cyan/10 transition-all"
+              >
+                取引入力
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={onTradeNew}
-              className="text-[10px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-3 py-2 rounded-lg hover:bg-accent-cyan/10 transition-all"
+              onClick={() => setBookmarksOnly((v) => !v)}
+              className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
+                bookmarksOnly
+                  ? "text-accent-amber border-accent-amber/50 bg-accent-amber/10"
+                  : "text-muted-foreground border-border hover:bg-muted/50"
+              }`}
+              title="ブックマーク（★）済みの銘柄のみ表示"
             >
-              取引入力
+              <Star className={`h-3.5 w-3.5 shrink-0 ${bookmarksOnly ? "fill-accent-amber text-accent-amber" : ""}`} />
+              ブックマークのみ
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setBookmarksOnly((v) => !v)}
-            className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
-              bookmarksOnly
-                ? "text-accent-amber border-accent-amber/50 bg-accent-amber/10"
-                : "text-muted-foreground border-border hover:bg-muted/50"
-            }`}
-            title="ブックマーク（★）済みの銘柄のみ表示"
-          >
-            <Star className={`h-3.5 w-3.5 shrink-0 ${bookmarksOnly ? "fill-accent-amber text-accent-amber" : ""}`} />
-            ブックマークのみ
-          </button>
-          <button
-            type="button"
-            onClick={() => setHideIncompleteQuotes((v) => !v)}
-            className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
-              hideIncompleteQuotes
-                ? "text-rose-200 border-rose-500/45 bg-rose-500/10"
-                : "text-muted-foreground border-border hover:bg-muted/50"
-            }`}
-            title="現在株価が取得できていない銘柄を非表示（API 欠損・未更新）"
-          >
-            <CircleSlash className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            株価未取得を隠す
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowValueCols((v) => !v)}
-            className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
-              showValueCols
-                ? "text-amber-400 border-amber-500/50 bg-amber-500/10"
-                : "text-muted-foreground border-border hover:bg-muted/50"
-            }`}
-            title="Alpha 乖離（Z）と 90 日高値からの落ち率を表示"
-          >
-            乖離・落率
-          </button>
-          <button
-            type="button"
-            onClick={() => setDividendCalendarModalOpen(true)}
-            className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
-              dividendCalendarModalOpen
-                ? "text-sky-300 border-sky-500/45 bg-sky-500/10"
-                : "text-muted-foreground border-border hover:bg-muted/50"
-            }`}
-            title="配当カレンダー（モーダル・UTC・前月〜+6 ヶ月）。権利落ち X・権利確定 R"
-          >
-            <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            配当カレンダー
-          </button>
-          <InventoryTableColumnToolbar
-            baseVisibleColumnIds={columnToolbarBaseIds}
-            hiddenColumnIds={inventoryHiddenColumnIds}
-            setHiddenColumnIds={persistInventoryHiddenColumnIds}
-            compactTable={inventoryTableCompact}
-            setCompactTable={persistInventoryTableCompact}
-          />
-          <button
-            type="button"
-            onClick={handleCsvDownload}
-            disabled={sortedStocks.length === 0}
-            className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted/50 disabled:opacity-40 disabled:pointer-events-none transition-all"
-            title="表示中の銘柄（フィルター・並び順反映）を CSV でダウンロード"
-          >
-            <FileSpreadsheet size={14} className="shrink-0" />
-            CSVダウンロード
-          </button>
-          <div className="flex items-center gap-2 bg-background px-3 py-1.5 rounded-lg border border-border">
-            <Search size={14} className="text-muted-foreground shrink-0" />
-            <input
-              value={structureFilter}
-              onChange={(e) => setStructureFilter(e.target.value)}
-              className="bg-transparent border-none outline-none text-xs w-40 min-w-0 text-foreground/90"
-              placeholder="構造で絞り込み…"
-              aria-label="構造で絞り込み"
+            <button
+              type="button"
+              onClick={() => setHideIncompleteQuotes((v) => !v)}
+              className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
+                hideIncompleteQuotes
+                  ? "text-rose-200 border-rose-500/45 bg-rose-500/10"
+                  : "text-muted-foreground border-border hover:bg-muted/50"
+              }`}
+              title="現在株価が取得できていない銘柄を非表示（API 欠損・未更新）"
+            >
+              <CircleSlash className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              株価未取得を隠す
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowValueCols((v) => !v)}
+              className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all ${
+                showValueCols
+                  ? "text-amber-400 border-amber-500/50 bg-amber-500/10"
+                  : "text-muted-foreground border-border hover:bg-muted/50"
+              }`}
+              title="Alpha 乖離（Z）と 90 日高値からの落ち率を表示"
+            >
+              乖離・落率
+            </button>
+            <button
+              type="button"
+              onClick={() => setDividendCalendarModalOpen(true)}
+              className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
+                dividendCalendarModalOpen
+                  ? "text-sky-300 border-sky-500/45 bg-sky-500/10"
+                  : "text-muted-foreground border-border hover:bg-muted/50"
+              }`}
+              title="配当カレンダー（モーダル・UTC・前月〜+6 ヶ月）。権利落ち X・権利確定 R"
+            >
+              <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              配当カレンダー
+            </button>
+            <div className="flex min-w-0 max-w-full flex-1 basis-[10rem] items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 sm:max-w-[18rem]">
+              <Search size={14} className="text-muted-foreground shrink-0" />
+              <input
+                value={structureFilter}
+                onChange={(e) => setStructureFilter(e.target.value)}
+                className="min-w-0 flex-1 bg-transparent border-none outline-none text-xs text-foreground/90"
+                placeholder="構造で絞り込み…"
+                aria-label="構造で絞り込み"
+              />
+            </div>
+          </div>
+          <div className="shrink-0 rounded-lg border border-border/80 bg-card/40 p-1.5">
+            <InventoryTableColumnToolbar
+              baseVisibleColumnIds={columnToolbarBaseIds}
+              hiddenColumnIds={inventoryHiddenColumnIds}
+              setHiddenColumnIds={persistInventoryHiddenColumnIds}
+              compactTable={inventoryTableCompact}
+              setCompactTable={persistInventoryTableCompact}
             />
           </div>
-          <div
-            className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-background/60 px-2 py-1.5"
-            role="group"
-            aria-label="リンチの6分類で絞り込み（レンズ列プリセット）"
+        </div>
+        <div
+          className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-border bg-background/60 px-2 py-1.5"
+          role="group"
+          aria-label="リンチの6分類で絞り込み（レンズ列プリセット）"
+        >
+          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground px-1 shrink-0">
+            リンチ
+          </span>
+          <button
+            type="button"
+            onClick={() => setLynchFilter("")}
+            aria-pressed={lynchFilter === ""}
+            title={LYNCH_RULE_TOOLTIP_ALL_JA}
+            className={cn(
+              "text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border transition-colors",
+              lynchFilter === ""
+                ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
+                : "border-transparent text-muted-foreground hover:bg-muted/60",
+            )}
           >
-            <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground px-1 shrink-0">
-              リンチ
-            </span>
-            <button
-              type="button"
-              onClick={() => setLynchFilter("")}
-              aria-pressed={lynchFilter === ""}
-              title={LYNCH_RULE_TOOLTIP_ALL_JA}
-              className={cn(
-                "text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border transition-colors",
-                lynchFilter === ""
-                  ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
-                  : "border-transparent text-muted-foreground hover:bg-muted/60",
-              )}
-            >
-              すべて（{lynchCountSnapshot.total}）
-            </button>
-            {lynchToolbarSorted.map((seg) => {
-              if (seg === "__unset__") {
-                const n = lynchCountSnapshot.unset;
-                return (
-                  <button
-                    key="__unset__"
-                    type="button"
-                    onClick={() => setLynchFilter("__unset__")}
-                    aria-pressed={lynchFilter === "__unset__"}
-                    title={LYNCH_RULE_TOOLTIP_UNSET_JA}
-                    className={cn(
-                      "text-[9px] font-bold px-2 py-1 rounded-md border transition-colors max-w-[8rem]",
-                      lynchFilter === "__unset__"
-                        ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
-                        : "border-transparent text-muted-foreground hover:bg-muted/60",
-                    )}
-                  >
-                    未分類（{n}）
-                  </button>
-                );
-              }
-              const k = seg;
-              const n = lynchCountSnapshot.byCategory[k];
+            すべて（{lynchCountSnapshot.total}）
+          </button>
+          {lynchToolbarSorted.map((seg) => {
+            if (seg === "__unset__") {
+              const n = lynchCountSnapshot.unset;
               return (
                 <button
-                  key={k}
+                  key="__unset__"
                   type="button"
-                  onClick={() => setLynchFilter(k)}
-                  aria-pressed={lynchFilter === k}
-                  title={LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA[k]}
+                  onClick={() => setLynchFilter("__unset__")}
+                  aria-pressed={lynchFilter === "__unset__"}
+                  title={LYNCH_RULE_TOOLTIP_UNSET_JA}
                   className={cn(
-                    "text-[9px] font-bold px-2 py-1 rounded-md border transition-colors max-w-[8rem] truncate",
-                    lynchFilter === k
+                    "text-[9px] font-bold px-2 py-1 rounded-md border transition-colors max-w-[8rem]",
+                    lynchFilter === "__unset__"
                       ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
                       : "border-transparent text-muted-foreground hover:bg-muted/60",
                   )}
                 >
-                  {LYNCH_CATEGORY_LABEL_JA[k]}（{n}）
+                  未分類（{n}）
                 </button>
               );
-            })}
-          </div>
+            }
+            const k = seg;
+            const n = lynchCountSnapshot.byCategory[k];
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setLynchFilter(k)}
+                aria-pressed={lynchFilter === k}
+                title={LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA[k]}
+                className={cn(
+                  "text-[9px] font-bold px-2 py-1 rounded-md border transition-colors max-w-[8rem] truncate",
+                  lynchFilter === k
+                    ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
+                    : "border-transparent text-muted-foreground hover:bg-muted/60",
+                )}
+              >
+                {LYNCH_CATEGORY_LABEL_JA[k]}（{n}）
+              </button>
+            );
+          })}
         </div>
       </div>
 
