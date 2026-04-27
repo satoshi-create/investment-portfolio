@@ -102,6 +102,12 @@ export type EquityResearchSnapshot = {
    * 会社の自社株買い（CF の repurchase）とは別系列。ツールチップの補足のみ。
    */
   yahooInsiderNetPurchaseShares: number | null;
+  /** Yahoo `price` / `defaultKeyStatistics` の時価総額（現地通貨・主に USD）。 */
+  marketCap: number | null;
+  /** Yahoo `assetProfile.sector` / `summaryProfile.sector`。 */
+  yahooSector: string | null;
+  /** Yahoo `financialData.revenueGrowth` を % に正規化。 */
+  revenueGrowthPercent: number | null;
 };
 
 function pickRecordDateFromQuoteSummary(qss: unknown): string | null {
@@ -403,6 +409,25 @@ function normalizeYahooEarningsGrowthDecimal(raw: unknown): number | null {
   return null;
 }
 
+/** `financialData.revenueGrowth` 等: |x|≤1 は小数、それ以外は % とみなす。負の成長も許容。 */
+function normalizeYahooFinancialGrowthPercent(raw: unknown): number | null {
+  const n = typeof raw === "number" ? raw : raw != null ? Number(raw) : NaN;
+  if (!Number.isFinite(n)) return null;
+  if (Math.abs(n) <= 1) return n * 100;
+  if (Math.abs(n) <= 500) return n;
+  return null;
+}
+
+function parseYahooMarketCapField(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === "object" && raw !== null && "raw" in (raw as object)) {
+    const n = Number((raw as { raw?: unknown }).raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
 type YahooEarningsTrendRow = {
   period?: string;
   growth?: unknown;
@@ -470,9 +495,11 @@ type YahooQuoteSummaryResearchShape = {
     forwardEps?: unknown;
     pegRatio?: unknown;
   };
-  financialData?: { earningsGrowth?: unknown };
+  financialData?: { earningsGrowth?: unknown; revenueGrowth?: unknown };
   earningsTrend?: { trend?: YahooEarningsTrendRow[] };
-  assetProfile?: { country?: string };
+  assetProfile?: { country?: unknown; sector?: unknown };
+  price?: Record<string, unknown>;
+  summaryProfile?: { sector?: unknown };
   cashflowStatementHistoryQuarterly?: { cashflowStatements?: Array<Record<string, unknown> & { endDate?: Date }> };
 };
 
@@ -762,10 +789,22 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
   const yahooPeg0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.pegRatio);
   const yahooPegRatio = yahooPeg0 != null && yahooPeg0 > 0 ? yahooPeg0 : null;
 
-  const ap = (qs as { assetProfile?: { country?: unknown } }).assetProfile;
+  const ap = (qs as { assetProfile?: { country?: unknown; sector?: unknown } }).assetProfile;
   const cRaw = ap?.country;
   const yahooCountry =
     typeof cRaw === "string" && cRaw.trim().length > 0 ? cRaw.trim() : null;
+  const sp = (qs as { summaryProfile?: { sector?: unknown } }).summaryProfile;
+  const secRaw = ap?.sector ?? sp?.sector;
+  const yahooSector =
+    typeof secRaw === "string" && secRaw.trim().length > 0 ? secRaw.trim() : null;
+  const priceMod = (qs as { price?: Record<string, unknown> }).price;
+  const dksMc = (qss.defaultKeyStatistics as Record<string, unknown> | undefined)?.marketCap;
+  const marketCap =
+    parseYahooMarketCapField(priceMod?.marketCap) ??
+    parseYahooMarketCapField(dksMc);
+  const revenueGrowthPercent = normalizeYahooFinancialGrowthPercent(
+    (qss.financialData as { revenueGrowth?: unknown } | undefined)?.revenueGrowth,
+  );
   const ttmRepurchaseOfStock = ttmAbsRepurchaseFromQuoteSummaryCashflows(qs);
   const yahooBuybackPosture = buildYahooBuybackPostureFromQuoteSummary(qs);
   const yahooQuoteSharesOutstanding = yahooSharesOutstandingFromQuoteSummary(qs);
@@ -790,6 +829,9 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
     yahooBuybackPosture,
     yahooQuoteSharesOutstanding,
     yahooInsiderNetPurchaseShares,
+    marketCap,
+    yahooSector,
+    revenueGrowthPercent,
   } satisfies EquityResearchSnapshot;
 }
 
@@ -821,6 +863,8 @@ export const QUOTE_SUMMARY_EQUITY_RESEARCH_MODULES = [
   "cashflowStatementHistoryQuarterly",
   "netSharePurchaseActivity",
   "assetProfile",
+  "price",
+  "summaryProfile",
 ] as const;
 
 /**
@@ -906,16 +950,6 @@ export type FetchYahooInstrumentMetadataOptions = {
 };
 
 const CHART_LISTING_PRICE_START = new Date(Date.UTC(1970, 0, 1));
-
-function parseYahooMarketCapField(raw: unknown): number | null {
-  if (raw == null) return null;
-  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
-  if (typeof raw === "object" && raw !== null && "raw" in (raw as object)) {
-    const n = Number((raw as { raw?: unknown }).raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }
-  return null;
-}
 
 /**
  * 時価総額・上場日（初回取引日）を Yahoo から取得。失敗時は null 多めで返す。

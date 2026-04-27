@@ -50,6 +50,13 @@ export function ThemesNavigationSection(props: {
             AIユニコーン
           </Link>
           <Link
+            href="/themes/lynch-holdings"
+            className="text-[10px] font-bold uppercase tracking-wide text-rose-700 border border-rose-500/35 bg-rose-500/10 hover:bg-rose-500/15 dark:text-rose-200 dark:bg-rose-500/5 dark:hover:bg-rose-500/10 transition-all inline-flex items-center gap-2"
+            title="リンチの保有銘柄（観測）MVP"
+          >
+            リンチ観測
+          </Link>
+          <Link
             href="/themes/bookmarks"
             className="text-[10px] font-bold uppercase tracking-wide text-amber-700 border border-amber-500/35 bg-amber-500/10 hover:bg-amber-500/15 dark:text-amber-200 dark:bg-amber-500/5 dark:hover:bg-amber-500/10 transition-all inline-flex items-center gap-2"
             title="全テーマの Ecosystem ウォッチのブックマーク一覧"
