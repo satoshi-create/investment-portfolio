@@ -1904,6 +1904,7 @@ export function ThemePageClient({
         next === "payout" ||
         next === "research" ||
         next === "peg" ||
+        next === "pbr" ||
         next === "trr"
           ? "asc"
           : "desc",

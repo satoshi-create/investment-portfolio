@@ -18,6 +18,7 @@ export type StructuralEcoSortKey =
   | "perfListed"
   | "trend5d"
   | "pe"
+  | "pbr"
   | "peg"
   | "trr"
   | "egrowth"
@@ -370,6 +371,20 @@ export function StructuralEcosystemThead({
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
                   metricHelpText={METRIC_HEADER_TIP.pe}
                   label="PE"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                />
+              );
+            case "pbr":
+              return (
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="pbr"
+                  align="right"
+                  className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.pbr}
+                  label="PBR"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                 />

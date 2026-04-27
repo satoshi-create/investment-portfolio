@@ -67,6 +67,8 @@ export type EquityResearchSnapshot = {
   trailingPe: number | null;
   /** Forward P/E (next FY / forward estimate). */
   forwardPe: number | null;
+  /** Price / book (Yahoo `defaultKeyStatistics.priceToBook`). */
+  priceToBook: number | null;
   /** Trailing EPS (TTM). */
   trailingEps: number | null;
   /** Forward EPS (next FY / forward estimate). */
@@ -469,6 +471,7 @@ type YahooQuoteSummaryResearchShape = {
     trailingEps?: unknown;
     forwardEps?: unknown;
     pegRatio?: unknown;
+    priceToBook?: unknown;
   };
   financialData?: { earningsGrowth?: unknown };
   earningsTrend?: { trend?: YahooEarningsTrendRow[] };
@@ -761,6 +764,10 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
   const expectedGrowth = pickExpectedEarningsGrowthDecimalFromQuoteSummary(qss);
   const yahooPeg0 = parseFiniteNumberOrNull(qss.defaultKeyStatistics?.pegRatio);
   const yahooPegRatio = yahooPeg0 != null && yahooPeg0 > 0 ? yahooPeg0 : null;
+  const priceToBookRaw = qss.defaultKeyStatistics?.priceToBook;
+  const priceToBook0 = finiteNumberFromYahooField(priceToBookRaw);
+  const priceToBook =
+    priceToBook0 != null && Number.isFinite(priceToBook0) && priceToBook0 > 0 ? priceToBook0 : null;
 
   const ap = (qs as { assetProfile?: { country?: unknown } }).assetProfile;
   const cRaw = ap?.country;
@@ -780,6 +787,7 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
     dividendYieldPercent,
     trailingPe: trailingPe0 != null && trailingPe0 > 0 ? trailingPe0 : null,
     forwardPe: forwardPe0 != null && forwardPe0 > 0 ? forwardPe0 : null,
+    priceToBook,
     trailingEps: trailingEps0,
     forwardEps: forwardEps0,
     expectedGrowth,

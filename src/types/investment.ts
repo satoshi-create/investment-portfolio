@@ -162,6 +162,8 @@ export interface Stock {
   /** Yahoo 等のバリュエーション指標（無い場合は null）。投信などは通常 null。 */
   trailingPe: number | null;
   forwardPe: number | null;
+  /** Yahoo `defaultKeyStatistics.priceToBook`。未取得・非正は null。 */
+  priceToBook: number | null;
   trailingEps: number | null;
   forwardEps: number | null;
   /** PEG（Forward PER 優先で成長率とペア。算出不可は null） */
@@ -485,6 +487,8 @@ export type ThemeEcosystemWatchItem = {
   /** Yahoo 等のバリュエーション指標（無い場合は null）。未上場・投信などは通常 null。 */
   trailingPe: number | null;
   forwardPe: number | null;
+  /** Yahoo PBR（`priceToBook`）。未取得・非正は null。 */
+  priceToBook: number | null;
   trailingEps: number | null;
   forwardEps: number | null;
   pegRatio: number | null;

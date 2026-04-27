@@ -123,6 +123,7 @@ type SortKey =
   | "netCps"
   | "judgment"
   | "pe"
+  | "pbr"
   | "peg"
   | "trr"
   | "egrowth"
@@ -143,6 +144,11 @@ function drawdownOf(s: Stock): number | null {
 
 function peOf(s: Stock): number | null {
   const v = s.trailingPe ?? s.forwardPe ?? null;
+  return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function pbrOf(s: Stock): number | null {
+  const v = s.priceToBook;
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
 }
 
@@ -876,6 +882,7 @@ export function InventoryTable({
         return dir * cmpStr(a.ticker, b.ticker);
       }
       if (key === "pe") return dir * cmpNum(peOf(a), peOf(b));
+      if (key === "pbr") return dir * cmpNum(pbrOf(a), pbrOf(b));
       if (key === "peg") return dir * cmpNum(pegOf(a), pegOf(b));
       if (key === "trr") return dir * cmpNum(trrOf(a), trrOf(b));
       if (key === "egrowth") return dir * cmpNum(expectedGrowthOf(a), expectedGrowthOf(b));
@@ -975,6 +982,8 @@ export function InventoryTable({
 
     let peSum = 0;
     let peN = 0;
+    let pbrSum = 0;
+    let pbrN = 0;
     let pegSum = 0;
     let pegN = 0;
     let trrSum = 0;
@@ -995,6 +1004,11 @@ export function InventoryTable({
       if (pe != null) {
         peSum += pe;
         peN += 1;
+      }
+      const pb = pbrOf(s);
+      if (pb != null) {
+        pbrSum += pb;
+        pbrN += 1;
       }
       const pg = pegOf(s);
       if (pg != null) {
@@ -1062,6 +1076,7 @@ export function InventoryTable({
       avgDailyAlphaVisible,
       avgLiveAlphaVisible,
       avgPeVisible: peN > 0 ? peSum / peN : null,
+      avgPbrVisible: pbrN > 0 ? pbrSum / pbrN : null,
       avgPegVisible: pegN > 0 ? pegSum / pegN : null,
       avgTrrVisible: trrN > 0 ? trrSum / trrN : null,
       avgExpectedGrowthVisible: egrowthN > 0 ? egrowthSum / egrowthN : null,
@@ -1091,6 +1106,7 @@ export function InventoryTable({
         nextKey === "earnings" ||
         nextKey === "research" ||
         nextKey === "peg" ||
+        nextKey === "pbr" ||
         nextKey === "trr" ||
         nextKey === "lynch"
           ? "asc"
@@ -1192,6 +1208,12 @@ export function InventoryTable({
     if (v == null) return "—";
     if (!Number.isFinite(v) || v <= 0) return "—";
     return v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  }
+
+  function fmtPbr(v: number | null): string {
+    if (v == null) return "—";
+    if (!Number.isFinite(v) || v <= 0) return "—";
+    return v >= 100 ? v.toFixed(0) : v.toFixed(2);
   }
 
   function fmtEps(v: number | null): string {
@@ -1724,6 +1746,24 @@ export function InventoryTable({
                               onClick={() => toggleSort("pe")}
                             >
                               PER{sortMark("pe")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "pbr":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            metricHelpText={METRIC_HEADER_TIP.pbr}
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("pbr")}
+                            >
+                              PBR{sortMark("pbr")}
                             </button>
                           </SortableInventoryTh>
                         );
@@ -2444,6 +2484,16 @@ export function InventoryTable({
                             {fmtPe(peOf(stock))}
                           </td>
                         );
+                      case "pbr":
+                        return (
+                          <td
+                            key={colId}
+                            className="px-4 py-4 text-right font-mono text-xs tabular-nums text-foreground/90"
+                            title={METRIC_HEADER_TIP.pbr}
+                          >
+                            {fmtPbr(pbrOf(stock))}
+                          </td>
+                        );
                       case "peg": {
                         const peg = stock.pegRatio;
                         return (
@@ -2837,6 +2887,16 @@ export function InventoryTable({
                     return (
                       <td key={colId} className="px-4 py-3 text-right align-top font-mono text-[11px] text-foreground/90">
                         {footerStats.avgPeVisible != null ? fmtPe(footerStats.avgPeVisible) : "—"}
+                      </td>
+                    );
+                  case "pbr":
+                    return (
+                      <td
+                        key={colId}
+                        className="px-4 py-3 text-right align-top font-mono text-[11px] text-foreground/90"
+                        title="表示行の PBR 単純平均"
+                      >
+                        {footerStats.avgPbrVisible != null ? fmtPbr(footerStats.avgPbrVisible) : "—"}
                       </td>
                     );
                   case "peg":

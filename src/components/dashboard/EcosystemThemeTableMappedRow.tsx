@@ -145,6 +145,11 @@ function ecoPeOf(e: ThemeEcosystemWatchItem): number | null {
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
 }
 
+function ecoPbrOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.priceToBook;
+  return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
 function ecoEpsOf(e: ThemeEcosystemWatchItem): number | null {
   const v = e.trailingEps ?? e.forwardEps ?? null;
   return v != null && Number.isFinite(v) ? v : null;
@@ -158,6 +163,11 @@ function ecoTrrOf(e: ThemeEcosystemWatchItem): number | null {
 function fmtPe(v: number | null): string {
   if (v == null || !Number.isFinite(v) || v <= 0) return "—";
   return v >= 100 ? v.toFixed(0) : v.toFixed(1);
+}
+
+function fmtPbr(v: number | null): string {
+  if (v == null || !Number.isFinite(v) || v <= 0) return "—";
+  return v >= 100 ? v.toFixed(0) : v.toFixed(2);
 }
 
 function fmtEps(v: number | null): string {
@@ -913,6 +923,16 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                 }
               >
                 {fmtPe(ecoPeOf(e))}
+              </td>
+            );
+          case "pbr":
+            return (
+              <td
+                key={colId}
+                className={`whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums text-foreground ${stickyFirst}`}
+                title={METRIC_HEADER_TIP.pbr}
+              >
+                {fmtPbr(ecoPbrOf(e))}
               </td>
             );
           case "peg": {

@@ -59,6 +59,7 @@ export function stocksToCsvRows(stocks: Stock[]): Record<string, unknown>[] {
     priceSource: s.priceSource,
     avgAcquisitionPrice: s.avgAcquisitionPrice,
     pegRatio: s.pegRatio,
+    priceToBook: s.priceToBook,
     expectedGrowth: s.expectedGrowth,
     netCash: s.netCash,
     netCashPerShare: s.netCashPerShare,
@@ -96,6 +97,7 @@ export const STOCK_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "priceSource", header: "価格ソース" },
   { key: "avgAcquisitionPrice", header: "平均取得単価" },
   { key: "pegRatio", header: "PEG" },
+  { key: "priceToBook", header: "PBR（株価純資産倍率）" },
   { key: "expectedGrowth", header: "予想EPS成長率（小数）" },
   { key: "netCash", header: "ネットキャッシュ（現地通貨）" },
   { key: "netCashPerShare", header: "1株ネットC（現地通貨）" },
@@ -293,6 +295,7 @@ export function themeEcosystemWatchlistToCsvRows(
     trailingPe: e.trailingPe,
     forwardPe: e.forwardPe,
     pegRatio: e.pegRatio,
+    priceToBook: e.priceToBook,
     expectedGrowth: e.expectedGrowth,
   }));
 }
@@ -339,5 +342,6 @@ export const THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "trailingPe", header: "PER（TTM）" },
   { key: "forwardPe", header: "PER（Forward）" },
   { key: "pegRatio", header: "PEG" },
+  { key: "priceToBook", header: "PBR（株価純資産倍率）" },
   { key: "expectedGrowth", header: "予想EPS成長率（小数）" },
 ];

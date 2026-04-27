@@ -50,6 +50,7 @@ export const METRIC_HEADER_TIP = {
   position:
     "数量・評価額（円ベース推定）・ポートフォリオ内ウエイト%。`marketValue`・`weight`（dashboard-data）。",
   pe: "株価収益率。Trailing EPS 優先、なければ Forward（Yahoo）。",
+  pbr: "株価純資産倍率（PBR）。Yahoo `defaultKeyStatistics.priceToBook`。簿価ネガ・投信等では未取得になりやすい。",
   egrowth: "予想 EPS 成長率（年率イメージ）。Yahoo の expectedGrowth を % 表示（内部は小数）。",
   eps: "1株当たり利益。Trailing EPS 優先、なければ Forward（Yahoo）。",
   price:

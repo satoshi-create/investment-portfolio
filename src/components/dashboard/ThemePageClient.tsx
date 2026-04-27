@@ -175,6 +175,11 @@ function ecoPeOf(e: ThemeEcosystemWatchItem): number | null {
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
 }
 
+function ecoPbrOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.priceToBook;
+  return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
 function ecoPegOf(e: ThemeEcosystemWatchItem): number | null {
   const v = e.pegRatio;
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
@@ -326,6 +331,13 @@ function normalizeThemeDetailResponse(
           ...item,
           instrumentKind,
           countryName: instrumentKind === "US_EQUITY" ? "米国" : "日本",
+          priceToBook: (() => {
+            const v =
+              (item as Record<string, unknown>).priceToBook ??
+              (item as Record<string, unknown>).price_to_book;
+            const n = typeof v === "number" ? v : Number(v);
+            return Number.isFinite(n) && n > 0 ? n : null;
+          })(),
           revenueGrowth: (() => {
             const v =
               (item as Record<string, unknown>).revenueGrowth ??
@@ -1640,6 +1652,7 @@ export function ThemePageClient({
       if (ecoSortKey === "fcfYield")
         return dir * cmpNum(ecoFcfYieldSortValue(a), ecoFcfYieldSortValue(b));
       if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
+      if (ecoSortKey === "pbr") return dir * cmpNum(ecoPbrOf(a), ecoPbrOf(b));
       if (ecoSortKey === "peg") return dir * cmpNum(ecoPegOf(a), ecoPegOf(b));
       if (ecoSortKey === "trr") return dir * cmpNum(ecoTrrOf(a), ecoTrrOf(b));
       if (ecoSortKey === "egrowth") return dir * cmpNum(ecoExpectedGrowthOf(a), ecoExpectedGrowthOf(b));
@@ -1754,6 +1767,7 @@ export function ThemePageClient({
         next === "payout" ||
         next === "research" ||
         next === "peg" ||
+        next === "pbr" ||
         next === "trr"
           ? "asc"
           : "desc",

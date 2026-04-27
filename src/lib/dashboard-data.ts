@@ -1348,6 +1348,7 @@ function buildDraftsFromHoldingRows(
     const dividendYieldPercent = research?.dividendYieldPercent ?? null;
     const trailingPe = research?.trailingPe ?? null;
     const forwardPe = research?.forwardPe ?? null;
+    const priceToBook = research?.priceToBook ?? null;
     const trailingEps = research?.trailingEps ?? null;
     const forwardEps = research?.forwardEps ?? null;
     const expectedGrowth = research?.expectedGrowth ?? null;
@@ -1481,6 +1482,7 @@ function buildDraftsFromHoldingRows(
       dividendYieldPercent,
       trailingPe,
       forwardPe,
+      priceToBook,
       trailingEps,
       forwardEps,
       pegRatio,
@@ -1875,6 +1877,7 @@ async function enrichEcosystemMemberRow(
   const dividendYieldPercent = research?.dividendYieldPercent ?? null;
   const trailingPe = research?.trailingPe ?? null;
   const forwardPe = research?.forwardPe ?? null;
+  const priceToBook = research?.priceToBook ?? null;
   const trailingEps = research?.trailingEps ?? null;
   const forwardEps = research?.forwardEps ?? null;
   const expectedGrowth = research?.expectedGrowth ?? null;
@@ -2201,6 +2204,7 @@ async function enrichEcosystemMemberRow(
     dividendYieldPercent,
     trailingPe,
     forwardPe,
+    priceToBook,
     trailingEps,
     forwardEps,
     pegRatio,
@@ -3470,6 +3474,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       dividendYieldPercent: null,
       trailingPe: null,
       forwardPe: null,
+      priceToBook: null,
       trailingEps: null,
       forwardEps: null,
       pegRatio: null,

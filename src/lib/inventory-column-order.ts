@@ -16,6 +16,7 @@ export const INVENTORY_COLUMN_IDS = [
   "deviation",
   "drawdown",
   "pe",
+  "pbr",
   "peg",
   "trr",
   "egrowth",
