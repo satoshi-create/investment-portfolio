@@ -2142,6 +2142,8 @@ export function InventoryTable({
                                 consecutiveDividendYears={stock.consecutiveDividendYears}
                                 ttmRepurchaseOfStock={stock.ttmRepurchaseOfStock}
                                 yahooBuybackPosture={stock.yahooBuybackPosture}
+                                yahooQuoteSharesOutstanding={stock.yahooQuoteSharesOutstanding}
+                                yahooInsiderNetPurchaseShares={stock.yahooInsiderNetPurchaseShares}
                               />
                               <div className="flex flex-col gap-0.5">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-mono text-muted-foreground">

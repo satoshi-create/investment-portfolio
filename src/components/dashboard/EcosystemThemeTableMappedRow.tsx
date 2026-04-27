@@ -702,6 +702,8 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                       consecutiveDividendYears={e.consecutiveDividendYears}
                       ttmRepurchaseOfStock={e.ttmRepurchaseOfStock}
                       yahooBuybackPosture={e.yahooBuybackPosture}
+                      yahooQuoteSharesOutstanding={e.yahooQuoteSharesOutstanding}
+                      yahooInsiderNetPurchaseShares={e.yahooInsiderNetPurchaseShares}
                       className="flex flex-wrap gap-1.5"
                     />
                   ) : null}
@@ -782,6 +784,8 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                     consecutiveDividendYears={e.consecutiveDividendYears}
                     ttmRepurchaseOfStock={e.ttmRepurchaseOfStock}
                     yahooBuybackPosture={e.yahooBuybackPosture}
+                    yahooQuoteSharesOutstanding={e.yahooQuoteSharesOutstanding}
+                    yahooInsiderNetPurchaseShares={e.yahooInsiderNetPurchaseShares}
                   />
                 </div>
               </td>

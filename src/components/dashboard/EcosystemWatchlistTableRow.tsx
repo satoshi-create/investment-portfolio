@@ -439,6 +439,8 @@ export function EcosystemWatchlistTableRow({
                     consecutiveDividendYears={e.consecutiveDividendYears}
                     ttmRepurchaseOfStock={e.ttmRepurchaseOfStock}
                     yahooBuybackPosture={e.yahooBuybackPosture}
+                    yahooQuoteSharesOutstanding={e.yahooQuoteSharesOutstanding}
+                    yahooInsiderNetPurchaseShares={e.yahooInsiderNetPurchaseShares}
                   />
                 </div>
               </td>

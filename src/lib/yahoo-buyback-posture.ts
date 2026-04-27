@@ -1,5 +1,13 @@
 import type { YahooBuybackPosture } from "@/src/types/investment";
 
+function formatShareCountForTooltip(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return String(Math.round(n));
+}
+
 function parseFiscalRepurchasesAbs(raw: unknown): YahooBuybackPosture["fiscalRepurchasesAbs"] {
   if (!Array.isArray(raw)) return [];
   const out: { endDateYmd: string; amountAbs: number }[] = [];
@@ -83,6 +91,10 @@ export function buybackChipShortLabel(ttmRepurchaseOfStock: number | null, yahoo
 export function yahooBuybackResearchTooltip(input: {
   ttmRepurchaseOfStock: number | null;
   yahooBuybackPosture: YahooBuybackPosture | null;
+  /** `defaultKeyStatistics.sharesOutstanding` スナップ（任意） */
+  yahooQuoteSharesOutstanding?: number | null;
+  /** `netSharePurchaseActivity.netInfoShares`・インサイダー純売買（任意） */
+  yahooInsiderNetPurchaseShares?: number | null;
 }): string {
   const ttm = input.ttmRepurchaseOfStock;
   const head =
@@ -108,6 +120,16 @@ export function yahooBuybackResearchTooltip(input: {
             .join("\n"),
       );
     }
+  }
+  const sh = input.yahooQuoteSharesOutstanding;
+  if (sh != null && Number.isFinite(sh) && sh > 0) {
+    lines.push(`発行済株数（Yahoo defaultKeyStatistics スナップ）: ${formatShareCountForTooltip(sh)} 株`);
+  }
+  const ins = input.yahooInsiderNetPurchaseShares;
+  if (ins != null && Number.isFinite(ins)) {
+    lines.push(
+      `インサイダー純株数（netSharePurchaseActivity・会社の自社株買いとは別）: ${ins >= 0 ? "+" : ""}${formatShareCountForTooltip(ins)} 株`,
+    );
   }
   return lines.join("\n\n");
 }

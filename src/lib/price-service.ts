@@ -92,6 +92,16 @@ export type EquityResearchSnapshot = {
    * 年次・四半期 CF の `repurchaseOfStock` から組み立てた自社株買いの複数期プロフィール。
    */
   yahooBuybackPosture: YahooBuybackPosture | null;
+  /**
+   * Yahoo `defaultKeyStatistics` の発行済（または近似）株数スナップ。リサーチ取得時点。
+   * Efficiency の `shares_outstanding` と異なる場合あり。
+   */
+  yahooQuoteSharesOutstanding: number | null;
+  /**
+   * Yahoo `netSharePurchaseActivity.netInfoShares`（インサイダー取引の純株数・モジュールの period 内）。
+   * 会社の自社株買い（CF の repurchase）とは別系列。ツールチップの補足のみ。
+   */
+  yahooInsiderNetPurchaseShares: number | null;
 };
 
 function pickRecordDateFromQuoteSummary(qss: unknown): string | null {
@@ -340,6 +350,48 @@ function parseFiniteNumberOrNull(raw: unknown): number | null {
   if (raw == null) return null;
   const n = typeof raw === "number" ? raw : Number(raw);
   return Number.isFinite(n) ? n : null;
+}
+
+/** `quoteSummary` の数値 leaf（`{ raw, fmt }`・略号付き fmt）を有限 number に。 */
+function finiteNumberFromYahooField(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const t = raw.trim().replace(/,/g, "");
+    if (t.length === 0) return null;
+    const plain = Number(t);
+    if (Number.isFinite(plain)) return plain;
+    const m = t.match(/^(-?(?:\d+\.?\d*|\.\d+))\s*([KkMmBbTt])$/);
+    if (!m) return null;
+    const base = Number(m[1]);
+    if (!Number.isFinite(base)) return null;
+    const suf = (m[2] ?? "").toUpperCase();
+    const mult = suf === "K" ? 1e3 : suf === "M" ? 1e6 : suf === "B" ? 1e9 : suf === "T" ? 1e12 : 1;
+    return base * mult;
+  }
+  if (typeof raw === "object" && raw !== null && "raw" in raw) {
+    const o = raw as Record<string, unknown>;
+    const inner = finiteNumberFromYahooField(o["raw"]);
+    if (inner != null) return inner;
+    if (typeof o["fmt"] === "string") return finiteNumberFromYahooField(o["fmt"]);
+  }
+  return null;
+}
+
+function yahooSharesOutstandingFromQuoteSummary(qs: unknown): number | null {
+  const dks = (qs as { defaultKeyStatistics?: Record<string, unknown> }).defaultKeyStatistics;
+  if (!dks || typeof dks !== "object") return null;
+  for (const key of ["sharesOutstanding", "impliedSharesOutstanding", "floatShares"]) {
+    const v = finiteNumberFromYahooField(dks[key]);
+    if (v != null && v > 0) return v;
+  }
+  return null;
+}
+
+function yahooInsiderNetPurchaseSharesFromQuoteSummary(qs: unknown): number | null {
+  const mod = (qs as { netSharePurchaseActivity?: Record<string, unknown> }).netSharePurchaseActivity;
+  if (!mod || typeof mod !== "object") return null;
+  return finiteNumberFromYahooField(mod["netInfoShares"]);
 }
 
 /** Yahoo: 成長率が小数（0.15）またはパーセント（15）のどちらでも正規化して小数に。 */
@@ -662,11 +714,13 @@ function logEquityResearchBuybackDiagnostics(
   const nQ = countCashflowStatementRows(qs, "cashflowStatementHistoryQuarterly");
   const nA = countCashflowStatementRows(qs, "cashflowStatementHistory");
   const hasFin = (qs as { financialData?: unknown }).financialData != null;
+  const hasNspa = (qs as { netSharePurchaseActivity?: unknown }).netSharePurchaseActivity != null;
   const qss = qs as { summaryDetail?: { dividendYield?: unknown } };
   console.log(
     `[price-service] equity-research gaps symbol=${yahooSymbol} ticker=${snapshot.ticker} ` +
       `ttmRepurchaseOfStock=${ttm === null ? "null" : String(ttm)} yahooBuybackPosture=null ` +
       `cashflowStatementHistoryQuarterly.rows=${nQ} cashflowStatementHistory.rows=${nA} financialData=${hasFin ? "yes" : "no"} ` +
+      `netSharePurchaseActivity=${hasNspa ? "yes" : "no"} sharesOutstandingSnap=${snapshot.yahooQuoteSharesOutstanding === null ? "null" : "ok"} ` +
       `dividendYieldPercent=${snapshot.dividendYieldPercent === null ? "null" : String(snapshot.dividendYieldPercent)} ` +
       `rawDividendYield=${String(qss.summaryDetail?.dividendYield)} pegRatio=${snapshot.yahooPegRatio === null ? "null" : String(snapshot.yahooPegRatio)} ` +
       `expectedGrowth=${snapshot.expectedGrowth === null ? "null" : String(snapshot.expectedGrowth)}`,
@@ -714,6 +768,8 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
     typeof cRaw === "string" && cRaw.trim().length > 0 ? cRaw.trim() : null;
   const ttmRepurchaseOfStock = ttmAbsRepurchaseFromQuoteSummaryCashflows(qs);
   const yahooBuybackPosture = buildYahooBuybackPostureFromQuoteSummary(qs);
+  const yahooQuoteSharesOutstanding = yahooSharesOutstandingFromQuoteSummary(qs);
+  const yahooInsiderNetPurchaseShares = yahooInsiderNetPurchaseSharesFromQuoteSummary(qs);
 
   return {
     ticker: tickerUpper,
@@ -732,6 +788,8 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
     consecutiveDividendYears: null,
     yahooCountry,
     yahooBuybackPosture,
+    yahooQuoteSharesOutstanding,
+    yahooInsiderNetPurchaseShares,
   } satisfies EquityResearchSnapshot;
 }
 
@@ -761,6 +819,7 @@ export const QUOTE_SUMMARY_EQUITY_RESEARCH_MODULES = [
   "earningsTrend",
   "cashflowStatementHistory",
   "cashflowStatementHistoryQuarterly",
+  "netSharePurchaseActivity",
   "assetProfile",
 ] as const;
 

@@ -594,6 +594,18 @@ function normalizeThemeDetailResponse(
             (item as Record<string, unknown>).yahooBuybackPosture ??
               (item as Record<string, unknown>).yahoo_buyback_posture,
           ),
+          yahooQuoteSharesOutstanding: (() => {
+            const a = (item as Record<string, unknown>).yahooQuoteSharesOutstanding;
+            const b = (item as Record<string, unknown>).yahoo_quote_shares_outstanding;
+            const n = Number(a ?? b);
+            return Number.isFinite(n) && n > 0 ? n : null;
+          })(),
+          yahooInsiderNetPurchaseShares: (() => {
+            const a = (item as Record<string, unknown>).yahooInsiderNetPurchaseShares;
+            const b = (item as Record<string, unknown>).yahoo_insider_net_purchase_shares;
+            const n = Number(a ?? b);
+            return Number.isFinite(n) ? n : null;
+          })(),
           };
         })
       : [],

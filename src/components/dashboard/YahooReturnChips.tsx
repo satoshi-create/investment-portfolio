@@ -11,6 +11,8 @@ type Props = {
   consecutiveDividendYears: number | null;
   ttmRepurchaseOfStock: number | null;
   yahooBuybackPosture: YahooBuybackPosture | null;
+  yahooQuoteSharesOutstanding?: number | null;
+  yahooInsiderNetPurchaseShares?: number | null;
   className?: string;
 };
 
@@ -20,7 +22,14 @@ const DIVIDEND_STREAK_TITLE =
 /**
  * 配当連続年数・自社株買い TTM のチップ（保有 Research / エコ Research で共通）。
  */
-export function YahooReturnChips({ consecutiveDividendYears, ttmRepurchaseOfStock, yahooBuybackPosture, className }: Props) {
+export function YahooReturnChips({
+  consecutiveDividendYears,
+  ttmRepurchaseOfStock,
+  yahooBuybackPosture,
+  yahooQuoteSharesOutstanding,
+  yahooInsiderNetPurchaseShares,
+  className,
+}: Props) {
   const showDiv = consecutiveDividendYears != null && consecutiveDividendYears > 0;
   const showBb = hasBuybackChipData(ttmRepurchaseOfStock, yahooBuybackPosture);
   if (!showDiv && !showBb) return null;
@@ -37,7 +46,12 @@ export function YahooReturnChips({ consecutiveDividendYears, ttmRepurchaseOfStoc
       {showBb ? (
         <span
           className="text-[9px] font-mono text-amber-200/90 border border-amber-500/30 rounded px-1.5 py-0.5"
-          title={yahooBuybackResearchTooltip({ ttmRepurchaseOfStock, yahooBuybackPosture })}
+          title={yahooBuybackResearchTooltip({
+            ttmRepurchaseOfStock,
+            yahooBuybackPosture,
+            yahooQuoteSharesOutstanding,
+            yahooInsiderNetPurchaseShares,
+          })}
         >
           自社株買い {buybackChipShortLabel(ttmRepurchaseOfStock, yahooBuybackPosture)}
         </span>

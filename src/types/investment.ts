@@ -183,6 +183,10 @@ export interface Stock {
   consecutiveDividendYears: number | null;
   /** Yahoo CF 由来の自社株買いの複数期プロフィール（還元姿勢）。 */
   yahooBuybackPosture: YahooBuybackPosture | null;
+  /** Yahoo `defaultKeyStatistics` の発行済株数スナップ（リサーチ取得時）。未取得は null。 */
+  yahooQuoteSharesOutstanding: number | null;
+  /** Yahoo `netSharePurchaseActivity.netInfoShares`（インサイダー純売買・自社株買いとは別）。 */
+  yahooInsiderNetPurchaseShares: number | null;
   /** 構造投資テーマ（`structure_tags` 先頭） */
   tag: string;
   alphaHistory: AlphaHistory;
@@ -493,6 +497,8 @@ export type ThemeEcosystemWatchItem = {
   ttmRepurchaseOfStock: number | null;
   consecutiveDividendYears: number | null;
   yahooBuybackPosture: YahooBuybackPosture | null;
+  yahooQuoteSharesOutstanding: number | null;
+  yahooInsiderNetPurchaseShares: number | null;
   /** `theme_ecosystem_members.observation_started_at`（銘柄投入日・累積 Alpha の第一優先起点）。未設定時は null */
   observationStartedAt: string | null;
   /** 観測起点からの累積 Alpha %（累積系列）。スパークライン・最新累積値用。日次は `alphaDailyHistory`。 */

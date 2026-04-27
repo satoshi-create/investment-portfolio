@@ -605,6 +605,8 @@ export function HoldingsDetailTable({ stocks }: { stocks: Stock[] }) {
                 consecutiveDividendYears={s.consecutiveDividendYears}
                 ttmRepurchaseOfStock={s.ttmRepurchaseOfStock}
                 yahooBuybackPosture={s.yahooBuybackPosture}
+                yahooQuoteSharesOutstanding={s.yahooQuoteSharesOutstanding}
+                yahooInsiderNetPurchaseShares={s.yahooInsiderNetPurchaseShares}
                 className="flex flex-wrap gap-1"
               />
             </div>

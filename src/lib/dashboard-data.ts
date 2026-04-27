@@ -1374,6 +1374,8 @@ function buildDraftsFromHoldingRows(
     const ttmRepurchaseOfStock = research?.ttmRepurchaseOfStock ?? null;
     const consecutiveDividendYears = research?.consecutiveDividendYears ?? null;
     const yahooBuybackPosture = research?.yahooBuybackPosture ?? null;
+    const yahooQuoteSharesOutstanding = research?.yahooQuoteSharesOutstanding ?? null;
+    const yahooInsiderNetPurchaseShares = research?.yahooInsiderNetPurchaseShares ?? null;
     const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
     const daysToExDividend = exDividendDate != null ? (() => {
       const d = new Date(`${exDividendDate}T00:00:00.000Z`);
@@ -1489,6 +1491,8 @@ function buildDraftsFromHoldingRows(
       ttmRepurchaseOfStock,
       consecutiveDividendYears,
       yahooBuybackPosture,
+      yahooQuoteSharesOutstanding,
+      yahooInsiderNetPurchaseShares,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
       alphaHistoryObservationDates,
@@ -1897,6 +1901,8 @@ async function enrichEcosystemMemberRow(
   const ttmRepurchaseOfStockEco = research?.ttmRepurchaseOfStock ?? null;
   const consecutiveDividendYearsEco = research?.consecutiveDividendYears ?? null;
   const yahooBuybackPostureEco = research?.yahooBuybackPosture ?? null;
+  const yahooQuoteSharesOutstandingEco = research?.yahooQuoteSharesOutstanding ?? null;
+  const yahooInsiderNetPurchaseSharesEco = research?.yahooInsiderNetPurchaseShares ?? null;
   const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
   const daysToExDividend =
     exDividendDate != null
@@ -2205,6 +2211,8 @@ async function enrichEcosystemMemberRow(
     ttmRepurchaseOfStock: ttmRepurchaseOfStockEco,
     consecutiveDividendYears: consecutiveDividendYearsEco,
     yahooBuybackPosture: yahooBuybackPostureEco,
+    yahooQuoteSharesOutstanding: yahooQuoteSharesOutstandingEco,
+    yahooInsiderNetPurchaseShares: yahooInsiderNetPurchaseSharesEco,
     observationStartedAt,
     alphaHistory,
     alphaCumulativeObservationDates,
@@ -3472,6 +3480,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       ttmRepurchaseOfStock: null,
       consecutiveDividendYears: null,
       yahooBuybackPosture: null,
+      yahooQuoteSharesOutstanding: null,
+      yahooInsiderNetPurchaseShares: null,
       tag,
       alphaHistory: [alpha],
       alphaHistoryObservationDates: (() => {
