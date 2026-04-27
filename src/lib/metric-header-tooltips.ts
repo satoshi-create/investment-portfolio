@@ -21,6 +21,8 @@ export const METRIC_HEADER_TIP = {
   peg: "成長性を価格に折り込んだ鋭さ。低いほど「成長の割安」だが前提の質は別途確認。【式】PEG ≈ PER ÷ (予想EPS成長率の小数 × 100)。自前算出不可時は Yahoo `pegRatio`（`resolveStockPegRatio`）",
   divAdjPeg:
     "配当を成長分母に加えた鋭さ。高配当ディフェンシブの重みづけに。【式】DA-PEG = PER / (予想成長% + 配当利回り%)（`computeDividendAdjustedPeg`）",
+  trr:
+    "トータル・リターン・レシオ: 予想EPS成長と配当利回りを PER で割った「収益フロー対バリュエーション」。高いほど割安な高還元・高成長に近い目安（前提の質は別途）。【式】TRR = (予想成長% + 配当利回り%) ÷ PER（Forward PER 優先・`computeTotalReturnYieldRatio`）",
   volumeRatio:
     "本セッション出来高 ÷ 直近10日平均出来高（Yahoo quote / 日次）。【式】本日出来高 / 10日平均出来高",
   bookmark:

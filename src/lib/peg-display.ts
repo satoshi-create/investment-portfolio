@@ -19,3 +19,25 @@ export function pegRatioTextClass(peg: number | null): string {
   if (peg < 2) return "text-foreground";
   return "text-rose-400 font-bold";
 }
+
+export function fmtTotalReturnYieldRatio(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return "N/A";
+  return v >= 10 ? v.toFixed(1) : v.toFixed(2);
+}
+
+/** TRR > 2: 小判色（割安・高還元・高成長の目安帯） */
+export function totalReturnYieldRatioTextClass(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return "text-muted-foreground";
+  if (v > 2) return "text-amber-400 font-semibold bg-amber-500/15 rounded px-0.5";
+  return "text-foreground";
+}
+
+/** PEG < 1 の「お宝」アイコン表示用（有限かつ正の PEG） */
+export function pegLynchTreasureEligible(peg: number | null): boolean {
+  return peg != null && Number.isFinite(peg) && peg > 0 && peg < 1;
+}
+
+/** PEG ≤ 0.5 のテンバガー候補バッジ（PEG が算出されている行のみ） */
+export function pegLynchTenbaggerEligible(peg: number | null): boolean {
+  return peg != null && Number.isFinite(peg) && peg > 0 && peg <= 0.5;
+}

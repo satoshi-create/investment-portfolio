@@ -6,6 +6,7 @@ import {
   CalendarClock,
   CircleSlash,
   FileSpreadsheet,
+  Gem,
   GripVertical,
   MessageSquare,
   NotebookPen,
@@ -73,7 +74,15 @@ import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
 import { computeLiveAlphaDayPercent, fiveDayPulseForHoldingRow } from "@/src/lib/alpha-logic";
-import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
+import {
+  fmtExpectedGrowthPercent,
+  fmtPegRatio,
+  fmtTotalReturnYieldRatio,
+  pegLynchTenbaggerEligible,
+  pegLynchTreasureEligible,
+  pegRatioTextClass,
+  totalReturnYieldRatioTextClass,
+} from "@/src/lib/peg-display";
 import { cn } from "@/src/lib/cn";
 import {
   DEFAULT_COLUMN_ORDER,
@@ -115,6 +124,7 @@ type SortKey =
   | "judgment"
   | "pe"
   | "peg"
+  | "trr"
   | "egrowth"
   | "eps"
   | "volRatio";
@@ -139,6 +149,11 @@ function peOf(s: Stock): number | null {
 function pegOf(s: Stock): number | null {
   const v = s.pegRatio;
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function trrOf(s: Stock): number | null {
+  const v = s.totalReturnYieldRatio;
+  return v != null && Number.isFinite(v) ? v : null;
 }
 
 function expectedGrowthOf(s: Stock): number | null {
@@ -862,6 +877,7 @@ export function InventoryTable({
       }
       if (key === "pe") return dir * cmpNum(peOf(a), peOf(b));
       if (key === "peg") return dir * cmpNum(pegOf(a), pegOf(b));
+      if (key === "trr") return dir * cmpNum(trrOf(a), trrOf(b));
       if (key === "egrowth") return dir * cmpNum(expectedGrowthOf(a), expectedGrowthOf(b));
       if (key === "eps") return dir * cmpNum(epsOf(a), epsOf(b));
       if (key === "ruleOf40") return dir * cmpNum(ruleOf40SortValue(a), ruleOf40SortValue(b));
@@ -961,6 +977,8 @@ export function InventoryTable({
     let peN = 0;
     let pegSum = 0;
     let pegN = 0;
+    let trrSum = 0;
+    let trrN = 0;
     let egrowthSum = 0;
     let egrowthN = 0;
     let epsSum = 0;
@@ -982,6 +1000,11 @@ export function InventoryTable({
       if (pg != null) {
         pegSum += pg;
         pegN += 1;
+      }
+      const tr = trrOf(s);
+      if (tr != null) {
+        trrSum += tr;
+        trrN += 1;
       }
       const eg = expectedGrowthOf(s);
       if (eg != null) {
@@ -1040,6 +1063,7 @@ export function InventoryTable({
       avgLiveAlphaVisible,
       avgPeVisible: peN > 0 ? peSum / peN : null,
       avgPegVisible: pegN > 0 ? pegSum / pegN : null,
+      avgTrrVisible: trrN > 0 ? trrSum / trrN : null,
       avgExpectedGrowthVisible: egrowthN > 0 ? egrowthSum / egrowthN : null,
       avgEpsVisible: epsN > 0 ? epsSum / epsN : null,
       avgFiveDayAlphaDelta: trend5dN > 0 ? trend5dSum / trend5dN : null,
@@ -1064,7 +1088,11 @@ export function InventoryTable({
     } else {
       setSortKey(nextKey);
       setSortDir(
-        nextKey === "earnings" || nextKey === "research" || nextKey === "peg" || nextKey === "lynch"
+        nextKey === "earnings" ||
+        nextKey === "research" ||
+        nextKey === "peg" ||
+        nextKey === "trr" ||
+        nextKey === "lynch"
           ? "asc"
           : "desc",
       );
@@ -1714,6 +1742,24 @@ export function InventoryTable({
                               onClick={() => toggleSort("peg")}
                             >
                               PEG{sortMark("peg")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
+                      case "trr":
+                        return (
+                          <SortableInventoryTh
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            metricHelpText={METRIC_HEADER_TIP.trr}
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("trr")}
+                            >
+                              TRR{sortMark("trr")}
                             </button>
                           </SortableInventoryTh>
                         );
@@ -2396,19 +2442,53 @@ export function InventoryTable({
                             {fmtPe(peOf(stock))}
                           </td>
                         );
-                      case "peg":
+                      case "peg": {
+                        const peg = stock.pegRatio;
+                        return (
+                          <td
+                            key={colId}
+                            className={cn(
+                              "px-4 py-4 text-right font-mono text-xs tabular-nums align-top",
+                              pegRatioTextClass(peg),
+                            )}
+                            title="PEG · 「成長%」列で予想成長率を参照"
+                          >
+                            <div className="flex flex-col items-end gap-0.5 leading-tight">
+                              <div className="flex items-center justify-end gap-0.5">
+                                {pegLynchTreasureEligible(peg) ? (
+                                  <span title="お宝（PEG < 1 · PER が成長率を下回る帯）">
+                                    <Gem className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+                                  </span>
+                                ) : null}
+                                <span>{fmtPegRatio(peg)}</span>
+                              </div>
+                              {pegLynchTenbaggerEligible(peg) ? (
+                                <span
+                                  className="text-[9px] font-semibold tracking-tight text-amber-300/95"
+                                  title="PEG 極小ゾーン（前提データの質は別途確認）"
+                                >
+                                  🚀 テンバガー候補
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                        );
+                      }
+                      case "trr": {
+                        const trr = trrOf(stock);
                         return (
                           <td
                             key={colId}
                             className={cn(
                               "px-4 py-4 text-right font-mono text-xs tabular-nums",
-                              pegRatioTextClass(stock.pegRatio),
+                              totalReturnYieldRatioTextClass(trr),
                             )}
-                            title="PEG · 「成長%」列で予想成長率を参照"
+                            title={METRIC_HEADER_TIP.trr}
                           >
-                            {fmtPegRatio(stock.pegRatio)}
+                            {fmtTotalReturnYieldRatio(trr)}
                           </td>
                         );
+                      }
                       case "egrowth":
                         return (
                           <td
@@ -2767,6 +2847,21 @@ export function InventoryTable({
                         )}
                       >
                         {footerStats.avgPegVisible != null ? fmtPegRatio(footerStats.avgPegVisible) : "N/A"}
+                      </td>
+                    );
+                  case "trr":
+                    return (
+                      <td
+                        key={colId}
+                        className={cn(
+                          "px-4 py-3 text-right align-top font-mono text-[11px]",
+                          totalReturnYieldRatioTextClass(footerStats.avgTrrVisible),
+                        )}
+                        title="表示行の TRR 単純平均"
+                      >
+                        {footerStats.avgTrrVisible != null
+                          ? fmtTotalReturnYieldRatio(footerStats.avgTrrVisible)
+                          : "N/A"}
                       </td>
                     );
                   case "egrowth":

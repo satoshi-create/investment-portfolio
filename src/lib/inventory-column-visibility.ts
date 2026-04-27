@@ -31,6 +31,7 @@ export const INVENTORY_COLUMN_LABEL_JA: Record<InventoryColId, string> = {
   drawdown: "落率",
   pe: "PER",
   peg: "PEG",
+  trr: "TRR",
   egrowth: "予想成長",
   eps: "EPS",
   alpha: "Cum. α",

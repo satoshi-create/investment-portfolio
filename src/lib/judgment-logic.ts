@@ -160,3 +160,36 @@ export function computeDividendAdjustedPeg(input: {
 
   return Math.round((pe / denom) * 10_000) / 10_000;
 }
+
+/**
+ * トータル・リターン・レシオ: `(予想EPS成長率% + 配当利回り%) / PER`。
+ * PER は Forward 優先（`resolveStockPegRatio` / DA-PEG と同じ）。DA-PEG の逆数に相当するがフォールバックは無し。
+ * 成長率が取れない・≤0、PER 非正、分子が非正、配当利回りが負のときは null。
+ */
+export function computeTotalReturnYieldRatio(input: {
+  forwardPe: number | null;
+  trailingPe: number | null;
+  expectedGrowthDecimal: number | null;
+  dividendYieldPercent: number | null;
+}): number | null {
+  const pe = input.forwardPe ?? input.trailingPe;
+  if (pe == null || !Number.isFinite(pe) || pe <= 0) return null;
+
+  const g = input.expectedGrowthDecimal;
+  if (g == null || !Number.isFinite(g) || g <= 0) return null;
+
+  const dRaw = input.dividendYieldPercent;
+  let dSafe = 0;
+  if (dRaw != null && Number.isFinite(dRaw)) {
+    if (dRaw < 0) return null;
+    dSafe = dRaw;
+  }
+
+  const growthPct = g * 100;
+  const numer = growthPct + dSafe;
+  if (!Number.isFinite(numer) || numer <= 0) return null;
+
+  const r = numer / pe;
+  if (!Number.isFinite(r) || r < 0) return null;
+  return Math.round(r * 100) / 100;
+}

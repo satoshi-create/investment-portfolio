@@ -1891,7 +1891,8 @@ export function ThemePageClient({
         next === "dividend" ||
         next === "payout" ||
         next === "research" ||
-        next === "peg"
+        next === "peg" ||
+        next === "trr"
           ? "asc"
           : "desc",
       );

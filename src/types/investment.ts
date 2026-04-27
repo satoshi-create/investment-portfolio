@@ -171,6 +171,8 @@ export interface Stock {
    * 分母が非正のときは通常の `pegRatio` にフォールバック。`computeDividendAdjustedPeg`。
    */
   dividendAdjustedPeg: number | null;
+  /** トータル・リターン・レシオ `(予想成長% + 配当利回り%) / PER`（Forward PER 優先）。`computeTotalReturnYieldRatio` */
+  totalReturnYieldRatio: number | null;
   /** 予想EPS成長率（小数 0.15 = 15%）。Yahoo 由来・未取得は null */
   expectedGrowth: number | null;
   /** Yahoo `assetProfile.country` 等。テーマ帯の可視化に利用。 */
@@ -484,6 +486,8 @@ export type ThemeEcosystemWatchItem = {
   pegRatio: number | null;
   /** 配当込みPEG（無配は利回り0扱い・分母不可時は `pegRatio`）。`computeDividendAdjustedPeg`。 */
   dividendAdjustedPeg: number | null;
+  /** トータル・リターン・レシオ（保有 `Stock` と同定義） */
+  totalReturnYieldRatio: number | null;
   expectedGrowth: number | null;
   yahooCountry: string | null;
   ttmRepurchaseOfStock: number | null;

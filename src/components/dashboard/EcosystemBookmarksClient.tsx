@@ -456,7 +456,8 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
         next === "dividend" ||
         next === "payout" ||
         next === "research" ||
-        next === "peg"
+        next === "peg" ||
+        next === "trr"
           ? "asc"
           : "desc",
       );

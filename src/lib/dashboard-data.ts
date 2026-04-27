@@ -58,6 +58,7 @@ import { parseExpectationCategory } from "@/src/lib/expectation-category";
 import {
   computeDividendAdjustedPeg,
   computeInvestmentJudgment,
+  computeTotalReturnYieldRatio,
   expectationCategoryToInvestmentNarrative,
 } from "@/src/lib/judgment-logic";
 import {
@@ -1363,6 +1364,12 @@ function buildDraftsFromHoldingRows(
       dividendYieldPercent,
       pegRatio,
     });
+    const totalReturnYieldRatio = computeTotalReturnYieldRatio({
+      forwardPe,
+      trailingPe,
+      expectedGrowthDecimal: expectedGrowth,
+      dividendYieldPercent,
+    });
     const yahooCountry = research?.yahooCountry ?? null;
     const ttmRepurchaseOfStock = research?.ttmRepurchaseOfStock ?? null;
     const consecutiveDividendYears = research?.consecutiveDividendYears ?? null;
@@ -1476,6 +1483,7 @@ function buildDraftsFromHoldingRows(
       forwardEps,
       pegRatio,
       dividendAdjustedPeg,
+      totalReturnYieldRatio,
       expectedGrowth,
       yahooCountry,
       ttmRepurchaseOfStock,
@@ -1879,6 +1887,12 @@ async function enrichEcosystemMemberRow(
     dividendYieldPercent,
     pegRatio,
   });
+  const totalReturnYieldRatio = computeTotalReturnYieldRatio({
+    forwardPe,
+    trailingPe,
+    expectedGrowthDecimal: expectedGrowth,
+    dividendYieldPercent,
+  });
   const yahooCountryEco = resolveYahooCountryForEcosystemMember(research, instrumentKind);
   const ttmRepurchaseOfStockEco = research?.ttmRepurchaseOfStock ?? null;
   const consecutiveDividendYearsEco = research?.consecutiveDividendYears ?? null;
@@ -2185,6 +2199,7 @@ async function enrichEcosystemMemberRow(
     forwardEps,
     pegRatio,
     dividendAdjustedPeg,
+    totalReturnYieldRatio,
     expectedGrowth,
     yahooCountry: yahooCountryEco,
     ttmRepurchaseOfStock: ttmRepurchaseOfStockEco,
@@ -3451,6 +3466,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       forwardEps: null,
       pegRatio: null,
       dividendAdjustedPeg: null,
+      totalReturnYieldRatio: null,
       expectedGrowth: null,
       yahooCountry: null,
       ttmRepurchaseOfStock: null,

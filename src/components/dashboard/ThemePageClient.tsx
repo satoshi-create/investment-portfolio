@@ -180,6 +180,11 @@ function ecoPegOf(e: ThemeEcosystemWatchItem): number | null {
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
 }
 
+function ecoTrrOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.totalReturnYieldRatio;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
 function ecoExpectedGrowthOf(e: ThemeEcosystemWatchItem): number | null {
   const v = e.expectedGrowth;
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
@@ -1624,6 +1629,7 @@ export function ThemePageClient({
         return dir * cmpNum(ecoFcfYieldSortValue(a), ecoFcfYieldSortValue(b));
       if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
       if (ecoSortKey === "peg") return dir * cmpNum(ecoPegOf(a), ecoPegOf(b));
+      if (ecoSortKey === "trr") return dir * cmpNum(ecoTrrOf(a), ecoTrrOf(b));
       if (ecoSortKey === "egrowth") return dir * cmpNum(ecoExpectedGrowthOf(a), ecoExpectedGrowthOf(b));
       if (ecoSortKey === "eps") return dir * cmpNum(ecoEpsOf(a), ecoEpsOf(b));
       if (ecoSortKey === "alpha")
@@ -1735,7 +1741,8 @@ export function ThemePageClient({
         next === "dividend" ||
         next === "payout" ||
         next === "research" ||
-        next === "peg"
+        next === "peg" ||
+        next === "trr"
           ? "asc"
           : "desc",
       );

@@ -35,6 +35,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
   drawdown: "落率",
   pe: "PE",
   peg: "PEG",
+  trr: "TRR",
   egrowth: "予想成長",
   eps: "EPS",
   alpha: "Cum. α",

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { CalendarClock, FileText, MessageSquare, Star } from "lucide-react";
+import { CalendarClock, FileText, Gem, MessageSquare, Star } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
@@ -26,6 +26,7 @@ import {
   formatDividendPayoutPercent,
 } from "@/src/lib/eco-dividend-payout";
 import { ECOSYSTEM_MEMBER_FIELD_MAX_LEN } from "@/src/lib/ecosystem-field-meta";
+import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
 import { EarningsSummaryNoteTextarea } from "@/src/components/dashboard/HoldingEcosystemNoteFields";
 import {
@@ -34,7 +35,15 @@ import {
   EcosystemViScoreBar,
   ecosystemMemberHasStructuralInsight,
 } from "@/src/components/dashboard/EcosystemStructuralInsight";
-import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
+import {
+  fmtExpectedGrowthPercent,
+  fmtPegRatio,
+  fmtTotalReturnYieldRatio,
+  pegLynchTenbaggerEligible,
+  pegLynchTreasureEligible,
+  pegRatioTextClass,
+  totalReturnYieldRatioTextClass,
+} from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ResourceSyncJudgment, ThemeEcosystemWatchItem } from "@/src/types/investment";
 import { INVESTMENT_METRIC_TONE_TEXT_CLASS, investmentMetricToneForSignedPercent } from "@/src/types/investment";
@@ -138,6 +147,11 @@ function ecoPeOf(e: ThemeEcosystemWatchItem): number | null {
 
 function ecoEpsOf(e: ThemeEcosystemWatchItem): number | null {
   const v = e.trailingEps ?? e.forwardEps ?? null;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
+function ecoTrrOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.totalReturnYieldRatio;
   return v != null && Number.isFinite(v) ? v : null;
 }
 
@@ -897,20 +911,50 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                 {fmtPe(ecoPeOf(e))}
               </td>
             );
-          case "peg":
+          case "peg": {
+            const peg = e.pegRatio;
+            return (
+              <td
+                key={colId}
+                className={cn(
+                  "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums align-top",
+                  pegRatioTextClass(peg),
+                  stickyFirst,
+                )}
+                title="PEG · 「成長%」列で予想成長率"
+              >
+                <div className="flex flex-col items-end gap-0.5 leading-tight">
+                  <div className="flex items-center justify-end gap-0.5">
+                    {pegLynchTreasureEligible(peg) ? (
+                      <span title="お宝（PEG < 1）">
+                        <Gem className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+                      </span>
+                    ) : null}
+                    <span>{fmtPegRatio(peg)}</span>
+                  </div>
+                  {pegLynchTenbaggerEligible(peg) ? (
+                    <span className="text-[9px] font-semibold tracking-tight text-amber-300/95">🚀 テンバガー候補</span>
+                  ) : null}
+                </div>
+              </td>
+            );
+          }
+          case "trr": {
+            const trr = ecoTrrOf(e);
             return (
               <td
                 key={colId}
                 className={cn(
                   "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums",
-                  pegRatioTextClass(e.pegRatio),
+                  totalReturnYieldRatioTextClass(trr),
                   stickyFirst,
                 )}
-                title="PEG · 「成長%」列で予想成長率"
+                title={METRIC_HEADER_TIP.trr}
               >
-                {fmtPegRatio(e.pegRatio)}
+                {fmtTotalReturnYieldRatio(trr)}
               </td>
             );
+          }
           case "egrowth":
             return (
               <td

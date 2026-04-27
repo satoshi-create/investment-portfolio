@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Gem } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
@@ -32,7 +33,15 @@ import {
   ecosystemWatchlistAlphaCellTooltip,
 } from "@/src/lib/alpha-story-tooltip";
 import { downloadEcosystemCumulativeAlphaCsv } from "@/src/lib/ecosystem-cumulative-alpha-csv";
-import { fmtExpectedGrowthPercent, fmtPegRatio, pegRatioTextClass } from "@/src/lib/peg-display";
+import {
+  fmtExpectedGrowthPercent,
+  fmtPegRatio,
+  fmtTotalReturnYieldRatio,
+  pegLynchTenbaggerEligible,
+  pegLynchTreasureEligible,
+  pegRatioTextClass,
+  totalReturnYieldRatioTextClass,
+} from "@/src/lib/peg-display";
 import type { EcosystemWatchlistColId } from "@/src/lib/ecosystem-watchlist-column-order";
 import type { InvestmentThemeRecord, ThemeEcosystemWatchItem } from "@/src/types/investment";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
@@ -54,6 +63,11 @@ function ecoPeOf(e: ThemeEcosystemWatchItem): number | null {
 
 function ecoEpsOf(e: ThemeEcosystemWatchItem): number | null {
   const v = e.trailingEps ?? e.forwardEps ?? null;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
+function ecoTrrOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.totalReturnYieldRatio;
   return v != null && Number.isFinite(v) ? v : null;
 }
 
@@ -523,19 +537,30 @@ export function EcosystemWatchlistTableRow({
                 {fmtPe(ecoPeOf(e))}
               </td>
             );
-          case "peg":
+          case "peg": {
+            const peg = e.pegRatio;
             return (
               <td
                 key={colId}
                 className={cn(
                   "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap align-top",
-                  pegRatioTextClass(e.pegRatio),
+                  pegRatioTextClass(peg),
                   stickyFirst,
                 )}
                 title={`PEG · 「成長%」列で予想成長率\n\n${METRIC_HEADER_TIP.divAdjPeg}`}
               >
                 <div className="flex flex-col items-end gap-0.5 leading-tight">
-                  <span>{fmtPegRatio(e.pegRatio)}</span>
+                  <div className="flex items-center justify-end gap-0.5">
+                    {pegLynchTreasureEligible(peg) ? (
+                      <span title="お宝（PEG < 1）">
+                        <Gem className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+                      </span>
+                    ) : null}
+                    <span>{fmtPegRatio(peg)}</span>
+                  </div>
+                  {pegLynchTenbaggerEligible(peg) ? (
+                    <span className="text-[9px] font-semibold tracking-tight text-amber-300/95">🚀 テンバガー候補</span>
+                  ) : null}
                   {e.dividendAdjustedPeg != null && Number.isFinite(e.dividendAdjustedPeg) ? (
                     <span className="text-[10px] font-mono text-muted-foreground" title={METRIC_HEADER_TIP.divAdjPeg}>
                       D-PEG {e.dividendAdjustedPeg.toFixed(2)}
@@ -544,6 +569,23 @@ export function EcosystemWatchlistTableRow({
                 </div>
               </td>
             );
+          }
+          case "trr": {
+            const trr = ecoTrrOf(e);
+            return (
+              <td
+                key={colId}
+                className={cn(
+                  "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap",
+                  totalReturnYieldRatioTextClass(trr),
+                  stickyFirst,
+                )}
+                title={METRIC_HEADER_TIP.trr}
+              >
+                {fmtTotalReturnYieldRatio(trr)}
+              </td>
+            );
+          }
           case "egrowth":
             return (
               <td
