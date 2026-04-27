@@ -64,19 +64,29 @@ export function formatRepurchaseAbsScale(n: number): string {
 export function hasBuybackChipData(
   ttmRepurchaseOfStock: number | null,
   yahooBuybackPosture: YahooBuybackPosture | null,
+  yahooQuoteSharesOutstanding?: number | null,
+  yahooInsiderNetPurchaseShares?: number | null,
 ): boolean {
   if (ttmRepurchaseOfStock != null && Number.isFinite(ttmRepurchaseOfStock) && ttmRepurchaseOfStock > 0) return true;
   const p = yahooBuybackPosture;
-  if (p == null) return false;
-  if (p.fiscalRepurchasesAbs.length > 0) return true;
-  if (p.sum3yAbs != null && Number.isFinite(p.sum3yAbs) && p.sum3yAbs > 0) return true;
-  if (p.sum5yAbs != null && Number.isFinite(p.sum5yAbs) && p.sum5yAbs > 0) return true;
-  if (p.activeQuartersLast4 != null && p.activeQuartersLast4 > 0) return true;
+  if (p != null) {
+    if (p.fiscalRepurchasesAbs.length > 0) return true;
+    if (p.sum3yAbs != null && Number.isFinite(p.sum3yAbs) && p.sum3yAbs > 0) return true;
+    if (p.sum5yAbs != null && Number.isFinite(p.sum5yAbs) && p.sum5yAbs > 0) return true;
+    if (p.activeQuartersLast4 != null && p.activeQuartersLast4 > 0) return true;
+  }
+  if (yahooQuoteSharesOutstanding != null && Number.isFinite(yahooQuoteSharesOutstanding) && yahooQuoteSharesOutstanding > 0) return true;
+  if (yahooInsiderNetPurchaseShares != null && Number.isFinite(yahooInsiderNetPurchaseShares)) return true;
   return false;
 }
 
 /** チップ本文（TTM 優先、無ければ 3y / 5y / 汎用）。 */
-export function buybackChipShortLabel(ttmRepurchaseOfStock: number | null, yahooBuybackPosture: YahooBuybackPosture | null): string {
+export function buybackChipShortLabel(
+  ttmRepurchaseOfStock: number | null,
+  yahooBuybackPosture: YahooBuybackPosture | null,
+  yahooQuoteSharesOutstanding?: number | null,
+  yahooInsiderNetPurchaseShares?: number | null,
+): string {
   const ttm = ttmRepurchaseOfStock;
   if (ttm != null && Number.isFinite(ttm) && ttm > 0) return `TTM ${formatRepurchaseAbsScale(ttm)}`;
   const p = yahooBuybackPosture;
@@ -84,6 +94,13 @@ export function buybackChipShortLabel(ttmRepurchaseOfStock: number | null, yahoo
   if (p?.sum5yAbs != null && Number.isFinite(p.sum5yAbs) && p.sum5yAbs > 0) return `5y ${formatRepurchaseAbsScale(p.sum5yAbs)}`;
   if (p != null && p.fiscalRepurchasesAbs.length > 0) return "CF 期別";
   if (p?.activeQuartersLast4 != null && p.activeQuartersLast4 > 0) return `4Q中${p.activeQuartersLast4}期`;
+
+  if (yahooInsiderNetPurchaseShares != null && Number.isFinite(yahooInsiderNetPurchaseShares)) {
+    return "株数/売買";
+  }
+  if (yahooQuoteSharesOutstanding != null && Number.isFinite(yahooQuoteSharesOutstanding)) {
+    return "自社株買い";
+  }
   return "CF";
 }
 

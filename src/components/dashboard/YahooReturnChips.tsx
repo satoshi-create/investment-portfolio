@@ -31,7 +31,12 @@ export function YahooReturnChips({
   className,
 }: Props) {
   const showDiv = consecutiveDividendYears != null && consecutiveDividendYears > 0;
-  const showBb = hasBuybackChipData(ttmRepurchaseOfStock, yahooBuybackPosture);
+  const showBb = hasBuybackChipData(
+    ttmRepurchaseOfStock,
+    yahooBuybackPosture,
+    yahooQuoteSharesOutstanding,
+    yahooInsiderNetPurchaseShares,
+  );
   if (!showDiv && !showBb) return null;
   return (
     <div className={className ?? "flex flex-wrap gap-1.5 pt-1"}>
@@ -53,7 +58,13 @@ export function YahooReturnChips({
             yahooInsiderNetPurchaseShares,
           })}
         >
-          自社株買い {buybackChipShortLabel(ttmRepurchaseOfStock, yahooBuybackPosture)}
+          自社株買い{" "}
+          {buybackChipShortLabel(
+            ttmRepurchaseOfStock,
+            yahooBuybackPosture,
+            yahooQuoteSharesOutstanding,
+            yahooInsiderNetPurchaseShares,
+          )}
         </span>
       ) : null}
     </div>
