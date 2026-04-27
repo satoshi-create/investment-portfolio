@@ -8,6 +8,7 @@ import { LYNCH_CATEGORY_LABEL_JA } from "@/src/types/investment";
 import { roundAlphaMetric } from "@/src/lib/alpha-logic";
 import { USD_JPY_RATE_FALLBACK } from "@/src/lib/fx-constants";
 import { lynchCategorySortRank } from "@/src/lib/expectation-category";
+import { getLynchCategory } from "@/src/lib/lynch-category-computed";
 import { StatBox } from "@/src/components/dashboard/StatBox";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { formatJpyValueForView } from "@/src/lib/format-display-currency";
@@ -191,7 +192,7 @@ function buildLynchPieRows(stocks: Stock[]): LynchPieRow[] {
 
   const byKey = new Map<string, { mv: number; count: number }>();
   for (const s of rows) {
-    const k = s.expectationCategory ?? "__unset__";
+    const k = getLynchCategory(s) ?? "__unset__";
     const cur = byKey.get(k) ?? { mv: 0, count: 0 };
     cur.mv += s.marketValue;
     cur.count += 1;
@@ -206,7 +207,7 @@ function buildLynchPieRows(stocks: Stock[]): LynchPieRow[] {
     let name: string;
     let fill: string;
     if (key === "__unset__") {
-      name = "未設定";
+      name = "未分類";
       fill = LYNCH_PIE_UNSET;
     } else {
       name = LYNCH_CATEGORY_LABEL_JA[key as LynchCategory];
@@ -496,7 +497,8 @@ export function StrategySection({
                 リンチ分類（評価額）
               </h4>
               <p className="text-[9px] text-muted-foreground mb-3 leading-relaxed">
-                数量 &gt; 0 かつ評価額がある銘柄のみ。シェアは円ベース評価額の合計に対する比率です。
+                数量 &gt; 0 かつ評価額がある銘柄のみ。シェアは円ベース評価額の合計に対する比率です。分類は Inventory
+                と同じルールベース自動判定です。DB の expectation_category は参照しません。
               </p>
               {lynchPieRows.length > 0 ? (
                 <>

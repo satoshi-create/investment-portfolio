@@ -34,22 +34,29 @@ import { CSS } from "@dnd-kit/utilities";
 
 import type { LynchCategory, ResourceStructuralSyncData, Stock } from "@/src/types/investment";
 import {
-  LYNCH_CATEGORY_KEYS,
   LYNCH_CATEGORY_LABEL_JA,
   INVESTMENT_METRIC_TONE_TEXT_CLASS,
   investmentMetricToneForSignedPercent,
 } from "@/src/types/investment";
-import {
-  patchHoldingExpectationCategory,
-  patchHoldingMemo,
-  toggleHoldingBookmark,
-} from "@/app/actions/holding-meta";
+import { patchHoldingMemo, toggleHoldingBookmark } from "@/app/actions/holding-meta";
 import {
   expectationCategoryBadgeClass,
   expectationCategoryBadgeShortJa,
   lynchCategorySortRank,
 } from "@/src/lib/expectation-category";
 import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
+import {
+  aggregateLynchCategoryCounts,
+  getLynchCategory,
+  LYNCH_RULE_TOOLTIP_ALL_JA,
+  LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA,
+  LYNCH_RULE_TOOLTIP_UNSET_JA,
+  sortLynchToolbarSegments,
+} from "@/src/lib/lynch-category-computed";
+import {
+  INVENTORY_LYNCH_LENS_COLUMNS,
+  inventoryLynchLensKeyFromFilter,
+} from "@/src/lib/inventory-lynch-lens-columns";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
 import {
@@ -539,6 +546,7 @@ function SortableInventoryTh({
   align = "left",
   title,
   metricHelpText,
+  disableColumnReorder,
   children,
 }: {
   id: InventoryColId;
@@ -547,9 +555,14 @@ function SortableInventoryTh({
   title?: string;
   /** Radix ツールチップ（構造投資向け解説）。指定時は `title` を付けない（ネイティブ二重表示を防ぐ） */
   metricHelpText?: string;
+  /** リンチレンズ中は列ドラッグを無効化（表示列がプリセット固定のため） */
+  disableColumnReorder?: boolean;
   children: React.ReactNode;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled: disableColumnReorder,
+  });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -562,10 +575,16 @@ function SortableInventoryTh({
       <div className={`flex w-full items-center gap-1 ${justify}`}>
         <button
           type="button"
-          className="cursor-grab touch-none shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted/60 hover:text-foreground active:cursor-grabbing"
+          className={`touch-none shrink-0 rounded p-0.5 text-muted-foreground ${
+            disableColumnReorder
+              ? "cursor-not-allowed opacity-40"
+              : "cursor-grab hover:bg-muted/60 hover:text-foreground active:cursor-grabbing"
+          }`}
           {...attributes}
-          {...listeners}
-          aria-label="列をドラッグして並べ替え"
+          {...(disableColumnReorder ? {} : listeners)}
+          aria-label={disableColumnReorder ? "リンチレンズ中は列の並べ替え不可" : "列をドラッグして並べ替え"}
+          aria-disabled={disableColumnReorder}
+          disabled={disableColumnReorder}
           onClick={(e) => e.stopPropagation()}
         >
           <GripVertical className="h-3.5 w-3.5" aria-hidden />
@@ -714,10 +733,6 @@ export function InventoryTable({
   const [memoDraft, setMemoDraft] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
   const [memoErr, setMemoErr] = useState<string | null>(null);
-  const [lynchModalStock, setLynchModalStock] = useState<Stock | null>(null);
-  const [lynchSelectDraft, setLynchSelectDraft] = useState<string>("");
-  const [lynchSaving, setLynchSaving] = useState(false);
-  const [lynchErr, setLynchErr] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -726,22 +741,6 @@ export function InventoryTable({
       setMemoErr(null);
     }
   }, [memoModalStock]);
-
-  useEffect(() => {
-    if (lynchModalStock) {
-      setLynchSelectDraft(lynchModalStock.expectationCategory ?? "");
-      setLynchErr(null);
-    }
-  }, [lynchModalStock]);
-
-  useEffect(() => {
-    if (!lynchModalStock) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !lynchSaving) setLynchModalStock(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [lynchModalStock, lynchSaving]);
 
   useEffect(() => {
     if (!dividendCalendarModalOpen) return;
@@ -794,10 +793,26 @@ export function InventoryTable({
     [columnOrder, showValueCols],
   );
 
-  const visibleColumnIds = useMemo(
-    () => applyInventoryUserHidden(inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds),
-    [inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds],
+  const lynchLensKey = inventoryLynchLensKeyFromFilter(lynchFilter);
+  /** 件数は `stocks` 全件（構造検索・リンチ行フィルター等のテーブル絞り込み前） */
+  const lynchCountSnapshot = useMemo(() => aggregateLynchCategoryCounts(stocks), [stocks]);
+  const lynchToolbarSorted = useMemo(
+    () => sortLynchToolbarSegments(lynchCountSnapshot),
+    [lynchCountSnapshot],
   );
+  const lynchLensColumnIds = useMemo(() => {
+    if (!lynchLensKey) return null;
+    return [...INVENTORY_LYNCH_LENS_COLUMNS[lynchLensKey]];
+  }, [lynchLensKey]);
+
+  const columnToolbarBaseIds = lynchLensColumnIds ?? inventoryBaseVisibleColumnIds;
+
+  const visibleColumnIds = useMemo(() => {
+    if (lynchLensColumnIds) {
+      return applyInventoryUserHidden(lynchLensColumnIds, inventoryHiddenColumnIds);
+    }
+    return applyInventoryUserHidden(inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds);
+  }, [inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds, lynchLensColumnIds]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -805,6 +820,7 @@ export function InventoryTable({
   );
 
   function handleInventoryColumnDragEnd(event: DragEndEvent) {
+    if (lynchLensKey != null) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setColumnOrder((items) => {
@@ -827,9 +843,9 @@ export function InventoryTable({
       });
     }
     if (lynchFilter === "__unset__") {
-      list = list.filter((s) => s.expectationCategory == null);
+      list = list.filter((s) => getLynchCategory(s) == null);
     } else if (lynchFilter !== "") {
-      list = list.filter((s) => s.expectationCategory === lynchFilter);
+      list = list.filter((s) => getLynchCategory(s) === lynchFilter);
     }
     if (bookmarksOnly) {
       list = list.filter((s) => bookmarkDisplayed(s));
@@ -860,8 +876,8 @@ export function InventoryTable({
 
       if (key === "asset") return dir * cmpStr(a.ticker, b.ticker);
       if (key === "lynch") {
-        const ra = lynchCategorySortRank(a.expectationCategory);
-        const rb = lynchCategorySortRank(b.expectationCategory);
+        const ra = lynchCategorySortRank(getLynchCategory(a));
+        const rb = lynchCategorySortRank(getLynchCategory(b));
         if (ra !== rb) return dir * (ra - rb);
         return dir * cmpStr(a.ticker, b.ticker);
       }
@@ -1138,29 +1154,6 @@ export function InventoryTable({
     }
   }
 
-  async function saveHoldingLynchCategory() {
-    if (!lynchModalStock) return;
-    setLynchSaving(true);
-    setLynchErr(null);
-    try {
-      const res = await patchHoldingExpectationCategory(
-        lynchModalStock.id,
-        lynchSelectDraft.trim().length > 0 ? lynchSelectDraft.trim() : null,
-        { userId },
-      );
-      if (!res.ok) {
-        setLynchErr(res.message ?? "保存に失敗しました");
-        return;
-      }
-      setLynchModalStock(null);
-      await onEarningsNoteSaved?.();
-    } catch (e) {
-      setLynchErr(e instanceof Error ? e.message : "保存に失敗しました");
-    } finally {
-      setLynchSaving(false);
-    }
-  }
-
   function handleBookmarkClick(stock: Stock) {
     const prev = bookmarkDisplayed(stock);
     const next = !prev;
@@ -1320,7 +1313,7 @@ export function InventoryTable({
             配当カレンダー
           </button>
           <InventoryTableColumnToolbar
-            baseVisibleColumnIds={inventoryBaseVisibleColumnIds}
+            baseVisibleColumnIds={columnToolbarBaseIds}
             hiddenColumnIds={inventoryHiddenColumnIds}
             setHiddenColumnIds={persistInventoryHiddenColumnIds}
             compactTable={inventoryTableCompact}
@@ -1346,25 +1339,69 @@ export function InventoryTable({
               aria-label="構造で絞り込み"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="inventory-lynch-filter" className="sr-only">
-              リンチ分類で絞り込み
-            </label>
-            <select
-              id="inventory-lynch-filter"
-              value={lynchFilter}
-              onChange={(e) => setLynchFilter(e.target.value as "" | "__unset__" | LynchCategory)}
-              className="bg-background text-[10px] font-bold uppercase tracking-wide text-foreground/90 border border-border rounded-lg px-2 py-2 max-w-[12rem]"
-              aria-label="リンチ分類で絞り込み"
+          <div
+            className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-background/60 px-2 py-1.5"
+            role="group"
+            aria-label="リンチの6分類で絞り込み（レンズ列プリセット）"
+          >
+            <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground px-1 shrink-0">
+              リンチ
+            </span>
+            <button
+              type="button"
+              onClick={() => setLynchFilter("")}
+              aria-pressed={lynchFilter === ""}
+              title={LYNCH_RULE_TOOLTIP_ALL_JA}
+              className={cn(
+                "text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border transition-colors",
+                lynchFilter === ""
+                  ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
+                  : "border-transparent text-muted-foreground hover:bg-muted/60",
+              )}
             >
-              <option value="">リンチ: すべて</option>
-              <option value="__unset__">未設定のみ</option>
-              {LYNCH_CATEGORY_KEYS.map((k) => (
-                <option key={k} value={k}>
-                  {LYNCH_CATEGORY_LABEL_JA[k]}
-                </option>
-              ))}
-            </select>
+              すべて（{lynchCountSnapshot.total}）
+            </button>
+            {lynchToolbarSorted.map((seg) => {
+              if (seg === "__unset__") {
+                const n = lynchCountSnapshot.unset;
+                return (
+                  <button
+                    key="__unset__"
+                    type="button"
+                    onClick={() => setLynchFilter("__unset__")}
+                    aria-pressed={lynchFilter === "__unset__"}
+                    title={LYNCH_RULE_TOOLTIP_UNSET_JA}
+                    className={cn(
+                      "text-[9px] font-bold px-2 py-1 rounded-md border transition-colors max-w-[8rem]",
+                      lynchFilter === "__unset__"
+                        ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
+                        : "border-transparent text-muted-foreground hover:bg-muted/60",
+                    )}
+                  >
+                    未分類（{n}）
+                  </button>
+                );
+              }
+              const k = seg;
+              const n = lynchCountSnapshot.byCategory[k];
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setLynchFilter(k)}
+                  aria-pressed={lynchFilter === k}
+                  title={LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA[k]}
+                  className={cn(
+                    "text-[9px] font-bold px-2 py-1 rounded-md border transition-colors max-w-[8rem] truncate",
+                    lynchFilter === k
+                      ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
+                      : "border-transparent text-muted-foreground hover:bg-muted/60",
+                  )}
+                >
+                  {LYNCH_CATEGORY_LABEL_JA[k]}（{n}）
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1387,7 +1424,7 @@ export function InventoryTable({
                     switch (colId) {
                       case "asset":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="left"
@@ -1405,7 +1442,7 @@ export function InventoryTable({
                         );
                       case "lynch":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="left"
@@ -1423,7 +1460,7 @@ export function InventoryTable({
                         );
                       case "bookmark":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1437,7 +1474,7 @@ export function InventoryTable({
                         );
                       case "listing":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1455,7 +1492,7 @@ export function InventoryTable({
                         );
                       case "mktCap":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1473,7 +1510,7 @@ export function InventoryTable({
                         );
                       case "perfListed":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1491,7 +1528,7 @@ export function InventoryTable({
                         );
                       case "earnings":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1509,7 +1546,7 @@ export function InventoryTable({
                         );
                       case "research":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="left"
@@ -1527,7 +1564,7 @@ export function InventoryTable({
                         );
                       case "ruleOf40":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1545,7 +1582,7 @@ export function InventoryTable({
                         );
                       case "fcfYield":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1563,7 +1600,7 @@ export function InventoryTable({
                         );
                       case "netCash":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1581,7 +1618,7 @@ export function InventoryTable({
                         );
                       case "netCps":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1599,7 +1636,7 @@ export function InventoryTable({
                         );
                       case "judgment":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1617,7 +1654,7 @@ export function InventoryTable({
                         );
                       case "deviation":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1635,7 +1672,7 @@ export function InventoryTable({
                         );
                       case "drawdown":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1653,7 +1690,7 @@ export function InventoryTable({
                         );
                       case "alpha":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1679,7 +1716,7 @@ export function InventoryTable({
                         );
                       case "trend5d":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1697,7 +1734,7 @@ export function InventoryTable({
                         );
                       case "volRatio":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1715,7 +1752,7 @@ export function InventoryTable({
                         );
                       case "position":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1733,7 +1770,7 @@ export function InventoryTable({
                         );
                       case "pe":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1751,7 +1788,7 @@ export function InventoryTable({
                         );
                       case "pbr":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1769,7 +1806,7 @@ export function InventoryTable({
                         );
                       case "peg":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1787,7 +1824,7 @@ export function InventoryTable({
                         );
                       case "trr":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1805,7 +1842,7 @@ export function InventoryTable({
                         );
                       case "egrowth":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1823,7 +1860,7 @@ export function InventoryTable({
                         );
                       case "eps":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1841,7 +1878,7 @@ export function InventoryTable({
                         );
                       case "price":
                         return (
-                          <SortableInventoryTh
+                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1973,10 +2010,11 @@ export function InventoryTable({
                           </td>
                         );
                       case "lynch": {
+                        const computedLynch = getLynchCategory(stock);
                         const hintLines =
-                          stock.expectationCategory != null
+                          computedLynch != null
                             ? lynchAlignmentHintLines({
-                                lynchCategory: stock.expectationCategory,
+                                lynchCategory: computedLynch,
                                 expectedGrowth: stock.expectedGrowth,
                                 trailingPe: stock.trailingPe,
                                 forwardPe: stock.forwardPe,
@@ -1989,12 +2027,12 @@ export function InventoryTable({
                             className="px-3 py-4 align-top min-w-[7.5rem] max-w-[11rem] text-left"
                           >
                             <div className="flex flex-col gap-1">
-                              {stock.expectationCategory ? (
+                              {computedLynch ? (
                                 <span
-                                  className={`w-fit text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(stock.expectationCategory)}`}
-                                  title={LYNCH_CATEGORY_LABEL_JA[stock.expectationCategory]}
+                                  className={`w-fit text-[8px] font-bold tracking-tight px-1.5 py-0.5 rounded border ${expectationCategoryBadgeClass(computedLynch)}`}
+                                  title={LYNCH_CATEGORY_LABEL_JA[computedLynch]}
                                 >
-                                  {expectationCategoryBadgeShortJa(stock.expectationCategory)}
+                                  {expectationCategoryBadgeShortJa(computedLynch)}
                                 </span>
                               ) : (
                                 <span className="text-[10px] text-muted-foreground">—</span>
@@ -2006,13 +2044,9 @@ export function InventoryTable({
                                   ))}
                                 </ul>
                               ) : null}
-                              <button
-                                type="button"
-                                onClick={() => setLynchModalStock(stock)}
-                                className="mt-0.5 w-fit text-[9px] font-bold uppercase tracking-wide text-accent-cyan border border-accent-cyan/40 px-2 py-0.5 rounded-md hover:bg-accent-cyan/10"
-                              >
-                                分類を変更
-                              </button>
+                              <p className="text-[8px] text-muted-foreground leading-snug">
+                                自動分類（DB の手動値は未使用）
+                              </p>
                             </div>
                           </td>
                         );
@@ -3062,90 +3096,6 @@ export function InventoryTable({
         />
       ) : null}
 
-      {lynchModalStock ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
-          role="presentation"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-background/80 backdrop-blur-[2px]"
-            aria-label="モーダルを閉じる"
-            onClick={() => !lynchSaving && setLynchModalStock(null)}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="lynch-modal-title"
-            className="relative z-10 flex w-[min(100%,24rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-              <div className="min-w-0">
-                <h2 id="lynch-modal-title" className="text-base font-bold text-foreground sm:text-lg">
-                  リンチ分類
-                </h2>
-                <p className="text-[11px] font-mono text-accent-cyan mt-0.5">{lynchModalStock.ticker}</p>
-                {lynchModalStock.name ? (
-                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">{lynchModalStock.name}</p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                disabled={lynchSaving}
-                onClick={() => setLynchModalStock(null)}
-                className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground touch-manipulation disabled:opacity-40"
-                aria-label="閉じる"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            {lynchErr ? (
-              <p className="shrink-0 px-4 pt-2 text-[10px] text-destructive font-bold sm:px-5">{lynchErr}</p>
-            ) : null}
-            <div className="px-4 py-3 sm:px-5 sm:py-4">
-              <label htmlFor="lynch-category-select" className="block text-[10px] font-bold uppercase text-muted-foreground mb-1.5">
-                分類
-              </label>
-              <select
-                id="lynch-category-select"
-                value={lynchSelectDraft}
-                onChange={(e) => setLynchSelectDraft(e.target.value)}
-                disabled={lynchSaving}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
-              >
-                <option value="">— 未設定（クリア）—</option>
-                {LYNCH_CATEGORY_KEYS.map((k) => (
-                  <option key={k} value={k}>
-                    {LYNCH_CATEGORY_LABEL_JA[k]}（{k}）
-                  </option>
-                ))}
-              </select>
-              <p className="text-[9px] text-muted-foreground mt-2 leading-snug">
-                取引なしで保存できます。未設定にすると expectation_category が NULL になります。
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card/80 px-4 py-3 sm:px-5">
-              <button
-                type="button"
-                disabled={lynchSaving}
-                onClick={() => setLynchModalStock(null)}
-                className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground border border-border px-4 py-2 rounded-lg hover:bg-muted/60"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                disabled={lynchSaving}
-                onClick={() => void saveHoldingLynchCategory()}
-                className="text-[11px] font-bold uppercase tracking-wide text-background bg-accent-cyan px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-40"
-              >
-                {lynchSaving ? "保存中…" : "保存"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

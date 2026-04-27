@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "verify:alpha": "tsx scripts/verify-alpha-logic.ts",
+    "verify:lynch-category": "tsx scripts/verify-lynch-category.ts",
     "seed:benchmarks": "tsx scripts/seed-benchmarks.ts",
     "seed:efficiency": "tsx scripts/seed-ticker-efficiency-metrics.ts",
     "fetch:fundamentals": "tsx scripts/fetch-fundamental-metrics.ts",
