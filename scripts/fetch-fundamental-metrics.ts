@@ -732,7 +732,7 @@ async function main() {
       });
       await pause(1);
 
-      let sharesOut = sharesFromQuoteSummary(qs);
+      const sharesOut = sharesFromQuoteSummary(qs);
       const netCash = netCashFromYahooQuoteSummary(qs);
       let fcfYieldStored: number | null = null;
       let quoteFallbackApplied = false;
