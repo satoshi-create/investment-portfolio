@@ -225,16 +225,56 @@ function needsFetch(
   return needsRefresh(lastUpdatedByTicker.get(tickerUpper) ?? null);
 }
 
+/** Yahoo `quoteSummary` 数値: 素の number / 文字列 / `{ raw, fmt }` / `fmt` の K/M/B 略号に追随。 */
+function yahooCoerceNumberLeaf(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const t = v.trim().replace(/,/g, "");
+    if (t.length === 0) return null;
+    const plain = Number(t);
+    if (Number.isFinite(plain)) return plain;
+    const m = t.match(/^(-?(?:\d+\.?\d*|\.\d+))\s*([KkMmBbTt])$/);
+    if (!m) return null;
+    const base = Number(m[1]);
+    if (!Number.isFinite(base)) return null;
+    const suf = (m[2] ?? "").toUpperCase();
+    const mult = suf === "K" ? 1e3 : suf === "M" ? 1e6 : suf === "B" ? 1e9 : suf === "T" ? 1e12 : 1;
+    return base * mult;
+  }
+  if (typeof v === "object" && v !== null) {
+    const obj = v as Record<string, unknown>;
+    if ("raw" in obj) {
+      const inner = yahooCoerceNumberLeaf(obj["raw"]);
+      if (inner != null) return inner;
+    }
+    if (typeof obj["fmt"] === "string") {
+      const fromFmt = yahooCoerceNumberLeaf(obj["fmt"]);
+      if (fromFmt != null) return fromFmt;
+    }
+  }
+  return null;
+}
+
+function yahooStatementNum(row: Record<string, unknown>, keys: string[]): number | null {
+  for (const k of keys) {
+    if (!Object.prototype.hasOwnProperty.call(row, k)) continue;
+    const n = yahooCoerceNumberLeaf(row[k]);
+    if (n != null && Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 function sharesFromQuoteSummary(qs: unknown): number | null {
   if (!qs || typeof qs !== "object") return null;
   const dk = (qs as Record<string, unknown>)["defaultKeyStatistics"];
   if (!dk || typeof dk !== "object") return null;
   const d = dk as Record<string, unknown>;
   const raw =
-    pickNum(d, ["sharesOutstanding"]) ||
-    pickNum(d, ["impliedSharesOutstanding"]) ||
-    pickNum(d, ["floatShares"]);
-  if (!Number.isFinite(raw) || raw <= 0) return null;
+    yahooStatementNum(d, ["sharesOutstanding"]) ??
+    yahooStatementNum(d, ["impliedSharesOutstanding"]) ??
+    yahooStatementNum(d, ["floatShares"]);
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
   return raw;
 }
 
@@ -249,8 +289,15 @@ function netCashFromYahooQuoteSummary(qs: unknown): number | null {
   const fd = o["financialData"];
   if (fd && typeof fd === "object") {
     const f = fd as Record<string, unknown>;
-    const tc = yahooStatementNum(f, ["totalCash"]);
+    let tc = yahooStatementNum(f, ["totalCash", "totalCashCommon"]);
     const td = yahooStatementNum(f, ["totalDebt"]);
+    if (tc == null || !Number.isFinite(tc)) {
+      const tcps = yahooStatementNum(f, ["totalCashPerShare"]);
+      const sh = sharesFromQuoteSummary(o);
+      if (tcps != null && Number.isFinite(tcps) && sh != null && Number.isFinite(sh) && sh > 0) {
+        tc = tcps * sh;
+      }
+    }
     if (tc != null && Number.isFinite(tc) && td != null && Number.isFinite(td)) {
       return tc - td;
     }
@@ -271,7 +318,11 @@ function netCashFromYahooQuoteSummary(qs: unknown): number | null {
   if (rows.length === 0) return null;
   const top = sortStatementRowsByEndDateDesc(rows)[0]!;
   const totalDebt = yahooStatementNum(top, ["totalDebt", "shortLongTermDebt"]);
-  const cComb = yahooStatementNum(top, ["cashAndShortTermInvestments", "totalCash"]);
+  const cComb = yahooStatementNum(top, [
+    "cashAndShortTermInvestments",
+    "cashAndCashEquivalents",
+    "totalCash",
+  ]);
   if (cComb != null && Number.isFinite(cComb) && totalDebt != null && Number.isFinite(totalDebt)) {
     return cComb - totalDebt;
   }
@@ -291,20 +342,6 @@ function isJpListedEfficiencyKind(kind: TickerInstrumentKind): boolean {
 
 function isEfficiencyFetchTarget(kind: TickerInstrumentKind): boolean {
   return kind === "US_EQUITY" || isJpListedEfficiencyKind(kind);
-}
-
-function yahooStatementNum(row: Record<string, unknown>, keys: string[]): number | null {
-  for (const k of keys) {
-    if (!Object.prototype.hasOwnProperty.call(row, k)) continue;
-    const v = row[k];
-    if (v == null) continue;
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (typeof v === "object" && "raw" in (v as object)) {
-      const r = (v as { raw?: unknown }).raw;
-      if (typeof r === "number" && Number.isFinite(r)) return r;
-    }
-  }
-  return null;
 }
 
 function rowFiscalEndMs(row: Record<string, unknown>): number | null {
