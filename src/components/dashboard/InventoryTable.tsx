@@ -3,13 +3,12 @@
 import React, { useCallback, useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import {
+  BookOpen,
   CalendarClock,
   CircleSlash,
   FileSpreadsheet,
   Gem,
   GripVertical,
-  MessageSquare,
-  NotebookPen,
   Search,
   Star,
   X,
@@ -38,7 +37,7 @@ import {
   INVESTMENT_METRIC_TONE_TEXT_CLASS,
   investmentMetricToneForSignedPercent,
 } from "@/src/types/investment";
-import { patchHoldingMemo, toggleHoldingBookmark } from "@/app/actions/holding-meta";
+import { toggleHoldingBookmark } from "@/app/actions/holding-meta";
 import {
   expectationCategoryBadgeClass,
   expectationCategoryBadgeShortJa,
@@ -59,11 +58,7 @@ import {
 } from "@/src/lib/inventory-lynch-lens-columns";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
-import {
-  EarningsSummaryNoteEditorModal,
-  HoldingMemoPlainModal,
-} from "@/src/components/dashboard/HoldingEcosystemNoteModals";
-import { fetchWithTimeout } from "@/src/lib/fetch-utils";
+import { StorySidePanel } from "@/src/components/dashboard/StorySidePanel";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
@@ -91,6 +86,7 @@ import {
   totalReturnYieldRatioTextClass,
 } from "@/src/lib/peg-display";
 import { cn } from "@/src/lib/cn";
+import { STORY_PANEL_INSET_VAR } from "@/src/lib/story-panel-inset";
 import {
   DEFAULT_COLUMN_ORDER,
   type InventoryColId,
@@ -136,8 +132,6 @@ type SortKey =
   | "egrowth"
   | "eps"
   | "volRatio";
-
-type EarningsNoteModalTab = "edit" | "preview";
 
 function deviationOf(s: Stock): number | null {
   const z = s.alphaDeviationZ;
@@ -663,60 +657,9 @@ export function InventoryTable({
 }) {
   const { convert, viewCurrency, alphaDisplayMode } = useCurrencyConverter();
 
-  const [noteModalStock, setNoteModalStock] = useState<Stock | null>(null);
-  const [noteDraft, setNoteDraft] = useState("");
-  const [noteModalTab, setNoteModalTab] = useState<EarningsNoteModalTab>("edit");
-  const [noteSaving, setNoteSaving] = useState(false);
-  const [noteErr, setNoteErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (noteModalStock) {
-      setNoteDraft(noteModalStock.earningsSummaryNote ?? "");
-      setNoteErr(null);
-      setNoteModalTab("edit");
-    }
-  }, [noteModalStock]);
-
-  useEffect(() => {
-    if (!noteModalStock) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !noteSaving) setNoteModalStock(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [noteModalStock, noteSaving]);
-
-  async function saveEarningsNote() {
-    if (!noteModalStock) return;
-    setNoteSaving(true);
-    setNoteErr(null);
-    try {
-      const res = await fetchWithTimeout(
-        "/api/holdings/earnings-summary-note",
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            holdingId: noteModalStock.id,
-            earningsSummaryNote: noteDraft,
-          }),
-        },
-        { timeoutMs: 12_000 },
-      );
-      const json = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setNoteErr(json.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setNoteModalStock(null);
-      await onEarningsNoteSaved?.();
-    } catch (e) {
-      setNoteErr(e instanceof Error ? e.message : "保存に失敗しました");
-    } finally {
-      setNoteSaving(false);
-    }
-  }
+  /** メモ・決算要約・リンチ下書きは `StorySidePanel` で編集（`stock.id` は holdings.id）。 */
+  const [storyModalStock, setStoryModalStock] = useState<Stock | null>(null);
+  const [sidePanelWidth, setSidePanelWidth] = useState(400);
 
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -729,19 +672,7 @@ export function InventoryTable({
   const [bookmarksOnly, setBookmarksOnly] = useState(false);
   const [hideIncompleteQuotes, setHideIncompleteQuotes] = useState(false);
   const [dividendCalendarModalOpen, setDividendCalendarModalOpen] = useState(false);
-  const [memoModalStock, setMemoModalStock] = useState<Stock | null>(null);
-  const [memoDraft, setMemoDraft] = useState("");
-  const [memoSaving, setMemoSaving] = useState(false);
-  const [memoErr, setMemoErr] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-
-  useEffect(() => {
-    if (memoModalStock) {
-      setMemoDraft(memoModalStock.memo ?? "");
-      setMemoErr(null);
-    }
-  }, [memoModalStock]);
-
   useEffect(() => {
     if (!dividendCalendarModalOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -783,6 +714,21 @@ export function InventoryTable({
     const id = window.setInterval(() => void onLivePricePoll(), ms);
     return () => window.clearInterval(id);
   }, [livePricePollIntervalMs, onLivePricePoll]);
+
+  /** ページラッパーの `padding-right`（`storyPanelInsetPageStyle`）と広幅レイアウト（`data-story-panel-open`）を同期 */
+  useEffect(() => {
+    const inset = storyModalStock != null ? `${sidePanelWidth}px` : "0px";
+    document.documentElement.style.setProperty(STORY_PANEL_INSET_VAR, inset);
+    if (storyModalStock != null) {
+      document.documentElement.setAttribute("data-story-panel-open", "");
+    } else {
+      document.documentElement.removeAttribute("data-story-panel-open");
+    }
+    return () => {
+      document.documentElement.style.removeProperty(STORY_PANEL_INSET_VAR);
+      document.documentElement.removeAttribute("data-story-panel-open");
+    };
+  }, [storyModalStock, sidePanelWidth]);
 
   const inventoryBaseVisibleColumnIds = useMemo(
     () =>
@@ -1131,29 +1077,6 @@ export function InventoryTable({
     }
   }
 
-  async function saveHoldingMemo() {
-    if (!memoModalStock) return;
-    setMemoSaving(true);
-    setMemoErr(null);
-    try {
-      const res = await patchHoldingMemo(
-        memoModalStock.id,
-        memoDraft.trim().length > 0 ? memoDraft.trim() : null,
-        { userId },
-      );
-      if (!res.ok) {
-        setMemoErr(res.message ?? "保存に失敗しました");
-        return;
-      }
-      setMemoModalStock(null);
-      await onEarningsNoteSaved?.();
-    } catch (e) {
-      setMemoErr(e instanceof Error ? e.message : "保存に失敗しました");
-    } finally {
-      setMemoSaving(false);
-    }
-  }
-
   function handleBookmarkClick(stock: Stock) {
     const prev = bookmarkDisplayed(stock);
     const next = !prev;
@@ -1246,7 +1169,12 @@ export function InventoryTable({
   }
 
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-2xl">
+    <div className="relative flex w-full min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className={cn(
+      "bg-card border border-border rounded-2xl overflow-hidden shadow-2xl",
+      storyModalStock != null ? "max-w-none w-full" : "w-full"
+    )}>
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-card/50 p-5">
         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
           Inventory Status
@@ -1961,6 +1889,14 @@ export function InventoryTable({
                                   >
                                     {formatTickerForDisplay(stock.ticker, stock.instrumentKind)}
                                   </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setStoryModalStock(stock)}
+                                    className="shrink-0 rounded-md p-1 transition-all opacity-0 group-hover:opacity-100 hover:bg-teal-500/20"
+                                    title="ストーリー・ハブを開く"
+                                  >
+                                    <BookOpen size={14} className="shrink-0" aria-hidden />
+                                  </button>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">
                                   {ecoKeep != null && onToggleEcosystemKeep != null ? (
@@ -1982,8 +1918,8 @@ export function InventoryTable({
                                   </span>
                                 </div>
                               </div>
-                              {onTrade ? (
-                                <div className="flex min-w-0 flex-wrap items-center gap-1">
+                              <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                {onTrade ? (
                                   <button
                                     type="button"
                                     onClick={() => onTrade(tradeInitialForStock(stock))}
@@ -1991,8 +1927,8 @@ export function InventoryTable({
                                   >
                                     Trade
                                   </button>
-                                </div>
-                              ) : null}
+                                ) : null}
+                              </div>
                               {stock.name ? (
                                 <span
                                   className={cn(
@@ -2187,37 +2123,7 @@ export function InventoryTable({
                                     還流
                                   </span>
                                 ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() => setNoteModalStock(stock)}
-                                  className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide border px-2 py-0.5 rounded-md transition-colors ${
-                                    stock.earningsSummaryNote != null && stock.earningsSummaryNote.trim().length > 0
-                                      ? "text-violet-200 border-violet-500/45 bg-violet-500/15 hover:bg-violet-500/25"
-                                      : "text-muted-foreground border-border bg-background/60 hover:bg-muted/70 hover:text-foreground/90"
-                                  }`}
-                                  title="決算要約メモ（earnings_summary_note）を表示・編集"
-                                >
-                                  <NotebookPen size={12} className="shrink-0" aria-hidden />
-                                  決算要約
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setMemoModalStock(stock)}
-                                  className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide border px-2 py-0.5 rounded-md transition-colors ${
-                                    stock.memo != null && stock.memo.trim().length > 0
-                                      ? "text-accent-cyan border-accent-cyan/45 bg-accent-cyan/10 hover:bg-accent-cyan/20"
-                                      : "text-muted-foreground border-border bg-background/60 hover:bg-muted/70 hover:text-foreground/90"
-                                  }`}
-                                  title={
-                                    stock.memo != null && stock.memo.trim().length > 0
-                                      ? stock.memo
-                                      : "銘柄メモ（holdings.memo）を編集"
-                                  }
-                                >
-                                  <MessageSquare size={12} className="shrink-0" aria-hidden />
-                                  銘柄メモ
-                                </button>
-                              </div>
+                                </div>
                               <YahooReturnChips
                                 consecutiveDividendYears={stock.consecutiveDividendYears}
                                 ttmRepurchaseOfStock={stock.ttmRepurchaseOfStock}
@@ -3051,6 +2957,7 @@ export function InventoryTable({
         </table>
         </DndContext>
       </div>
+      </div>
 
       <DividendCalendarModal
         open={dividendCalendarModalOpen}
@@ -3058,49 +2965,16 @@ export function InventoryTable({
         data={dividendCalendarData}
       />
 
-      {noteModalStock ? (
-        <EarningsSummaryNoteEditorModal
-          titleId="earnings-note-title"
-          title="決算要約メモ"
-          ticker={noteModalStock.ticker}
-          companyName={noteModalStock.name}
-          headerExtra={
-            noteModalStock.nextEarningsDate ? (
-              <p className="text-[10px] text-muted-foreground">
-                次回決算: {noteModalStock.nextEarningsDate}
-                {noteModalStock.daysToEarnings != null ? `（あと ${noteModalStock.daysToEarnings} 日）` : ""}
-              </p>
-            ) : (
-              <p className="text-[10px] text-muted-foreground">次回決算日: 未取得</p>
-            )
-          }
-          draft={noteDraft}
-          onDraftChange={setNoteDraft}
-          tab={noteModalTab}
-          onTabChange={setNoteModalTab}
-          saving={noteSaving}
-          errorText={noteErr}
-          onClose={() => !noteSaving && setNoteModalStock(null)}
-          onSave={saveEarningsNote}
-          textareaId="earnings-summary-note"
-          variant="inventory"
-        />
-      ) : null}
+      </div>
 
-      {memoModalStock ? (
-        <HoldingMemoPlainModal
-          title="銘柄メモ"
-          ticker={memoModalStock.ticker}
-          name={memoModalStock.name}
-          draft={memoDraft}
-          onDraftChange={setMemoDraft}
-          saving={memoSaving}
-          errorText={memoErr}
-          onClose={() => !memoSaving && setMemoModalStock(null)}
-          onSave={saveHoldingMemo}
-          textareaId="holding-memo"
-        />
-      ) : null}
+      <StorySidePanel
+        stock={storyModalStock}
+        userId={userId}
+        onClose={() => setStoryModalStock(null)}
+        onAfterSave={onEarningsNoteSaved}
+        width={sidePanelWidth}
+        onWidthChange={setSidePanelWidth}
+      />
 
     </div>
   );

@@ -120,3 +120,31 @@ body {
     }
   }
 }
+
+@layer components {
+  /**
+   * ストーリーサイドパネル表示中: mx-auto + max-w-[120rem] による中央寄せの横ギターをなくし、
+   * Cockpit メインペイン（親の横 padding 内）まで横幅を使う。パネル分は padding-right で確保。
+   */
+  html[data-story-panel-open] .story-panel-page-shell {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0 !important;
+    padding-right: var(--story-panel-inset, 0px) !important;
+  }
+
+  /** サイドパネル表示中、Cockpit全体のパディングを縮小してテーブル幅を最大化する */
+  html[data-story-panel-open] .cockpit-main-surface {
+    padding-left: 0.5rem !important; /* md:px-6 (1.5rem) から 8px 程度に縮小 */
+    padding-right: 0.5rem !important;
+  }
+
+  /** パネル表示時は親コンテナの最大幅制限を強制的に解除する */
+  html[data-story-panel-open] .story-panel-page-shell,
+  html[data-story-panel-open] .story-panel-page-shell > div {
+    max-width: none !important;
+    width: 100% !important;
+  }
+}

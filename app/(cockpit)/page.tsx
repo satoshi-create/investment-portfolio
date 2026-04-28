@@ -7,6 +7,12 @@ import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { HoldingsDetailTable } from "@/src/components/dashboard/HoldingsDetailTable";
 import { StrategySection } from "@/src/components/dashboard/StrategySection";
 import { EMPTY_SUMMARY, useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
+import { cn } from "@/src/lib/cn";
+import {
+  STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
+  STORY_PANEL_PAGE_SHELL_CLASS,
+  storyPanelInsetPageStyle,
+} from "@/src/lib/story-panel-inset";
 
 function CockpitPortfolioContent() {
   const {
@@ -34,7 +40,14 @@ function CockpitPortfolioContent() {
   }, [searchParams, setFocusedTicker]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem]">
+    <div
+      className={cn(
+        "mx-auto w-full max-w-6xl space-y-6 lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem]",
+        STORY_PANEL_PAGE_SHELL_CLASS,
+        STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
+      )}
+      style={storyPanelInsetPageStyle}
+    >
       <StrategySection
         structureBySector={structureBySector}
         stocks={stocks}

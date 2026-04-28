@@ -72,6 +72,11 @@ import { parseAlphaDailyHistoryJson, parseAlphaObservationDatesJson } from "@/sr
 import { parseYahooBuybackPostureJson } from "@/src/lib/yahoo-buyback-posture";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
+import {
+  STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
+  STORY_PANEL_PAGE_SHELL_CLASS,
+  storyPanelInsetPageStyle,
+} from "@/src/lib/story-panel-inset";
 import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import {
@@ -1950,7 +1955,14 @@ export function ThemePageClient({
 
   return (
     <div className="bg-background text-foreground pb-8 font-sans">
-      <div className="mx-auto w-full max-w-6xl lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem] space-y-8">
+      <div
+        className={cn(
+          "mx-auto w-full max-w-6xl lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem] space-y-8",
+          STORY_PANEL_PAGE_SHELL_CLASS,
+          STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
+        )}
+        style={storyPanelInsetPageStyle}
+      >
         <header className="border-b border-border pb-8">
           <Link
             href="/"
