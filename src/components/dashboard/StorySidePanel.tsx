@@ -45,9 +45,7 @@ type MainTab = "basic" | "lynch";
 type EarningsSubTab = "edit" | "preview";
 
 /**
- * 保有行（`holdings.id`）向けのストーリー・ハブ（右固定サイドパネル）。
- * テーブルは暗転せず左側をスクロール・閲覧したまま編集できる。
- * `InventoryTable` の `stocks` はダッシュボード・テーマ詳細とも `finalizeStocksFromDrafts` 由来で id は holdings.id。
+ * 保有行向けストーリー・ハブ。左 Sidebar と同系の磨りガラス列として、メイン（InventoryTable）と flex 並列で配置する。
  */
 export function StorySidePanel({
   stock,
@@ -217,55 +215,48 @@ export function StorySidePanel({
 
   if (!stock) return null;
 
-  const inkFrame = "border border-stone-800/15 dark:border-stone-600/25";
+  const sectionFrame = "rounded-lg border border-border bg-card/30";
 
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 right-0 z-[100] flex h-[100dvh] flex-col overflow-hidden border-l-2 border-amber-900/35 bg-gradient-to-b from-stone-100 via-amber-50/90 to-stone-100 shadow-2xl dark:from-stone-950 dark:via-stone-900 dark:to-stone-950 dark:border-amber-700/30",
-        "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] transition-[width] duration-300 ease-out",
+        "relative flex min-h-0 shrink-0 flex-col self-stretch overflow-hidden border-l border-border bg-card/40 backdrop-blur-sm",
+        "transition-[width] duration-300 ease-out",
         isResizing && "transition-none",
       )}
       style={{ width: `min(100%, ${width}px)` }}
       aria-labelledby="story-side-panel-title"
     >
-      {/* Resize Handle */}
+      {/* Resize handle */}
       <div
         onMouseDown={startResizing}
         className={cn(
-          "absolute inset-y-0 left-0 w-1.5 cursor-col-resize transition-colors hover:bg-teal-500/30 active:bg-teal-500/50",
-          isResizing && "bg-teal-500/40",
+          "absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize transition-colors hover:bg-muted/80 active:bg-muted",
+          isResizing && "bg-muted",
         )}
       />
-        <div
-          className={cn(
-            "flex shrink-0 flex-col gap-3 border-b border-amber-900/25 bg-stone-200/60 px-4 py-3 dark:bg-stone-900/80 sm:px-5",
-            inkFrame,
-          )}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 space-y-2">
-              <p className="text-[9px] font-bold uppercase tracking-[0.28em] text-stone-600 dark:text-stone-400">
-                鑑定録 · Story Hub
-              </p>
-              <h2 id="story-side-panel-title" className="text-lg font-bold tracking-tight text-stone-900 dark:text-stone-100">
-                ストーリー
-              </h2>
-              <p className="font-mono text-sm font-bold text-teal-800 dark:text-teal-300">{stock.ticker}</p>
-              {stock.name ? (
-                <p className="text-[11px] leading-relaxed text-stone-700 dark:text-stone-300 line-clamp-2">{stock.name}</p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onClose}
-              className="shrink-0 rounded-md p-2 text-stone-600 transition-colors hover:bg-stone-300/60 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 disabled:opacity-40"
-              aria-label="閉じる"
-            >
-              <X size={20} />
-            </button>
+      <div className="flex shrink-0 flex-col gap-3 border-b border-border px-4 py-4 sm:px-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">鑑定録 · Story Hub</p>
+            <h2 id="story-side-panel-title" className="text-sm font-semibold text-foreground">
+              ストーリー
+            </h2>
+            <p className="font-mono text-sm font-bold text-foreground">{stock.ticker}</p>
+            {stock.name ? (
+              <p className="text-[11px] leading-relaxed text-muted-foreground line-clamp-2">{stock.name}</p>
+            ) : null}
           </div>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onClose}
+            className="shrink-0 rounded-lg border border-border bg-card/50 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            aria-label="閉じる"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -327,7 +318,7 @@ export function StorySidePanel({
           )}
         </div>
 
-        <div className="inline-flex shrink-0 gap-0 border-b border-amber-900/20 bg-stone-200/40 px-2 pt-2 dark:bg-stone-900/60 sm:px-3" role="tablist" aria-label="ストーリーパネルの区分">
+        <div className="flex shrink-0 flex-wrap gap-1 border-b border-border p-2" role="tablist" aria-label="ストーリーパネルの区分">
           <button
             type="button"
             role="tab"
@@ -335,10 +326,10 @@ export function StorySidePanel({
             disabled={saving}
             onClick={() => setMainTab("basic")}
             className={cn(
-              "rounded-t-md px-3 py-2 text-[11px] font-bold tracking-wide transition-colors disabled:opacity-40",
+              "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors disabled:opacity-40",
               mainTab === "basic"
-                ? "border border-b-0 border-amber-900/25 bg-amber-50/95 text-stone-900 dark:border-stone-600 dark:bg-stone-950 dark:text-stone-100 -mb-px"
-                : "text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-200",
+                ? "bg-muted text-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
             基本分析
@@ -350,23 +341,23 @@ export function StorySidePanel({
             disabled={saving}
             onClick={() => setMainTab("lynch")}
             className={cn(
-              "rounded-t-md px-3 py-2 text-[11px] font-bold tracking-wide transition-colors disabled:opacity-40",
+              "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors disabled:opacity-40",
               mainTab === "lynch"
-                ? "border border-b-0 border-amber-900/25 bg-amber-50/95 text-stone-900 dark:border-stone-600 dark:bg-stone-950 dark:text-stone-100 -mb-px"
-                : "text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-200",
+                ? "bg-muted text-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
             リンチ分析
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-amber-50/40 px-3 py-3 dark:bg-stone-950/90 sm:px-5 sm:py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4">
           {saveErr ? <p className="mb-2 text-[11px] font-bold text-destructive">{saveErr}</p> : null}
 
           {mainTab === "basic" ? (
             <div className="flex flex-col gap-5">
-              <section className={cn("rounded-md bg-stone-50/90 p-3 dark:bg-stone-900/70", inkFrame)}>
-                <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300">
+              <section className={cn("p-3", sectionFrame)}>
+                <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                   銘柄メモ（holdings.memo）
                 </h3>
                 <HoldingOrEcosystemMemoTextarea
@@ -375,12 +366,12 @@ export function StorySidePanel({
                   onChange={setMemoDraft}
                   disabled={saving}
                   rows={8}
-                  className="w-full resize-y rounded-md border border-stone-300/80 bg-white/90 px-3 py-2 text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-teal-700/30 disabled:opacity-50 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:placeholder:text-stone-500"
+                  className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-50"
                   placeholder="観測メモ・箇条書きなど"
                 />
               </section>
 
-              <section className={cn("rounded-md bg-stone-50/90 p-3 dark:bg-stone-900/70", inkFrame)}>
+              <section className={cn("p-3", sectionFrame)}>
                 <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300">
                   決算要約（earnings_summary_note）
                 </h3>
@@ -437,7 +428,7 @@ export function StorySidePanel({
                   <section
                     className={cn(
                       "rounded-md border border-violet-500/25 bg-violet-50/80 p-3 dark:bg-violet-950/25 dark:border-violet-600/30",
-                      inkFrame,
+                      sectionFrame,
                     )}
                   >
                     <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-violet-900 dark:text-violet-200">
@@ -503,7 +494,7 @@ export function StorySidePanel({
                     )}
                   </section>
 
-                  <section className={cn("rounded-md bg-stone-50/90 p-3 dark:bg-stone-900/70", inkFrame)}>
+                  <section className={cn("p-3", sectionFrame)}>
                     <h3 className="mb-2 text-[11px] font-bold text-stone-800 dark:text-stone-200">
                       汎用 5 大要因（パトロール・監視の起点）
                     </h3>
@@ -536,7 +527,7 @@ export function StorySidePanel({
                 </>
               ) : null}
 
-              <section className={cn("rounded-md bg-stone-50/90 p-3 dark:bg-stone-900/70", inkFrame)}>
+              <section className={cn("p-3", sectionFrame)}>
                 <h3 className="mb-2 text-[11px] font-bold text-stone-800 dark:text-stone-200">入力の手がかり</h3>
                 <ul className="list-disc space-y-1 pl-4 text-[11px] leading-relaxed text-stone-700 dark:text-stone-300">
                   {template.inputHints.map((h) => (
@@ -545,7 +536,7 @@ export function StorySidePanel({
                 </ul>
               </section>
 
-              <section className={cn("rounded-md bg-stone-50/90 p-3 dark:bg-stone-900/70", inkFrame)}>
+              <section className={cn("p-3", sectionFrame)}>
                 <h3 className="mb-2 text-[11px] font-bold text-stone-800 dark:text-stone-200">主な収益向上要因</h3>
                 <div className="flex flex-col gap-2">
                   {template.drivers.map((d) => (
@@ -578,7 +569,7 @@ export function StorySidePanel({
                 />
               </section>
 
-              <section className={cn("rounded-md bg-stone-50/90 p-3 dark:bg-stone-900/70", inkFrame)}>
+              <section className={cn("p-3", sectionFrame)}>
                 <h3 className="mb-2 text-[11px] font-bold text-stone-800 dark:text-stone-200">2 分間の物語</h3>
                 <textarea
                   value={storyText}
@@ -595,7 +586,7 @@ export function StorySidePanel({
                 ) : null}
               </section>
 
-              <section className={cn("rounded-md border border-amber-800/25 bg-amber-100/50 p-3 dark:bg-amber-950/30", inkFrame)}>
+              <section className={cn("rounded-md border border-amber-800/25 bg-amber-100/50 p-3 dark:bg-amber-950/30", sectionFrame)}>
                 <h3 className="mb-1 text-[11px] font-bold text-amber-950 dark:text-amber-100">監視の急所</h3>
                 <p className="text-[12px] leading-relaxed text-amber-950/95 dark:text-amber-50/90">{template.monitoringJa}</p>
               </section>
@@ -603,12 +594,12 @@ export function StorySidePanel({
           )}
         </div>
 
-        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-amber-900/20 bg-stone-200/50 px-4 py-3 dark:bg-stone-900/90 sm:px-5">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-muted/10 px-4 py-3 sm:px-5">
           <button
             type="button"
             disabled={saving}
             onClick={onClose}
-            className="text-[11px] font-bold uppercase tracking-wide text-stone-700 border border-stone-500/50 px-4 py-2 rounded-md hover:bg-stone-300/50 dark:text-stone-300 dark:border-stone-600 dark:hover:bg-stone-800 disabled:opacity-40"
+            className="rounded-md border border-border px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
           >
             キャンセル
           </button>
@@ -616,7 +607,7 @@ export function StorySidePanel({
             type="button"
             disabled={saving}
             onClick={() => void handleSave()}
-            className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-white bg-teal-800 px-4 py-2 rounded-md hover:opacity-95 disabled:opacity-40 dark:bg-teal-700"
+            className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/40 bg-cyan-600/90 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-white transition-opacity hover:opacity-95 disabled:opacity-40 dark:bg-cyan-700/90"
           >
             <BookOpen className="h-3.5 w-3.5" aria-hidden />
             {saving ? "保存中…" : "保存"}

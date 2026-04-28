@@ -75,7 +75,6 @@ import { cn } from "@/src/lib/cn";
 import {
   STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
   STORY_PANEL_PAGE_SHELL_CLASS,
-  storyPanelInsetPageStyle,
 } from "@/src/lib/story-panel-inset";
 import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
@@ -1961,7 +1960,6 @@ export function ThemePageClient({
           STORY_PANEL_PAGE_SHELL_CLASS,
           STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
         )}
-        style={storyPanelInsetPageStyle}
       >
         <header className="border-b border-border pb-8">
           <Link

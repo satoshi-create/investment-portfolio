@@ -58,7 +58,7 @@ import {
 } from "@/src/lib/inventory-lynch-lens-columns";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
-import { StorySidePanel } from "@/src/components/dashboard/StorySidePanel";
+import { useStoryPanel } from "@/src/components/dashboard/StoryPanelContext";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
@@ -86,7 +86,6 @@ import {
   totalReturnYieldRatioTextClass,
 } from "@/src/lib/peg-display";
 import { cn } from "@/src/lib/cn";
-import { STORY_PANEL_INSET_VAR } from "@/src/lib/story-panel-inset";
 import {
   DEFAULT_COLUMN_ORDER,
   type InventoryColId,
@@ -656,10 +655,7 @@ export function InventoryTable({
   resourceSyncJudgments?: ResourceStructuralSyncData["individualJudgments"] | null;
 }) {
   const { convert, viewCurrency, alphaDisplayMode } = useCurrencyConverter();
-
-  /** メモ・決算要約・リンチ下書きは `StorySidePanel` で編集（`stock.id` は holdings.id）。 */
-  const [storyModalStock, setStoryModalStock] = useState<Stock | null>(null);
-  const [sidePanelWidth, setSidePanelWidth] = useState(400);
+  const { storyStock, openStory } = useStoryPanel();
 
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -714,21 +710,6 @@ export function InventoryTable({
     const id = window.setInterval(() => void onLivePricePoll(), ms);
     return () => window.clearInterval(id);
   }, [livePricePollIntervalMs, onLivePricePoll]);
-
-  /** ページラッパーの `padding-right`（`storyPanelInsetPageStyle`）と広幅レイアウト（`data-story-panel-open`）を同期 */
-  useEffect(() => {
-    const inset = storyModalStock != null ? `${sidePanelWidth}px` : "0px";
-    document.documentElement.style.setProperty(STORY_PANEL_INSET_VAR, inset);
-    if (storyModalStock != null) {
-      document.documentElement.setAttribute("data-story-panel-open", "");
-    } else {
-      document.documentElement.removeAttribute("data-story-panel-open");
-    }
-    return () => {
-      document.documentElement.style.removeProperty(STORY_PANEL_INSET_VAR);
-      document.documentElement.removeAttribute("data-story-panel-open");
-    };
-  }, [storyModalStock, sidePanelWidth]);
 
   const inventoryBaseVisibleColumnIds = useMemo(
     () =>
@@ -1169,11 +1150,10 @@ export function InventoryTable({
   }
 
   return (
-    <div className="relative flex w-full min-w-0">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="relative w-full min-w-0">
     <div className={cn(
       "bg-card border border-border rounded-2xl overflow-hidden shadow-2xl",
-      storyModalStock != null ? "max-w-none w-full" : "w-full"
+      storyStock != null ? "max-w-none w-full" : "w-full"
     )}>
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-card/50 p-5">
         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
@@ -1891,7 +1871,7 @@ export function InventoryTable({
                                   </span>
                                   <button
                                     type="button"
-                                    onClick={() => setStoryModalStock(stock)}
+                                    onClick={() => openStory(stock, onEarningsNoteSaved)}
                                     className="shrink-0 rounded-md p-1 transition-all opacity-0 group-hover:opacity-100 hover:bg-teal-500/20"
                                     title="ストーリー・ハブを開く"
                                   >
@@ -2963,17 +2943,6 @@ export function InventoryTable({
         open={dividendCalendarModalOpen}
         onClose={() => setDividendCalendarModalOpen(false)}
         data={dividendCalendarData}
-      />
-
-      </div>
-
-      <StorySidePanel
-        stock={storyModalStock}
-        userId={userId}
-        onClose={() => setStoryModalStock(null)}
-        onAfterSave={onEarningsNoteSaved}
-        width={sidePanelWidth}
-        onWidthChange={setSidePanelWidth}
       />
 
     </div>

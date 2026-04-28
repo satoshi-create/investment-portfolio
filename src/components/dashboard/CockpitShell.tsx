@@ -13,10 +13,14 @@ import { LiveSignalsStrip } from "@/src/components/dashboard/LiveSignalsStrip";
 import { TradeEntryForm } from "@/src/components/dashboard/TradeEntryForm";
 import { EMPTY_SUMMARY, useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
 import { Sidebar } from "@/src/components/dashboard/Sidebar";
+import { StorySidePanel } from "@/src/components/dashboard/StorySidePanel";
+import { useStoryPanel } from "@/src/components/dashboard/StoryPanelContext";
 import { CockpitRouteFade } from "@/src/components/dashboard/CockpitRouteFade";
 import { COCKPIT_MAIN_SCROLL_CLASS } from "@/src/components/dashboard/cockpit-layout-tokens";
 import { ThemeToggle } from "@/src/components/dashboard/ThemeToggle";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
+import { cn } from "@/src/lib/cn";
+import { STORY_PANEL_PAGE_PAD_TRANSITION_CLASS } from "@/src/lib/story-panel-inset";
 
 function CockpitHydrationSkeleton() {
   return (
@@ -71,6 +75,8 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
     resolveSignalOptimistic,
     setFocusedTicker,
   } = useDashboardData();
+
+  const { storyStock, panelWidth, setPanelWidth, closeStory, runAfterSave } = useStoryPanel();
 
   useEffect(() => {
     if (pathname !== "/") setFocusedTicker(null);
@@ -180,7 +186,14 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 min-w-0 flex-row items-stretch">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            className={cn(
+              "cockpit-chrome-inset flex shrink-0 flex-col",
+              STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
+            )}
+          >
           {!hideHeader ? (
             <div
               className={`shrink-0 border-b border-border bg-background/92 backdrop-blur-sm transition-all md:sticky md:top-0 md:z-[60] ${
@@ -389,6 +402,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           </div>
+          </div>
 
           {marketOpen ? (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4" role="presentation">
@@ -466,6 +480,17 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </div>
+        {storyStock != null ? (
+          <StorySidePanel
+            stock={storyStock}
+            userId={userId}
+            onClose={closeStory}
+            onAfterSave={runAfterSave}
+            width={panelWidth}
+            onWidthChange={setPanelWidth}
+          />
+        ) : null}
+      </div>
       </div>
 
       {/* Mobile: Live Signals strip (desktopではサイドバー下部と同等の情報へアクセス) */}

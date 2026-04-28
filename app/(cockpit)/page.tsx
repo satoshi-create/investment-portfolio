@@ -11,7 +11,6 @@ import { cn } from "@/src/lib/cn";
 import {
   STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
   STORY_PANEL_PAGE_SHELL_CLASS,
-  storyPanelInsetPageStyle,
 } from "@/src/lib/story-panel-inset";
 
 function CockpitPortfolioContent() {
@@ -42,11 +41,10 @@ function CockpitPortfolioContent() {
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-6xl space-y-6 lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem]",
+        "mx-auto w-full max-w-6xl space-y-6 lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[150rem]",
         STORY_PANEL_PAGE_SHELL_CLASS,
         STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
       )}
-      style={storyPanelInsetPageStyle}
     >
       <StrategySection
         structureBySector={structureBySector}
