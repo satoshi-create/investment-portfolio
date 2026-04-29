@@ -1,4 +1,4 @@
-import { ecoFcfYieldSortValue, ecoRuleOf40SortValue } from "@/src/components/dashboard/eco-efficiency-display";
+import { ecoFcfYieldSortValue, ecoNetCashSortValue, ecoNetCashYieldSortValue, ecoRuleOf40SortValue } from "@/src/components/dashboard/eco-efficiency-display";
 import type { StructuralEcoSortKey } from "@/src/components/dashboard/StructuralEcosystemThead";
 import { lastDailyAlphaForTrendSort } from "@/src/lib/eco-trend-daily";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
@@ -139,6 +139,8 @@ export function sortStructuralEcosystemWatchlist<T extends ThemeEcosystemWatchIt
     }
     if (ecoSortKey === "ruleOf40") return dir * cmpNum(ecoRuleOf40SortValue(a), ecoRuleOf40SortValue(b));
     if (ecoSortKey === "fcfYield") return dir * cmpNum(ecoFcfYieldSortValue(a), ecoFcfYieldSortValue(b));
+    if (ecoSortKey === "netCash") return dir * cmpNum(ecoNetCashSortValue(a), ecoNetCashSortValue(b));
+    if (ecoSortKey === "netCashYield") return dir * cmpNum(ecoNetCashYieldSortValue(a), ecoNetCashYieldSortValue(b));
     if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
     if (ecoSortKey === "pbr") return dir * cmpNum(ecoPbrOf(a), ecoPbrOf(b));
     if (ecoSortKey === "peg") return dir * cmpNum(ecoPegOf(a), ecoPegOf(b));

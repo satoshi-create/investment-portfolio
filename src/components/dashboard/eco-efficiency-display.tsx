@@ -28,3 +28,11 @@ export function ecoRuleOf40SortValue(e: ThemeEcosystemWatchItem): number | null 
 export function ecoFcfYieldSortValue(e: ThemeEcosystemWatchItem): number | null {
   return Number.isFinite(e.fcfYield) ? e.fcfYield : null;
 }
+
+export function ecoNetCashSortValue(e: ThemeEcosystemWatchItem): number | null {
+  return e.netCash != null && Number.isFinite(e.netCash) ? e.netCash : null;
+}
+
+export function ecoNetCashYieldSortValue(e: ThemeEcosystemWatchItem): number | null {
+  return e.netCashYieldPercent != null && Number.isFinite(e.netCashYieldPercent) ? e.netCashYieldPercent : null;
+}

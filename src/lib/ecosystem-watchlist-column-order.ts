@@ -20,6 +20,8 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_IDS = [
   "defensiveRole",
   "ruleOf40",
   "fcfYield",
+  "netCash",
+  "netCashYield",
   "judgment",
   "deviation",
   "drawdown",

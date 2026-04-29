@@ -38,6 +38,7 @@ import { EcosystemThemeTableMappedRow } from "@/src/components/dashboard/Ecosyst
 import { EcosystemWatchlistColumnToolbar } from "@/src/components/dashboard/EcosystemWatchlistColumnToolbar";
 import { EcosystemLynchFilterBar } from "@/src/components/dashboard/EcosystemLynchFilterBar";
 import { EcosystemWatchlistValuationCluster } from "@/src/components/dashboard/EcosystemWatchlistValuationCluster";
+import { LynchAllocationPiePanel } from "@/src/components/dashboard/LynchAllocationPiePanel";
 import { sortStructuralEcosystemWatchlist } from "@/src/components/dashboard/ecosystem-structural-watchlist-sort";
 import { stickyThFirst } from "@/src/components/dashboard/table-sticky";
 import {
@@ -201,7 +202,7 @@ function ecoSortModeHelp(mode: "column" | "dip_rank" | "deep_value_rank"): strin
 
 export function EcosystemBookmarksClient({ initialItems }: { initialItems: EcosystemCrossThemeBookmarkItem[] }) {
   const router = useRouter();
-  const { openTradeForm } = useDashboardData();
+  const { openTradeForm, data: dashboardPayload } = useDashboardData();
   const { convert, viewCurrency } = useCurrencyConverter();
   const [isPending, startTransition] = useTransition();
 
@@ -882,6 +883,19 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
           <div className="text-[10px] font-mono text-muted-foreground">{items.length} 銘柄</div>
         ) : null}
       </div>
+
+      {items.length > 0 ? (
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+          <div className="shrink-0 lg:w-[min(100%,280px)]">
+            <LynchAllocationPiePanel
+              stocks={dashboardPayload?.stocks ?? []}
+              ecosystem={items}
+              bare
+              className="rounded-xl border border-border bg-card/50 px-3 py-3"
+            />
+          </div>
+        </div>
+      ) : null}
 
       {isPending ? (
         <p className="text-[10px] text-muted-foreground font-mono" aria-live="polite">

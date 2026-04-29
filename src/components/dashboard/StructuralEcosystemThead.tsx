@@ -33,6 +33,8 @@ export type StructuralEcoSortKey =
   | "drawdown"
   | "ruleOf40"
   | "fcfYield"
+  | "netCash"
+  | "netCashYield"
   | "judgment"
   | "viScore"
   | "dividend"
@@ -360,6 +362,36 @@ export function StructuralEcosystemThead({
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
                   metricHelpText={METRIC_HEADER_TIP.fcfYield}
                   label="FCF Yield"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                  disableColumnReorder={disableColumnReorder}
+                />
+              );
+            case "netCash":
+              return (
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="netCash"
+                  align="right"
+                  className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.netCash}
+                  label="ネットC"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                  disableColumnReorder={disableColumnReorder}
+                />
+              );
+            case "netCashYield":
+              return (
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="netCashYield"
+                  align="right"
+                  className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.netCashYield}
+                  label="NC/MCAP"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}

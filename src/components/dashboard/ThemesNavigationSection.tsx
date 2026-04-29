@@ -3,9 +3,12 @@ import Link from "next/link";
 import { Layout, Radar, Star } from "lucide-react";
 
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
+import { LynchAllocationPiePanel } from "@/src/components/dashboard/LynchAllocationPiePanel";
+import { useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
 import type { InvestmentThemeRecord } from "@/src/types/investment";
 
 const AI_UNICORNS_THEME_NAME = "AIユニコーン";
+const HIDDEN_THEME_HUB_CARD = "江戸循環ネットワーク文明";
 
 function excerpt(text: string | null, max = 96): string {
   if (text == null) return "";
@@ -21,8 +24,12 @@ export function ThemesNavigationSection(props: {
   structuralSparklineByThemeId?: Record<string, number[]>;
 }) {
   const { themes, inPortfolioThemeNames, structuralSparklineByThemeId } = props;
+  const { data } = useDashboardData();
+  const hubStocks = data?.stocks ?? [];
 
   if (themes.length === 0) return null;
+
+  const themesForHub = themes.filter((t) => (t.name ?? "").trim() !== HIDDEN_THEME_HUB_CARD);
 
   return (
     <section className="rounded-2xl border border-border bg-card/60 p-4 md:p-5">
@@ -65,12 +72,16 @@ export function ThemesNavigationSection(props: {
             <Radar size={14} />
             Global Strata
           </Link>
-          <div className="text-[10px] text-muted-foreground font-mono">{themes.length} themes</div>
+          <div className="text-[10px] text-muted-foreground font-mono">{themesForHub.length} themes</div>
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-        {themes.map((t) => {
+      <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-start">
+        <div className="shrink-0 lg:w-[min(100%,280px)]">
+          <LynchAllocationPiePanel stocks={hubStocks} bare className="rounded-xl border border-border bg-card/50 px-3 py-3" />
+        </div>
+        <div className="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+        {themesForHub.map((t) => {
           const name = (t.name ?? "").trim();
           /** `/themes/[theme]` と theme-detail は DB の `investment_themes.name`（trim 一致）と揃える */
           const href = `/themes/${encodeURIComponent(name)}`;
@@ -114,6 +125,7 @@ export function ThemesNavigationSection(props: {
             </Link>
           );
         })}
+        </div>
       </div>
     </section>
   );

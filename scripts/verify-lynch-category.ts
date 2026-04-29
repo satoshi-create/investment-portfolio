@@ -78,6 +78,8 @@ function mk(overrides: Partial<Stock> & Pick<Stock, "ticker">): Stock {
     valuationFactor: 1,
     expectationCategory: null,
     earningsSummaryNote: null,
+    lynchDriversNarrative: null,
+    lynchStoryText: null,
     listingDate: null,
     marketCap: null,
     listingPrice: null,

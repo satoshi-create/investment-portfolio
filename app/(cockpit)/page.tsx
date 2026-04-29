@@ -32,7 +32,7 @@ function CockpitPortfolioContent() {
   useEffect(() => {
     const raw = searchParams.get("ticker");
     if (raw != null && raw.trim().length > 0) {
-      setFocusedTicker(raw.trim().toUpperCase());
+      setFocusedTicker(raw.trim());
     } else {
       setFocusedTicker(null);
     }

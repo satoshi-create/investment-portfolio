@@ -62,7 +62,7 @@ export function themeEcosystemWatchItemToLynchInput(e: ThemeEcosystemWatchItem):
     priceToBook: e.priceToBook,
     annualDividendRate: e.annualDividendRate,
     dividendYieldPercent: e.dividendYieldPercent,
-    netCash: null,
+    netCash: e.netCash != null && Number.isFinite(e.netCash) ? e.netCash : null,
   };
 }
 

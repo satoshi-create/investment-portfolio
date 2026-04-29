@@ -31,6 +31,8 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
   defensiveRole: "ディフェンシブ役割",
   ruleOf40: "Rule of 40",
   fcfYield: "FCF Yield",
+  netCash: "ネットC",
+  netCashYield: "ネットC÷MCAP",
   judgment: "判定",
   deviation: "乖離",
   drawdown: "落率",

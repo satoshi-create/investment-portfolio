@@ -11,6 +11,7 @@ import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/Ecosyst
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { ecoFcfYieldTone, ecoRuleOf40Tone } from "@/src/components/dashboard/eco-efficiency-display";
+import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
@@ -25,6 +26,8 @@ import {
   ecosystemDividendPayoutPercent,
   formatDividendPayoutPercent,
 } from "@/src/lib/eco-dividend-payout";
+import { formatLocalPriceForView } from "@/src/lib/format-display-currency";
+import { ecosystemRowNativeCurrency } from "@/src/lib/ecosystem-row-native-currency";
 import { cn } from "@/src/lib/cn";
 import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
@@ -189,6 +192,7 @@ export function EcosystemWatchlistTableRow({
   dividendCalendar,
   defensiveZClass,
 }: EcosystemWatchlistTableRowProps) {
+  const { convert, viewCurrency } = useCurrencyConverter();
   const region = regionDisplayFromYahooCountry(e.yahooCountry);
   return (
     <tr
@@ -549,6 +553,40 @@ export function EcosystemWatchlistTableRow({
                   const t = ecoFcfYieldTone(e.fcfYield);
                   return (
                     <span className={t.cls} title="FCF Yield（動的）">
+                      {t.text}
+                    </span>
+                  );
+                })()}
+              </td>
+            );
+          case "netCash":
+            return (
+              <td key={colId} className={`px-6 py-4 text-right font-mono text-xs whitespace-nowrap ${stickyFirst}`}>
+                {e.netCash != null && Number.isFinite(e.netCash) ? (
+                  <span title={METRIC_HEADER_TIP.netCash}>
+                    {formatLocalPriceForView(
+                      e.netCash,
+                      ecosystemRowNativeCurrency(e),
+                      viewCurrency,
+                      convert,
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+            );
+          case "netCashYield":
+            return (
+              <td key={colId} className={`px-6 py-4 text-right font-mono text-xs whitespace-nowrap ${stickyFirst}`}>
+                {(() => {
+                  const v = e.netCashYieldPercent;
+                  if (v == null || !Number.isFinite(v)) {
+                    return <span className="text-muted-foreground">—</span>;
+                  }
+                  const t = ecoFcfYieldTone(v);
+                  return (
+                    <span className={t.cls} title={METRIC_HEADER_TIP.netCashYield}>
                       {t.text}
                     </span>
                   );

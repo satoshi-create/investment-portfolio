@@ -56,8 +56,14 @@ import {
   INVENTORY_LYNCH_LENS_COLUMNS,
   inventoryLynchLensKeyFromFilter,
 } from "@/src/lib/inventory-lynch-lens-columns";
+import {
+  mergeInventoryLynchLensHiddenForDisplay,
+  type InventoryLynchLensColumnUiByFilter,
+  type InventoryLynchLensUiFilterKey,
+} from "@/src/lib/inventory-lynch-lens-column-ui";
 import { STOCK_CSV_COLUMNS, stocksToCsvRows } from "@/src/lib/csv-dashboard-presets";
 import { exportToCSV, portfolioCsvFileName } from "@/src/lib/csv-export";
+import { normalizeSearchQuery } from "@/src/lib/search-normalize";
 import { useStoryPanel } from "@/src/components/dashboard/StoryPanelContext";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
@@ -666,6 +672,8 @@ export function InventoryTable({
   const [lynchFilter, setLynchFilter] = useState<"" | "__unset__" | LynchCategory>("");
   const [columnOrder, setColumnOrder] = useState<InventoryColId[]>(DEFAULT_COLUMN_ORDER);
   const [inventoryHiddenColumnIds, setInventoryHiddenColumnIds] = useState<InventoryColId[]>([]);
+  const [inventoryLynchLensColumnUiByFilter, setInventoryLynchLensColumnUiByFilter] =
+    useState<InventoryLynchLensColumnUiByFilter>({});
   const [inventoryTableCompact, setInventoryTableCompact] = useState(false);
   const [bookmarksOnly, setBookmarksOnly] = useState(false);
   const [vacuumUnpopularOnly, setVacuumUnpopularOnly] = useState(false);
@@ -732,17 +740,106 @@ export function InventoryTable({
   );
   const lynchLensColumnIds = useMemo(() => {
     if (!lynchLensKey) return null;
-    return [...INVENTORY_LYNCH_LENS_COLUMNS[lynchLensKey]];
-  }, [lynchLensKey]);
-
-  const columnToolbarBaseIds = lynchLensColumnIds ?? inventoryBaseVisibleColumnIds;
+    const preset = [...INVENTORY_LYNCH_LENS_COLUMNS[lynchLensKey]];
+    const allowed = new Set(inventoryBaseVisibleColumnIds);
+    const inter = preset.filter((id) => allowed.has(id));
+    const fallback = (["asset", "lynch", "alpha"] as const).filter((id) => allowed.has(id));
+    return inter.length > 0 ? inter : fallback;
+  }, [lynchLensKey, inventoryBaseVisibleColumnIds]);
 
   const visibleColumnIds = useMemo(() => {
-    if (lynchLensColumnIds) {
-      return applyInventoryUserHidden(lynchLensColumnIds, inventoryHiddenColumnIds);
+    if (lynchLensColumnIds == null) {
+      return applyInventoryUserHidden(inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds);
     }
-    return applyInventoryUserHidden(inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds);
-  }, [inventoryBaseVisibleColumnIds, inventoryHiddenColumnIds, lynchLensColumnIds]);
+    const fk = lynchFilter as InventoryLynchLensUiFilterKey;
+    const { extras, hidden } = inventoryLynchLensColumnUiByFilter[fk] ?? { extras: [], hidden: [] };
+    const mergedHidden = mergeInventoryLynchLensHiddenForDisplay(hidden, inventoryHiddenColumnIds);
+    const withExtras = Array.from(new Set([...lynchLensColumnIds, ...extras]));
+    return applyInventoryUserHidden(withExtras, mergedHidden);
+  }, [
+    inventoryBaseVisibleColumnIds,
+    inventoryHiddenColumnIds,
+    lynchLensColumnIds,
+    lynchFilter,
+    inventoryLynchLensColumnUiByFilter,
+  ]);
+
+  const effectiveHiddenColumnIds = useMemo(() => {
+    const visibleSet = new Set(visibleColumnIds);
+    return inventoryBaseVisibleColumnIds.filter((id) => !visibleSet.has(id));
+  }, [inventoryBaseVisibleColumnIds, visibleColumnIds]);
+
+  const handleInventoryHiddenColumnIdsChange = useCallback(
+    (nextHidden: InventoryColId[]) => {
+      const addedHidden = nextHidden.filter((id) => !effectiveHiddenColumnIds.includes(id));
+      const removedHidden = effectiveHiddenColumnIds.filter((id) => !nextHidden.includes(id));
+
+      if (lynchLensColumnIds != null && lynchFilter !== "") {
+        const fk = lynchFilter as InventoryLynchLensUiFilterKey;
+        const slice = inventoryLynchLensColumnUiByFilter[fk] ?? { extras: [], hidden: [] };
+
+        if (addedHidden.length > 0) {
+          const id = addedHidden[0]!;
+          if (slice.extras.includes(id)) {
+            setInventoryLynchLensColumnUiByFilter((prev) => {
+              const cur = prev[fk] ?? { extras: [], hidden: [] };
+              return {
+                ...prev,
+                [fk]: { extras: cur.extras.filter((x) => x !== id), hidden: cur.hidden },
+              };
+            });
+          } else if (!slice.hidden.includes(id)) {
+            setInventoryLynchLensColumnUiByFilter((prev) => {
+              const cur = prev[fk] ?? { extras: [], hidden: [] };
+              return { ...prev, [fk]: { extras: cur.extras, hidden: [...cur.hidden, id] } };
+            });
+          }
+          return;
+        }
+        if (removedHidden.length > 0) {
+          const id = removedHidden[0]!;
+          if (slice.hidden.includes(id)) {
+            setInventoryLynchLensColumnUiByFilter((prev) => {
+              const cur = prev[fk] ?? { extras: [], hidden: [] };
+              return {
+                ...prev,
+                [fk]: { extras: cur.extras, hidden: cur.hidden.filter((x) => x !== id) },
+              };
+            });
+          } else if (inventoryHiddenColumnIds.includes(id)) {
+            persistInventoryHiddenColumnIds(inventoryHiddenColumnIds.filter((x) => x !== id));
+          } else if (!lynchLensColumnIds.includes(id)) {
+            setInventoryLynchLensColumnUiByFilter((prev) => {
+              const cur = prev[fk] ?? { extras: [], hidden: [] };
+              if (cur.extras.includes(id)) return prev;
+              return { ...prev, [fk]: { extras: [...cur.extras, id], hidden: cur.hidden } };
+            });
+          }
+        }
+        return;
+      }
+
+      if (addedHidden.length > 0) {
+        const id = addedHidden[0]!;
+        if (!inventoryHiddenColumnIds.includes(id)) {
+          persistInventoryHiddenColumnIds([...inventoryHiddenColumnIds, id]);
+        }
+      } else if (removedHidden.length > 0) {
+        const id = removedHidden[0]!;
+        if (inventoryHiddenColumnIds.includes(id)) {
+          persistInventoryHiddenColumnIds(inventoryHiddenColumnIds.filter((x) => x !== id));
+        }
+      }
+    },
+    [
+      effectiveHiddenColumnIds,
+      lynchLensColumnIds,
+      lynchFilter,
+      inventoryLynchLensColumnUiByFilter,
+      inventoryHiddenColumnIds,
+      persistInventoryHiddenColumnIds,
+    ],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -854,15 +951,31 @@ export function InventoryTable({
 
   const dividendCalendarData = useMemo(() => buildDividendCalendarData(sortedStocks), [sortedStocks]);
 
+  const highlightScrollTicker = useMemo(() => {
+    const raw = highlightTicker?.trim() ?? "";
+    if (raw.length === 0) return null;
+    const q = normalizeSearchQuery(raw);
+    if (q.length === 0) return null;
+    for (const s of sortedStocks) {
+      if (normalizeSearchQuery(s.ticker) === q) return s.ticker.trim().toUpperCase();
+    }
+    if (q.length >= 2) {
+      for (const s of sortedStocks) {
+        if (normalizeSearchQuery(s.name).includes(q)) return s.ticker.trim().toUpperCase();
+      }
+    }
+    return raw.toUpperCase();
+  }, [highlightTicker, sortedStocks]);
+
   useEffect(() => {
-    const raw = highlightTicker?.trim();
-    if (!raw) return;
-    const id = `inventory-row-${raw.toUpperCase()}`;
+    const idTicker = highlightScrollTicker;
+    if (!idTicker) return;
+    const id = `inventory-row-${idTicker}`;
     const t = window.setTimeout(() => {
       document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 120);
     return () => window.clearTimeout(t);
-  }, [highlightTicker, sortedStocks.length]);
+  }, [highlightScrollTicker, sortedStocks.length]);
 
   const footerStats = useMemo(() => {
     const rows = sortedStocks;
@@ -1265,29 +1378,31 @@ export function InventoryTable({
           </div>
           <div className="shrink-0 rounded-lg border border-border/80 bg-card/40 p-1.5">
             <InventoryTableColumnToolbar
-              baseVisibleColumnIds={columnToolbarBaseIds}
-              hiddenColumnIds={inventoryHiddenColumnIds}
-              setHiddenColumnIds={persistInventoryHiddenColumnIds}
+              baseVisibleColumnIds={inventoryBaseVisibleColumnIds}
+              hiddenColumnIds={effectiveHiddenColumnIds}
+              setHiddenColumnIds={handleInventoryHiddenColumnIdsChange}
               compactTable={inventoryTableCompact}
               setCompactTable={persistInventoryTableCompact}
             />
           </div>
         </div>
+        <div className="min-w-0 max-w-full xl:max-w-[min(100%,56rem)]">
         <div
-          className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-border bg-background/60 px-2 py-1.5"
+          className="flex min-w-0 max-w-full flex-col gap-1 rounded-lg border border-border bg-background/60 px-2 py-1.5 sm:flex-row sm:flex-wrap sm:items-center"
           role="group"
           aria-label="リンチの6分類で絞り込み（レンズ列プリセット）"
         >
-          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground px-1 shrink-0">
+          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground px-1 shrink-0 whitespace-nowrap">
             リンチ
           </span>
+          <div className="flex min-w-0 max-w-full flex-none flex-wrap items-center gap-1">
           <button
             type="button"
             onClick={() => setLynchFilter("")}
             aria-pressed={lynchFilter === ""}
             title={LYNCH_RULE_TOOLTIP_ALL_JA}
             className={cn(
-              "text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border transition-colors",
+              "text-[9px] font-bold uppercase tracking-wide whitespace-nowrap shrink-0 px-2 py-1 rounded-md border transition-colors",
               lynchFilter === ""
                 ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
                 : "border-transparent text-muted-foreground hover:bg-muted/60",
@@ -1306,7 +1421,7 @@ export function InventoryTable({
                   aria-pressed={lynchFilter === "__unset__"}
                   title={LYNCH_RULE_TOOLTIP_UNSET_JA}
                   className={cn(
-                    "text-[9px] font-bold px-2 py-1 rounded-md border transition-colors max-w-[8rem]",
+                    "text-[9px] font-bold whitespace-nowrap shrink-0 px-2 py-1 rounded-md border transition-colors max-w-[8rem]",
                     lynchFilter === "__unset__"
                       ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
                       : "border-transparent text-muted-foreground hover:bg-muted/60",
@@ -1326,7 +1441,7 @@ export function InventoryTable({
                 aria-pressed={lynchFilter === k}
                 title={LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA[k]}
                 className={cn(
-                  "text-[9px] font-bold px-2 py-1 rounded-md border transition-colors max-w-[8rem] truncate",
+                  "text-[9px] font-bold shrink-0 px-2 py-1 rounded-md border transition-colors max-w-[8rem] truncate",
                   lynchFilter === k
                     ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
                     : "border-transparent text-muted-foreground hover:bg-muted/60",
@@ -1336,6 +1451,8 @@ export function InventoryTable({
               </button>
             );
           })}
+          </div>
+        </div>
         </div>
       </div>
 
@@ -1839,10 +1956,11 @@ export function InventoryTable({
               const ecoKeep =
                 resolveEcosystemKeep != null ? resolveEcosystemKeep(stock.ticker) : null;
               const rowRegion = regionDisplayFromYahooCountry(stock.yahooCountry);
+              const hiQ = normalizeSearchQuery(highlightTicker ?? "");
               const rowHi =
-                highlightTicker != null &&
-                highlightTicker.trim().length > 0 &&
-                stock.ticker.trim().toUpperCase() === highlightTicker.trim().toUpperCase();
+                hiQ.length > 0 &&
+                (normalizeSearchQuery(stock.ticker) === hiQ ||
+                  (hiQ.length >= 2 && normalizeSearchQuery(stock.name).includes(hiQ)));
               return (
                 <tr
                   key={stock.id}

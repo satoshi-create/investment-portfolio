@@ -714,6 +714,8 @@ type HoldingQueryRow = {
   valuation_factor: unknown;
   expectation_category?: unknown;
   earnings_summary_note?: unknown;
+  lynch_drivers_narrative?: unknown;
+  lynch_story_text?: unknown;
   listing_date?: unknown;
   /** 旧マイグレーションのみ */
   founded_date?: unknown;
@@ -793,7 +795,7 @@ function computePerformanceSinceFoundationPercent(
 }
 
 async function fetchHoldingsRowsWithInvestmentMeta(db: Client, userId: string) {
-  const core = `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note`;
+  const core = `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note, lynch_drivers_narrative, lynch_story_text`;
   const metaNoInst = `, listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at`;
   const meta = `${metaNoInst}, institutional_ownership`;
   const shortTerm = `, stop_loss_pct, target_profit_pct, trade_deadline, exit_rule_enabled`;
@@ -804,6 +806,13 @@ async function fetchHoldingsRowsWithInvestmentMeta(db: Client, userId: string) {
     try {
       return await run(frag);
     } catch (e) {
+      if (
+        holdingsMissingColumn(e, "lynch_drivers_narrative") ||
+        holdingsMissingColumn(e, "lynch_story_text")
+      ) {
+        const stripped = frag.replace(/, lynch_drivers_narrative, lynch_story_text\b/, "");
+        return await runWithInstitutionalFallback(stripped);
+      }
       if (holdingsMissingColumn(e, "institutional_ownership")) {
         return await run(frag.replace(/, institutional_ownership\b/, ""));
       }
@@ -1543,6 +1552,8 @@ function buildDraftsFromHoldingRows(
       structureTagsJson: tagsJson,
       expectationCategory,
       earningsSummaryNote: parseEarningsSummaryNote(row.earnings_summary_note),
+      lynchDriversNarrative: parseEarningsSummaryNote(row.lynch_drivers_narrative),
+      lynchStoryText: parseEarningsSummaryNote(row.lynch_story_text),
       revenueGrowth,
       fcfMargin,
       fcfYield,
@@ -2135,6 +2146,7 @@ async function enrichEcosystemMemberRow(
   let annualFcfForDynamic: number | null;
   let sharesForDynamic: number | null;
   let priorRuleOf40: number | null;
+  let netCashEco: number | null = null;
 
   if (isUnlisted) {
     revenueGrowth = parsePercentOrNaN(row["revenue_growth"]);
@@ -2155,6 +2167,7 @@ async function enrichEcosystemMemberRow(
     annualFcfForDynamic = merged.annualFcf;
     sharesForDynamic = merged.sharesOutstanding;
     priorRuleOf40 = merged.priorRuleOf40;
+    netCashEco = merged.netCash;
   }
 
   const valuationForUnlisted = (() => {
@@ -2183,6 +2196,15 @@ async function enrichEcosystemMemberRow(
     priorRuleOf40,
     revenueGrowth: Number.isFinite(revenueGrowth) ? revenueGrowth : null,
   });
+
+  const netCashYieldPercentEco =
+    netCashEco != null &&
+    Number.isFinite(netCashEco) &&
+    marketCapEco != null &&
+    Number.isFinite(marketCapEco) &&
+    marketCapEco > 0
+      ? (netCashEco / marketCapEco) * 100
+      : null;
 
   let performanceSinceFoundation: number | null = null;
   if (!fast && !isUnlisted && effectiveTicker.length > 0) {
@@ -2268,6 +2290,8 @@ async function enrichEcosystemMemberRow(
     fcfMargin,
     fcfYield,
     ruleOf40,
+    netCash: netCashEco,
+    netCashYieldPercent: netCashYieldPercentEco,
     judgmentStatus: judgmentEco.status,
     judgmentReason: judgmentEco.reason,
     latestDailyAlphaObservationYmd,
@@ -3559,6 +3583,8 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
         row.provider_symbol != null && String(row.provider_symbol).length > 0 ? String(row.provider_symbol) : null,
       expectationCategory: parseExpectationCategory(row.expectation_category),
       earningsSummaryNote: null,
+      lynchDriversNarrative: null,
+      lynchStoryText: null,
       listingDate: null,
       marketCap: null,
       listingPrice: null,

@@ -387,6 +387,16 @@ function normalizeThemeDetailResponse(
             const fm = Number((item as Record<string, unknown>).fcfMargin ?? (item as Record<string, unknown>).fcf_margin);
             return Number.isFinite(rg) && Number.isFinite(fm) ? rg + fm : Number.NaN;
           })(),
+          netCash: (() => {
+            const v = (item as Record<string, unknown>).netCash ?? (item as Record<string, unknown>).net_cash;
+            return v != null && Number.isFinite(Number(v)) ? Number(v) : null;
+          })(),
+          netCashYieldPercent: (() => {
+            const v =
+              (item as Record<string, unknown>).netCashYieldPercent ??
+              (item as Record<string, unknown>).net_cash_yield_percent;
+            return v != null && Number.isFinite(Number(v)) ? Number(v) : null;
+          })(),
           lastRoundValuation: (() => {
             const v =
               (item as Record<string, unknown>).lastRoundValuation ??

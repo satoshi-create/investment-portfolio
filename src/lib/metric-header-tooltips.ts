@@ -45,6 +45,8 @@ export const METRIC_HEADER_TIP = {
     "ネットキャッシュ（現地通貨）。FMP 年次 BS: 流動性資産 − totalDebt。`ticker_efficiency_metrics`（`npm run fetch:fmp`）。",
   netCps:
     "1株当たりネットキャッシュ = ネットC ÷ 希薄化株数（FMP quote）。",
+  netCashYield:
+    "ネットキャッシュ ÷ 時価総額 × 100（%）。BS ベースのネットCを企業価値で割ったウェイト的指標（観測行は `market_cap` 基準）。",
   judgment:
     "投資優先度（ELITE / ACCUMULATE / WATCH / DANGER）。`computeInvestmentJudgment` とナラティブの集約。",
   position:

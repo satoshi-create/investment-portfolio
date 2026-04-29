@@ -258,6 +258,10 @@ export interface Stock {
   expectationCategory: LynchCategory | null;
   /** `holdings.earnings_summary_note`（決算要約メモ）。未設定は null */
   earningsSummaryNote: string | null;
+  /** `holdings.lynch_drivers_narrative`（ストーリーパネル・ドライバー叙述）。未設定は null */
+  lynchDriversNarrative: string | null;
+  /** `holdings.lynch_story_text`（ストーリーパネル・リンチ分析本文）。未設定は null */
+  lynchStoryText: string | null;
 
   /** DB `holdings.listing_date`（上場日・YYYY-MM-DD）。未設定は null */
   listingDate: string | null;
@@ -568,6 +572,10 @@ export type ThemeEcosystemWatchItem = {
   fcfMargin: number;
   fcfYield: number;
   ruleOf40: number;
+  /** `ticker_efficiency_metrics.net_cash`（上場のみ・未取得は null） */
+  netCash: number | null;
+  /** ネットキャッシュ ÷ 時価総額 × 100（`marketCap` が正のときのみ算出） */
+  netCashYieldPercent: number | null;
   /** `computeInvestmentJudgment` — サーバーが必ず付与（テーマ詳細 API） */
   judgmentStatus: JudgmentStatus;
   judgmentReason: string;

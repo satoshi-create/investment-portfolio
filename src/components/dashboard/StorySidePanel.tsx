@@ -117,11 +117,11 @@ export function StorySidePanel({
     if (!stock) return;
     setMemoDraft(stock.memo ?? "");
     setEarningsDraft(stock.earningsSummaryNote ?? "");
+    setDriversNarrative(stock.lynchDriversNarrative ?? "");
+    setStoryText(stock.lynchStoryText ?? "");
     setEarningsSubTab("edit");
     setMainTab("basic");
     setSelectedDrivers([]);
-    setDriversNarrative("");
-    setStoryText("");
     setManualLens("Stalwart");
     setGrowthQualityAnswer("");
     setUniversalPatches([]);
@@ -164,8 +164,9 @@ export function StorySidePanel({
         }
       }
 
-      const earnPrev = stock.earningsSummaryNote ?? "";
-      if (earningsDraft !== earnPrev) {
+      const earnPrev = (stock.earningsSummaryNote ?? "").trim();
+      const earnNext = earningsDraft.trim();
+      if (earnNext !== earnPrev) {
         const res = await fetchWithTimeout(
           "/api/holdings/earnings-summary-note",
           {
@@ -182,6 +183,32 @@ export function StorySidePanel({
         const json = (await res.json()) as { error?: string };
         if (!res.ok) {
           setSaveErr(json.error ?? `決算要約の保存に失敗しました（HTTP ${res.status}）`);
+          return;
+        }
+      }
+
+      const narrPrev = (stock.lynchDriversNarrative ?? "").trim();
+      const narrNext = driversNarrative.trim();
+      const storyPrev = (stock.lynchStoryText ?? "").trim();
+      const storyNext = storyText.trim();
+      if (narrNext !== narrPrev || storyNext !== storyPrev) {
+        const res = await fetchWithTimeout(
+          "/api/holdings/lynch-story",
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              holdingId: stock.id,
+              lynchDriversNarrative: driversNarrative,
+              lynchStoryText: storyText,
+            }),
+          },
+          { timeoutMs: 12_000 },
+        );
+        const json = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          setSaveErr(json.error ?? `リンチ分析の保存に失敗しました（HTTP ${res.status}）`);
           return;
         }
       }
