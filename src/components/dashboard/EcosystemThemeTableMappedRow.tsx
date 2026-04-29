@@ -5,6 +5,7 @@ import { CalendarClock, FileText, Gem, MessageSquare, Star } from "lucide-react"
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
+import { InstitutionalOwnershipSensor } from "@/src/components/dashboard/InstitutionalOwnershipSensor";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
@@ -362,6 +363,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                       </span>
                     ) : null}
                     <RegionMarketBadge yahooCountry={e.yahooCountry} />
+                    <InstitutionalOwnershipSensor ownership={e.institutionalOwnership} className="ml-0" />
                     <EcosystemStructuralInsightHoverWrap e={e} className="shrink-0 min-w-0">
                       <span
                         className="font-bold font-mono text-foreground group-hover:text-blue-400 transition-colors inline-block max-w-full truncate"

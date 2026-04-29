@@ -20,6 +20,12 @@ function holdingsMissingYahooResearchColumns(e: unknown): boolean {
   return lower.includes("no such column") && lower.includes("ex_dividend_date");
 }
 
+function holdingsMissingColumn(e: unknown, column: string): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes(column.toLowerCase());
+}
+
 function parseOptionalIsoDatePrefix(raw: unknown): string | null {
   if (raw == null) return null;
   const s = String(raw).trim();
@@ -67,6 +73,7 @@ function mapHoldingsRow(
       row.yahoo_research_synced_at != null && String(row.yahoo_research_synced_at).trim().length > 0
         ? String(row.yahoo_research_synced_at).trim()
         : null,
+    institutionalOwnership: parseOptionalFiniteNumberMeta(row["institutional_ownership"]),
     memo: row.memo != null && String(row.memo).trim().length > 0 ? String(row.memo) : null,
     isBookmarked: parseBookmarkFlag(row.is_bookmarked),
     stopLossPct: shortTerm.stopLossPct,
@@ -87,7 +94,8 @@ function shortTermFromRow(row: Record<string, unknown>) {
 
 /** Active holdings (`quantity > 0`) for `userId`, including `provider_symbol` (Yahoo / alpha sync). */
 export async function fetchHoldingsWithProviderForUser(db: Client, userId: string): Promise<Holding[]> {
-  const metaYahoo = `, listing_date, market_cap, listing_price, next_earnings_date, ex_dividend_date, record_date, annual_dividend_rate, dividend_yield_percent, yahoo_research_synced_at, memo, is_bookmarked, instrument_meta_synced_at`;
+  const metaYahooNoInst = `, listing_date, market_cap, listing_price, next_earnings_date, ex_dividend_date, record_date, annual_dividend_rate, dividend_yield_percent, yahoo_research_synced_at, memo, is_bookmarked, instrument_meta_synced_at`;
+  const metaYahoo = `${metaYahooNoInst}, institutional_ownership`;
   const metaLegacy = `, listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at`;
   const shortTerm = `, stop_loss_pct, target_profit_pct, trade_deadline, exit_rule_enabled`;
   const from = ` FROM holdings WHERE user_id = ? AND quantity > 0 ORDER BY ticker`;
@@ -98,8 +106,19 @@ export async function fetchHoldingsWithProviderForUser(db: Client, userId: strin
       args,
     });
 
+  async function runWithInstitutionalFallback(st: string) {
+    try {
+      return await run(metaYahoo, st);
+    } catch (e) {
+      if (holdingsMissingColumn(e, "institutional_ownership")) {
+        return await run(metaYahooNoInst, st);
+      }
+      throw e;
+    }
+  }
+
   try {
-    const rs = await run(metaYahoo, shortTerm);
+    const rs = await runWithInstitutionalFallback(shortTerm);
     return rs.rows.map((row) => mapHoldingsRow(row as Record<string, unknown>, shortTermFromRow(row as Record<string, unknown>)));
   } catch (e) {
     if (holdingsMissingYahooResearchColumns(e)) {
@@ -126,7 +145,7 @@ export async function fetchHoldingsWithProviderForUser(db: Client, userId: strin
     }
     if (holdingsMissingShortTermRulesColumns(e)) {
       try {
-        const rs = await run(metaYahoo, "");
+        const rs = await runWithInstitutionalFallback("");
         return rs.rows.map((row) =>
           mapHoldingsRow(row as Record<string, unknown>, {
             exitRuleEnabled: false,

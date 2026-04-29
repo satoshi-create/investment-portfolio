@@ -39,6 +39,10 @@ export interface Holding {
   dividendYieldPercent?: number | null;
   /** DB `holdings.yahoo_research_synced_at`（ISO）。未設定は null */
   yahooResearchSyncedAt?: string | null;
+  /**
+   * DB `holdings.institutional_ownership`（機関投資家保有率・小数 0.15=15%）。Yahoo 同期。未設定は null
+   */
+  institutionalOwnership?: number | null;
   /** DB `holdings.memo`（自由記述）。未設定は null */
   memo?: string | null;
   /** DB `holdings.is_bookmarked`。未読込時は省略可 */
@@ -189,6 +193,10 @@ export interface Stock {
   yahooQuoteSharesOutstanding: number | null;
   /** Yahoo `netSharePurchaseActivity.netInfoShares`（インサイダー純売買・自社株買いとは別）。 */
   yahooInsiderNetPurchaseShares: number | null;
+  /**
+   * 機関投資家の発行済株式に対する保有率（Yahoo `heldPercentInstitutions`、小数 0.15 = 15%）。未取得は null。
+   */
+  institutionalOwnership: number | null;
   /** 構造投資テーマ（`structure_tags` 先頭） */
   tag: string;
   alphaHistory: AlphaHistory;
@@ -503,6 +511,8 @@ export type ThemeEcosystemWatchItem = {
   yahooBuybackPosture: YahooBuybackPosture | null;
   yahooQuoteSharesOutstanding: number | null;
   yahooInsiderNetPurchaseShares: number | null;
+  /** 機関投資家保有率（Yahoo、小数 0.15=15%）。未取得は null。 */
+  institutionalOwnership: number | null;
   /** `theme_ecosystem_members.observation_started_at`（銘柄投入日・累積 Alpha の第一優先起点）。未設定時は null */
   observationStartedAt: string | null;
   /** 観測起点からの累積 Alpha %（累積系列）。スパークライン・最新累積値用。日次は `alphaDailyHistory`。 */

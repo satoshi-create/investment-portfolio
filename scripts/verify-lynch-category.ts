@@ -50,6 +50,7 @@ function mk(overrides: Partial<Stock> & Pick<Stock, "ticker">): Stock {
     yahooBuybackPosture: null,
     yahooQuoteSharesOutstanding: null,
     yahooInsiderNetPurchaseShares: null,
+    institutionalOwnership: null,
     tag: "",
     alphaHistory: [],
     alphaHistoryObservationDates: [],

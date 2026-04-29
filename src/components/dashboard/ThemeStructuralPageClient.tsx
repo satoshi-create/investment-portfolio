@@ -624,6 +624,12 @@ function normalizeThemeDetailResponse(
             const n = Number(a ?? b);
             return Number.isFinite(n) ? n : null;
           })(),
+          institutionalOwnership: (() => {
+            const a = (item as Record<string, unknown>).institutionalOwnership;
+            const b = (item as Record<string, unknown>).institutional_ownership;
+            const n = Number(a ?? b);
+            return Number.isFinite(n) ? n : null;
+          })(),
           };
         })
       : [],

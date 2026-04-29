@@ -5,6 +5,7 @@ import { Gem } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
+import { InstitutionalOwnershipSensor } from "@/src/components/dashboard/InstitutionalOwnershipSensor";
 import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
@@ -220,6 +221,7 @@ export function EcosystemWatchlistTableRow({
                         </span>
                       ) : null}
                       <RegionMarketBadge yahooCountry={e.yahooCountry} />
+                      <InstitutionalOwnershipSensor ownership={e.institutionalOwnership} className="ml-0" />
                       <EcosystemStructuralInsightHoverWrap e={e} className="min-w-0 shrink-0">
                         <span
                           className="font-bold text-foreground group-hover:text-blue-400 transition-colors font-mono whitespace-nowrap truncate inline-block max-w-full"

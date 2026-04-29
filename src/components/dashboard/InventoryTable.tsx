@@ -74,6 +74,7 @@ import {
 } from "@/src/lib/format-display-currency";
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
+import { InstitutionalOwnershipSensor } from "@/src/components/dashboard/InstitutionalOwnershipSensor";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
 import { computeLiveAlphaDayPercent, fiveDayPulseForHoldingRow } from "@/src/lib/alpha-logic";
 import {
@@ -105,6 +106,7 @@ import { METRIC_HEADER_TIP } from "@/src/lib/metric-header-tooltips";
 import { appendTitleBlock, holdingDailyAlphaStoryTitle } from "@/src/lib/alpha-story-tooltip";
 import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
+import { stockMatchesVacuumUnpopularFilter } from "@/src/lib/institutional-ownership";
 
 type SortKey =
   | "asset"
@@ -666,6 +668,7 @@ export function InventoryTable({
   const [inventoryHiddenColumnIds, setInventoryHiddenColumnIds] = useState<InventoryColId[]>([]);
   const [inventoryTableCompact, setInventoryTableCompact] = useState(false);
   const [bookmarksOnly, setBookmarksOnly] = useState(false);
+  const [vacuumUnpopularOnly, setVacuumUnpopularOnly] = useState(false);
   const [hideIncompleteQuotes, setHideIncompleteQuotes] = useState(false);
   const [dividendCalendarModalOpen, setDividendCalendarModalOpen] = useState(false);
   const [, startTransition] = useTransition();
@@ -780,8 +783,11 @@ export function InventoryTable({
     if (hideIncompleteQuotes) {
       list = list.filter((s) => stockHasUsableQuote(s));
     }
+    if (vacuumUnpopularOnly) {
+      list = list.filter((s) => stockMatchesVacuumUnpopularFilter(s.institutionalOwnership));
+    }
     return list;
-  }, [stocks, structureFilter, lynchFilter, bookmarksOnly, hideIncompleteQuotes, bookmarkPatch]);
+  }, [stocks, structureFilter, lynchFilter, bookmarksOnly, hideIncompleteQuotes, vacuumUnpopularOnly, bookmarkPatch]);
 
   /** テーブル内フィルタ（検索・Lynch・ブックマーク等）で行が絞られているとき true。サマリーベースの平均とズレ得る。 */
   const tableFilterActive = filteredStocks.length < stocks.length;
@@ -1207,6 +1213,19 @@ export function InventoryTable({
             >
               <CircleSlash className="h-3.5 w-3.5 shrink-0" aria-hidden />
               株価未取得を隠す
+            </button>
+            <button
+              type="button"
+              onClick={() => setVacuumUnpopularOnly((v) => !v)}
+              className={`text-[10px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg border transition-all inline-flex items-center gap-1 ${
+                vacuumUnpopularOnly
+                  ? "text-amber-200 border-amber-500/50 bg-amber-950/40"
+                  : "text-muted-foreground border-border hover:bg-muted/50"
+              }`}
+              title="機関30%未満、または機関比率が未計測の銘柄のみ（真空地帯）"
+            >
+              <Gem className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              真空地帯だけ
             </button>
             <button
               type="button"
@@ -1861,6 +1880,7 @@ export function InventoryTable({
                                     </span>
                                   ) : null}
                                   <RegionMarketBadge yahooCountry={stock.yahooCountry} />
+                                  <InstitutionalOwnershipSensor ownership={stock.institutionalOwnership} className="ml-0" />
                                   <span
                                     className="min-w-0 truncate font-bold font-mono text-foreground group-hover:text-accent-cyan transition-colors"
                                     title={`Yahoo: ${yahooSymbolForTooltip(stock.ticker, stock.providerSymbol)}${
@@ -2588,7 +2608,7 @@ export function InventoryTable({
                       >
                         Total: {sortedStocks.length}
                         {sortedStocks.length === 1 ? " item" : " items"}
-                        {structureFilter.trim() || lynchFilter !== "" || bookmarksOnly || hideIncompleteQuotes
+                        {structureFilter.trim() || lynchFilter !== "" || bookmarksOnly || hideIncompleteQuotes || vacuumUnpopularOnly
                           ? `（全 ${totalHoldings}）`
                           : ""}
                       </td>

@@ -720,6 +720,8 @@ type HoldingQueryRow = {
   market_cap?: unknown;
   listing_price?: unknown;
   next_earnings_date?: unknown;
+  /** DB `holdings.institutional_ownership` */
+  institutional_ownership?: unknown;
   memo?: unknown;
   is_bookmarked?: unknown;
   instrument_meta_synced_at?: unknown;
@@ -792,17 +794,29 @@ function computePerformanceSinceFoundationPercent(
 
 async function fetchHoldingsRowsWithInvestmentMeta(db: Client, userId: string) {
   const core = `SELECT id, ticker, name, quantity, avg_acquisition_price, structure_tags, sector, category, account_type, provider_symbol, valuation_factor, expectation_category, earnings_summary_note`;
-  const meta = `, listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at`;
+  const metaNoInst = `, listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at`;
+  const meta = `${metaNoInst}, institutional_ownership`;
   const shortTerm = `, stop_loss_pct, target_profit_pct, trade_deadline, exit_rule_enabled`;
   const from = ` FROM holdings WHERE user_id = ? AND quantity > 0 ORDER BY ticker`;
   const run = (frag: string) => db.execute({ sql: `${frag}${from}`, args: [userId] });
 
+  async function runWithInstitutionalFallback(frag: string) {
+    try {
+      return await run(frag);
+    } catch (e) {
+      if (holdingsMissingColumn(e, "institutional_ownership")) {
+        return await run(frag.replace(/, institutional_ownership\b/, ""));
+      }
+      throw e;
+    }
+  }
+
   try {
-    return await run(`${core}${meta}${shortTerm}`);
+    return await runWithInstitutionalFallback(`${core}${meta}${shortTerm}`);
   } catch (e) {
     if (holdingsMissingShortTermRulesColumns(e)) {
       try {
-        return await run(`${core}${meta}`);
+        return await runWithInstitutionalFallback(`${core}${meta}`);
       } catch (e2) {
         if (!holdingsMissingInvestmentMeta(e2)) throw e2;
         return await run(`${core}`);
@@ -1003,6 +1017,12 @@ function holdingsMissingShortTermRulesColumns(e: unknown): boolean {
   return lower.includes("no such column") && lower.includes("stop_loss_pct");
 }
 
+function holdingsMissingColumn(e: unknown, column: string): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes(column.toLowerCase());
+}
+
 function ecosystemMissingInvestmentMetaColumns(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   const lower = msg.toLowerCase();
@@ -1083,7 +1103,7 @@ async function fetchEcosystemEfficiencyByTickerUpper(
       try {
         rs = await db.execute({
           sql: `SELECT ticker, revenue_growth, fcf_margin, fcf_yield, fcf
-              , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+              , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
               WHERE ticker IN (${ph})`,
           args: unique,
         });
@@ -1377,6 +1397,10 @@ function buildDraftsFromHoldingRows(
     const yahooBuybackPosture = research?.yahooBuybackPosture ?? null;
     const yahooQuoteSharesOutstanding = research?.yahooQuoteSharesOutstanding ?? null;
     const yahooInsiderNetPurchaseShares = research?.yahooInsiderNetPurchaseShares ?? null;
+    const liveInst = research?.institutionalOwnership;
+    const dbInstitutional = parseOptionalFiniteNumberMeta(row["institutional_ownership"]);
+    const institutionalOwnership =
+      liveInst != null && Number.isFinite(liveInst) ? liveInst : dbInstitutional;
     const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
     const daysToExDividend = exDividendDate != null ? (() => {
       const d = new Date(`${exDividendDate}T00:00:00.000Z`);
@@ -1495,6 +1519,7 @@ function buildDraftsFromHoldingRows(
       yahooBuybackPosture,
       yahooQuoteSharesOutstanding,
       yahooInsiderNetPurchaseShares,
+      institutionalOwnership,
       tag: rawStructureTags == null ? "" : themeFromStructureTags(tagsJson),
       alphaHistory,
       alphaHistoryObservationDates,
@@ -1577,7 +1602,7 @@ async function fetchEcosystemSparklineRowsByThemeIds(
     try {
       rs = await db.execute({
         sql: `SELECT theme_id, ticker, is_unlisted, proxy_ticker, is_major_player
-            , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+            , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
             WHERE theme_id IN (${ph})
             ORDER BY theme_id ASC, field ASC, ticker ASC`,
         args: themeIds,
@@ -1906,6 +1931,10 @@ async function enrichEcosystemMemberRow(
   const yahooBuybackPostureEco = research?.yahooBuybackPosture ?? null;
   const yahooQuoteSharesOutstandingEco = research?.yahooQuoteSharesOutstanding ?? null;
   const yahooInsiderNetPurchaseSharesEco = research?.yahooInsiderNetPurchaseShares ?? null;
+  const liveInstEco = research?.institutionalOwnership;
+  const dbInstEco = parseOptionalFiniteNumberMeta(row["institutional_ownership"]);
+  const institutionalOwnershipEco =
+    liveInstEco != null && Number.isFinite(liveInstEco) ? liveInstEco : dbInstEco;
   const daysToEarnings = computeUtcCalendarDaysUntil(nextEarningsDate);
   const daysToExDividend =
     exDividendDate != null
@@ -2217,6 +2246,7 @@ async function enrichEcosystemMemberRow(
     yahooBuybackPosture: yahooBuybackPostureEco,
     yahooQuoteSharesOutstanding: yahooQuoteSharesOutstandingEco,
     yahooInsiderNetPurchaseShares: yahooInsiderNetPurchaseSharesEco,
+    institutionalOwnership: institutionalOwnershipEco,
     observationStartedAt,
     alphaHistory,
     alphaCumulativeObservationDates,
@@ -2303,7 +2333,7 @@ async function fetchEnrichedThemeEcosystem(
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength, is_kept,
                          revenue_growth, fcf_margin, fcf, fcf_yield
-                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2317,7 +2347,7 @@ async function fetchEnrichedThemeEcosystem(
                          company_name, field, role, is_major_player, observation_started_at,
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength, is_kept
-                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2340,7 +2370,7 @@ async function fetchEnrichedThemeEcosystem(
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength,
                          revenue_growth, fcf_margin, fcf, fcf_yield
-                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2357,7 +2387,7 @@ async function fetchEnrichedThemeEcosystem(
                          company_name, field, role, is_major_player, observation_started_at,
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength
-                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2382,7 +2412,7 @@ async function fetchEnrichedThemeEcosystem(
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength,
                          revenue_growth, fcf_margin, fcf, fcf_yield
-                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2399,7 +2429,7 @@ async function fetchEnrichedThemeEcosystem(
                          company_name, field, role, is_major_player, observation_started_at,
                          adoption_stage, adoption_stage_rationale, expectation_category,
                          holder_tags, dividend_months, defensive_strength
-                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                  , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                   WHERE theme_id = ?
                   ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2424,7 +2454,7 @@ async function fetchEnrichedThemeEcosystem(
                            adoption_stage, adoption_stage_rationale,
                            holder_tags, dividend_months, defensive_strength,
                            revenue_growth, fcf_margin, fcf, fcf_yield
-                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                     WHERE theme_id = ?
                     ORDER BY field ASC, ticker ASC`,
               args: [themeId],
@@ -2441,7 +2471,7 @@ async function fetchEnrichedThemeEcosystem(
                            company_name, field, role, is_major_player, observation_started_at,
                            adoption_stage, adoption_stage_rationale,
                            holder_tags, dividend_months, defensive_strength
-                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                     WHERE theme_id = ?
                     ORDER BY field ASC, ticker ASC`,
               args: [themeId],
@@ -2463,7 +2493,7 @@ async function fetchEnrichedThemeEcosystem(
                            last_round_valuation, private_credit_backing, observation_notes,
                            company_name, field, role, is_major_player, observation_started_at,
                            revenue_growth, fcf_margin, fcf, fcf_yield
-                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                     WHERE theme_id = ?
                     ORDER BY field ASC, ticker ASC`,
               args: [themeId],
@@ -2483,7 +2513,7 @@ async function fetchEnrichedThemeEcosystem(
               sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
                            last_round_valuation, private_credit_backing, observation_notes,
                            company_name, field, role, is_major_player, observation_started_at
-                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                    , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                     WHERE theme_id = ?
                     ORDER BY field ASC, ticker ASC`,
               args: [themeId],
@@ -2510,7 +2540,7 @@ async function fetchEnrichedThemeEcosystem(
                          last_round_valuation, private_credit_backing, observation_notes,
                          company_name, field, role, is_major_player, observation_started_at,
                          revenue_growth, fcf_margin, fcf, fcf_yield
-                , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                 WHERE theme_id = ?
                 ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -2530,7 +2560,7 @@ async function fetchEnrichedThemeEcosystem(
             sql: `SELECT id, theme_id, ticker, is_unlisted, proxy_ticker, estimated_ipo_date, estimated_valuation,
                          last_round_valuation, private_credit_backing, observation_notes,
                          company_name, field, role, is_major_player, observation_started_at
-                , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score FROM theme_ecosystem_members
+                , listing_date, market_cap, listing_price, next_earnings_date, memo, is_bookmarked, instrument_meta_synced_at, earnings_summary_note, chasm, moat, vi_score, institutional_ownership FROM theme_ecosystem_members
                 WHERE theme_id = ?
                 ORDER BY field ASC, ticker ASC`,
             args: [themeId],
@@ -3487,6 +3517,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       yahooBuybackPosture: null,
       yahooQuoteSharesOutstanding: null,
       yahooInsiderNetPurchaseShares: null,
+      institutionalOwnership: null,
       tag,
       alphaHistory: [alpha],
       alphaHistoryObservationDates: (() => {

@@ -104,6 +104,10 @@ export type EquityResearchSnapshot = {
    * 会社の自社株買い（CF の repurchase）とは別系列。ツールチップの補足のみ。
    */
   yahooInsiderNetPurchaseShares: number | null;
+  /**
+   * Yahoo `defaultKeyStatistics.heldPercentInstitutions`（小数 0.15 = 15%）。日本株などで欠損しやすい。取得不能は null。
+   */
+  institutionalOwnership: number | null;
 };
 
 function pickRecordDateFromQuoteSummary(qss: unknown): string | null {
@@ -396,6 +400,22 @@ function yahooInsiderNetPurchaseSharesFromQuoteSummary(qs: unknown): number | nu
   return finiteNumberFromYahooField(mod["netInfoShares"]);
 }
 
+/**
+ * `defaultKeyStatistics.heldPercentInstitutions` → 0–1 の有限小数。Yahoo によっては 0–100 で返る。
+ * 0 は 0 として通す（UI は「隠密」と null を区別し得る）。欠損・非有限は null。
+ */
+function heldPercentInstitutionsFromQuoteSummary(qs: unknown): number | null {
+  const dks = (qs as { defaultKeyStatistics?: Record<string, unknown> }).defaultKeyStatistics;
+  if (dks == null || typeof dks !== "object") return null;
+  const n = finiteNumberFromYahooField((dks as { heldPercentInstitutions?: unknown }).heldPercentInstitutions);
+  if (n == null || !Number.isFinite(n)) return null;
+  if (n < 0) return null;
+  let d = n;
+  if (d > 1.0001 && d <= 100) d = d / 100;
+  if (d < 0 || d > 1) return null;
+  return d;
+}
+
 /** Yahoo: 成長率が小数（0.15）またはパーセント（15）のどちらでも正規化して小数に。 */
 function normalizeYahooEarningsGrowthDecimal(raw: unknown): number | null {
   const n = typeof raw === "number" ? raw : raw != null ? Number(raw) : NaN;
@@ -472,6 +492,8 @@ type YahooQuoteSummaryResearchShape = {
     forwardEps?: unknown;
     pegRatio?: unknown;
     priceToBook?: unknown;
+    /** 機関投資家保有率（0–1 または 0–100 表記。） */
+    heldPercentInstitutions?: unknown;
   };
   financialData?: { earningsGrowth?: unknown };
   earningsTrend?: { trend?: YahooEarningsTrendRow[] };
@@ -777,6 +799,7 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
   const yahooBuybackPosture = buildYahooBuybackPostureFromQuoteSummary(qs);
   const yahooQuoteSharesOutstanding = yahooSharesOutstandingFromQuoteSummary(qs);
   const yahooInsiderNetPurchaseShares = yahooInsiderNetPurchaseSharesFromQuoteSummary(qs);
+  const institutionalOwnership = heldPercentInstitutionsFromQuoteSummary(qs);
 
   return {
     ticker: tickerUpper,
@@ -798,6 +821,7 @@ export function equityResearchSnapshotFromQuoteSummary(qs: unknown, tickerUpper:
     yahooBuybackPosture,
     yahooQuoteSharesOutstanding,
     yahooInsiderNetPurchaseShares,
+    institutionalOwnership,
   } satisfies EquityResearchSnapshot;
 }
 

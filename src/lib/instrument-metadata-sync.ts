@@ -245,6 +245,7 @@ export async function syncYahooEquityResearchForTicker(
   const rec = snap.recordDate;
   const adr = snap.annualDividendRate;
   const dy = snap.dividendYieldPercent;
+  const inst = snap.institutionalOwnership;
 
   try {
     await db.execute({
@@ -254,9 +255,10 @@ export async function syncYahooEquityResearchForTicker(
                 record_date = COALESCE(record_date, ?),
                 annual_dividend_rate = COALESCE(annual_dividend_rate, ?),
                 dividend_yield_percent = COALESCE(dividend_yield_percent, ?),
+                institutional_ownership = ?,
                 yahoo_research_synced_at = ?
             WHERE user_id = ? AND UPPER(TRIM(ticker)) = ?`,
-      args: [ne, ex, rec, adr, dy, syncedAt, userId, t],
+      args: [ne, ex, rec, adr, dy, inst, syncedAt, userId, t],
     });
     await db.execute({
       sql: `UPDATE theme_ecosystem_members
@@ -265,17 +267,25 @@ export async function syncYahooEquityResearchForTicker(
                 record_date = COALESCE(record_date, ?),
                 annual_dividend_rate = COALESCE(annual_dividend_rate, ?),
                 dividend_yield_percent = COALESCE(dividend_yield_percent, ?),
+                institutional_ownership = ?,
                 yahoo_research_synced_at = ?
             WHERE id IN (
               SELECT m.id FROM theme_ecosystem_members m
               INNER JOIN investment_themes th ON m.theme_id = th.id
               WHERE th.user_id = ? AND ${THEME_MEMBER_YAHOO_TICKER_MATCH_SQL.replace(/\n\s*/g, " ")}
             )`,
-      args: [ne, ex, rec, adr, dy, syncedAt, userId, t, t],
+      args: [ne, ex, rec, adr, dy, inst, syncedAt, userId, t, t],
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const low = msg.toLowerCase();
+    if (low.includes("no such column") && low.includes("institutional_ownership")) {
+      return {
+        ok: false,
+        syncedAt: null,
+        error: "DB に institutional_ownership 列がありません。migrations/057_institutional_ownership.sql を適用してください。",
+      };
+    }
     if (low.includes("no such column") && low.includes("ex_dividend_date")) {
       return {
         ok: false,
