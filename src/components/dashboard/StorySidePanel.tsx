@@ -20,6 +20,10 @@ import {
   type GrowthQualityAnswer,
 } from "@/src/lib/lynch-unclassified-diagnostic";
 import { lynchStoryTemplateFor } from "@/src/lib/lynch-story-templates";
+import {
+  decodeStoryPanelLynchPersist,
+  encodeStoryPanelLynchPersist,
+} from "@/src/lib/story-panel-lynch-persist";
 import { cn } from "@/src/lib/cn";
 import { queueStoryForNotionSync } from "@/src/lib/notion-sync";
 import {
@@ -43,6 +47,11 @@ export type StorySidePanelProps = {
 
 type MainTab = "basic" | "lynch";
 type EarningsSubTab = "edit" | "preview";
+
+function normalizeGrowthQualityFromPersist(s: string): GrowthQualityAnswer {
+  if (s === "") return "";
+  return GROWTH_QUALITY_OPTIONS.some((o) => o.id === s) ? (s as GrowthQualityAnswer) : "";
+}
 
 /**
  * 保有行向けストーリー・ハブ。左 Sidebar と同系の磨りガラス列として、メイン（InventoryTable）と flex 並列で配置する。
@@ -117,20 +126,18 @@ export function StorySidePanel({
     if (!stock) return;
     setMemoDraft(stock.memo ?? "");
     setEarningsDraft(stock.earningsSummaryNote ?? "");
-    setDriversNarrative(stock.lynchDriversNarrative ?? "");
+    const { meta, narrative } = decodeStoryPanelLynchPersist(stock.lynchDriversNarrative);
+    setDriversNarrative(narrative);
+    setSelectedDrivers(meta.drivers);
+    setGrowthQualityAnswer(normalizeGrowthQualityFromPersist(meta.growthQuality));
+    const allowedPatch = new Set(UNIVERSAL_FIVE_PATCHES.map((p) => p.id));
+    setUniversalPatches(meta.universalPatches.filter((id) => allowedPatch.has(id)));
     setStoryText(stock.lynchStoryText ?? "");
     setEarningsSubTab("edit");
     setMainTab("basic");
-    setSelectedDrivers([]);
     setManualLens("Stalwart");
-    setGrowthQualityAnswer("");
-    setUniversalPatches([]);
     setSaveErr(null);
   }, [stock]);
-
-  useEffect(() => {
-    setSelectedDrivers([]);
-  }, [manualLens]);
 
   useEffect(() => {
     if (!stock) return;
@@ -187,11 +194,19 @@ export function StorySidePanel({
         }
       }
 
-      const narrPrev = (stock.lynchDriversNarrative ?? "").trim();
-      const narrNext = driversNarrative.trim();
+      const composedNarrative = encodeStoryPanelLynchPersist(
+        {
+          drivers: selectedDrivers,
+          growthQuality: growthQualityAnswer,
+          universalPatches,
+        },
+        driversNarrative,
+      );
+      const narrPrevFull = (stock.lynchDriversNarrative ?? "").trim();
+      const narrNextFull = composedNarrative.trim();
       const storyPrev = (stock.lynchStoryText ?? "").trim();
       const storyNext = storyText.trim();
-      if (narrNext !== narrPrev || storyNext !== storyPrev) {
+      if (narrNextFull !== narrPrevFull || storyNext !== storyPrev) {
         const res = await fetchWithTimeout(
           "/api/holdings/lynch-story",
           {
@@ -200,7 +215,7 @@ export function StorySidePanel({
             body: JSON.stringify({
               userId,
               holdingId: stock.id,
-              lynchDriversNarrative: driversNarrative,
+              lynchDriversNarrative: composedNarrative,
               lynchStoryText: storyText,
             }),
           },
@@ -315,7 +330,10 @@ export function StorySidePanel({
                   id="story-modal-lens-select"
                   disabled={saving}
                   value={manualLens}
-                  onChange={(e) => setManualLens(e.target.value as LynchCategory)}
+                  onChange={(e) => {
+                    setManualLens(e.target.value as LynchCategory);
+                    setSelectedDrivers([]);
+                  }}
                   className="max-w-xs rounded-md border border-stone-400/80 bg-white px-2 py-1.5 text-[11px] text-stone-900 dark:border-stone-600 dark:bg-stone-950 dark:text-stone-100"
                 >
                   {LYNCH_CATEGORY_KEYS.map((k) => (
@@ -325,7 +343,7 @@ export function StorySidePanel({
                   ))}
                 </select>
                 <p className="text-[10px] leading-relaxed text-amber-900/90 dark:text-amber-200/85">
-                  指標から分類が付かない銘柄は、ここでテンプレを選んでリンチ分析を記入できます（保存はローカル・Notion スタブのみ）。
+                  指標から分類が付かない銘柄は、ここでテンプレを選んでリンチ分析を記入できます。チェック・診断選択は保存時に DB に同梱されます。
                 </p>
               </div>
             ) : (
@@ -508,7 +526,10 @@ export function StorySidePanel({
                         <button
                           type="button"
                           disabled={saving}
-                          onClick={() => setManualLens(suggestedFromDiagnostic)}
+                          onClick={() => {
+                            setManualLens(suggestedFromDiagnostic);
+                            setSelectedDrivers([]);
+                          }}
                           className="rounded-md border border-violet-600/50 bg-violet-600/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:opacity-95 disabled:opacity-40 dark:bg-violet-700 dark:border-violet-500/50"
                         >
                           このレンズを適用
