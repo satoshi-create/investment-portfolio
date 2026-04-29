@@ -590,6 +590,10 @@ export type ThemeEcosystemWatchItem = {
   memo: string | null;
   /** DB `theme_ecosystem_members.earnings_summary_note`（決算要約・Markdown）。`memo` とは別 */
   earningsSummaryNote: string | null;
+  /** DB `theme_ecosystem_members.lynch_drivers_narrative`（`encodeStoryPanelLynchPersist` 同梱可）。未適用 DB は null */
+  lynchDriversNarrative: string | null;
+  /** DB `theme_ecosystem_members.lynch_story_text`。未適用 DB は null */
+  lynchStoryText: string | null;
   /** DB `theme_ecosystem_members.is_bookmarked`（`is_kept` とは別フラグ） */
   isBookmarked: boolean;
   /**

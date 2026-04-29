@@ -3,15 +3,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { BookOpen, X } from "lucide-react";
 
-import { patchHoldingMemo } from "@/app/actions/holding-meta";
 import { EarningsNoteMarkdownPreview } from "@/src/components/dashboard/EarningsNoteMarkdownPreview";
+import { useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
+import { useStoryPanel } from "@/src/components/dashboard/StoryPanelContext";
 import {
   EarningsSummaryNoteTextarea,
   HoldingOrEcosystemMemoTextarea,
 } from "@/src/components/dashboard/HoldingEcosystemNoteFields";
 import { expectationCategoryBadgeClass, expectationCategoryBadgeShortJa } from "@/src/lib/expectation-category";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
-import { getLynchCategory } from "@/src/lib/lynch-category-computed";
+import { getLynchCategory, getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
 import {
   GROWTH_QUALITY_OPTIONS,
   pickUnclassifiedStoryPlaceholder,
@@ -25,25 +26,40 @@ import {
   encodeStoryPanelLynchPersist,
 } from "@/src/lib/story-panel-lynch-persist";
 import { cn } from "@/src/lib/cn";
+import type { StoryHubPersistFields } from "@/src/lib/story-hub-optimistic";
 import { queueStoryForNotionSync } from "@/src/lib/notion-sync";
 import {
   LYNCH_CATEGORY_KEYS,
   LYNCH_CATEGORY_LABEL_JA,
   type LynchCategory,
   type Stock,
+  type ThemeEcosystemWatchItem,
 } from "@/src/types/investment";
 
-export type StorySidePanelProps = {
-  stock: Stock | null;
-  userId: string;
-  onClose: () => void;
-  /** メモ・決算要約いずれかの保存成功後にダッシュ/テーマを再取得 */
-  onAfterSave?: () => void | Promise<void>;
-  /** パネルの幅（px） */
-  width?: number;
-  /** 幅が変更された時のコールバック */
-  onWidthChange?: (width: number) => void;
-};
+export type StorySidePanelProps =
+  | {
+      variant: "holding";
+      stock: Stock;
+      userId: string;
+      onClose: () => void;
+      /** メモ・決算要約いずれかの保存成功後にダッシュ/テーマを再取得 */
+      onAfterSave?: () => void | Promise<void>;
+      /** パネルの幅（px） */
+      width?: number;
+      /** 幅が変更された時のコールバック */
+      onWidthChange?: (width: number) => void;
+    }
+  | {
+      variant: "themeMember";
+      themeId: string;
+      member: ThemeEcosystemWatchItem;
+      themeSlugForRevalidate: string | null;
+      userId: string;
+      onClose: () => void;
+      onAfterSave?: () => void | Promise<void>;
+      width?: number;
+      onWidthChange?: (width: number) => void;
+    };
 
 type MainTab = "basic" | "lynch";
 type EarningsSubTab = "edit" | "preview";
@@ -53,17 +69,37 @@ function normalizeGrowthQualityFromPersist(s: string): GrowthQualityAnswer {
   return GROWTH_QUALITY_OPTIONS.some((o) => o.id === s) ? (s as GrowthQualityAnswer) : "";
 }
 
+function buildStoryHubPersistFields(
+  memoNext: string | null,
+  earningsDraft: string,
+  composedNarrative: string,
+  storyText: string,
+): StoryHubPersistFields {
+  const et = earningsDraft.trim();
+  return {
+    memo: memoNext,
+    earningsSummaryNote: et.length > 0 ? et : null,
+    lynchDriversNarrative: composedNarrative,
+    lynchStoryText: storyText,
+  };
+}
+
 /**
- * 保有行向けストーリー・ハブ。左 Sidebar と同系の磨りガラス列として、メイン（InventoryTable）と flex 並列で配置する。
+ * 保有行またはテーマウォッチ行向けストーリー・ハブ。
  */
-export function StorySidePanel({
-  stock,
-  userId,
-  onClose,
-  onAfterSave,
-  width = 400,
-  onWidthChange,
-}: StorySidePanelProps) {
+export function StorySidePanel(props: StorySidePanelProps) {
+  const variant = props.variant;
+  const userId = props.userId;
+  const onClose = props.onClose;
+  const onAfterSave = props.onAfterSave;
+  const width = props.width ?? 400;
+  const onWidthChange = props.onWidthChange;
+  const stock = variant === "holding" ? props.stock : null;
+  const themeId = variant === "themeMember" ? props.themeId : null;
+  const member = variant === "themeMember" ? props.member : null;
+  const themeSlugForRevalidate = variant === "themeMember" ? props.themeSlugForRevalidate : null;
+  const { patchStockStoryHubFields } = useDashboardData();
+  const { applyThemeMemberStoryOptimistic } = useStoryPanel();
   const [mainTab, setMainTab] = useState<MainTab>("basic");
   const [earningsSubTab, setEarningsSubTab] = useState<EarningsSubTab>("edit");
   const [memoDraft, setMemoDraft] = useState("");
@@ -105,7 +141,11 @@ export function StorySidePanel({
     };
   }, [isResizing, onWidthChange]);
 
-  const computedLynch = useMemo(() => (stock ? getLynchCategory(stock) : null), [stock]);
+  const computedLynch = useMemo(() => {
+    if (variant === "holding" && stock) return getLynchCategory(stock);
+    if (variant === "themeMember" && member) return getLynchCategoryFromWatchItem(member);
+    return null;
+  }, [variant, stock, member]);
   const effectiveCategory = computedLynch ?? manualLens;
   const template = useMemo(() => lynchStoryTemplateFor(effectiveCategory), [effectiveCategory]);
 
@@ -123,30 +163,40 @@ export function StorySidePanel({
   );
 
   useEffect(() => {
-    if (!stock) return;
-    setMemoDraft(stock.memo ?? "");
-    setEarningsDraft(stock.earningsSummaryNote ?? "");
-    const { meta, narrative } = decodeStoryPanelLynchPersist(stock.lynchDriversNarrative);
-    setDriversNarrative(narrative);
-    setSelectedDrivers(meta.drivers);
-    setGrowthQualityAnswer(normalizeGrowthQualityFromPersist(meta.growthQuality));
-    const allowedPatch = new Set(UNIVERSAL_FIVE_PATCHES.map((p) => p.id));
-    setUniversalPatches(meta.universalPatches.filter((id) => allowedPatch.has(id)));
-    setStoryText(stock.lynchStoryText ?? "");
+    if (variant === "holding" && stock) {
+      setMemoDraft(stock.memo ?? "");
+      setEarningsDraft(stock.earningsSummaryNote ?? "");
+      const { meta, narrative } = decodeStoryPanelLynchPersist(stock.lynchDriversNarrative);
+      setDriversNarrative(narrative);
+      setSelectedDrivers(meta.drivers);
+      setGrowthQualityAnswer(normalizeGrowthQualityFromPersist(meta.growthQuality));
+      const allowedPatch = new Set(UNIVERSAL_FIVE_PATCHES.map((p) => p.id));
+      setUniversalPatches(meta.universalPatches.filter((id) => allowedPatch.has(id)));
+      setStoryText(stock.lynchStoryText ?? "");
+    } else if (variant === "themeMember" && member) {
+      setMemoDraft(member.memo ?? "");
+      setEarningsDraft(member.earningsSummaryNote ?? "");
+      const { meta, narrative } = decodeStoryPanelLynchPersist(member.lynchDriversNarrative);
+      setDriversNarrative(narrative);
+      setSelectedDrivers(meta.drivers);
+      setGrowthQualityAnswer(normalizeGrowthQualityFromPersist(meta.growthQuality));
+      const allowedPatch = new Set(UNIVERSAL_FIVE_PATCHES.map((p) => p.id));
+      setUniversalPatches(meta.universalPatches.filter((id) => allowedPatch.has(id)));
+      setStoryText(member.lynchStoryText ?? "");
+    }
     setEarningsSubTab("edit");
     setMainTab("basic");
     setManualLens("Stalwart");
     setSaveErr(null);
-  }, [stock]);
+  }, [variant, stock, member]);
 
   useEffect(() => {
-    if (!stock) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !saving) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stock, saving, onClose]);
+  }, [saving, onClose]);
 
   const toggleDriver = useCallback((label: string) => {
     setSelectedDrivers((prev) => (prev.includes(label) ? prev.filter((d) => d !== label) : [...prev, label]));
@@ -157,43 +207,82 @@ export function StorySidePanel({
   }, []);
 
   async function handleSave() {
+    if (variant === "themeMember" && member && themeId) {
+      setSaving(true);
+      setSaveErr(null);
+      try {
+        const composedNarrative = encodeStoryPanelLynchPersist(
+          {
+            drivers: selectedDrivers,
+            growthQuality: growthQualityAnswer,
+            universalPatches,
+          },
+          driversNarrative,
+        );
+        const memoNext = memoDraft.trim().length > 0 ? memoDraft.trim() : null;
+        const memoPrev = member.memo != null && member.memo.trim().length > 0 ? member.memo.trim() : null;
+        const earnPrev = (member.earningsSummaryNote ?? "").trim();
+        const earnNext = earningsDraft.trim();
+        const narrPrevFull = (member.lynchDriversNarrative ?? "").trim();
+        const narrNextFull = composedNarrative.trim();
+        const storyPrev = (member.lynchStoryText ?? "").trim();
+        const storyNext = storyText.trim();
+        if (
+          memoNext === memoPrev &&
+          earnNext === earnPrev &&
+          narrNextFull === narrPrevFull &&
+          storyNext === storyPrev
+        ) {
+          void onAfterSave?.();
+          onClose();
+          return;
+        }
+        const res = await fetchWithTimeout(
+          "/api/theme-ecosystem/member",
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              themeId,
+              memberId: member.id,
+              memo: memoNext,
+              earningsSummaryNote: earningsDraft,
+              lynchDriversNarrative: composedNarrative,
+              lynchStoryText: storyText,
+              themeSlugForRevalidate: themeSlugForRevalidate ?? undefined,
+            }),
+          },
+          { timeoutMs: 25_000 },
+        );
+        const json = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          setSaveErr(json.error ?? `保存に失敗しました（HTTP ${res.status}）`);
+          return;
+        }
+        applyThemeMemberStoryOptimistic(
+          themeId,
+          member.id,
+          buildStoryHubPersistFields(memoNext, earningsDraft, composedNarrative, storyText),
+        );
+        void onAfterSave?.();
+        onClose();
+      } catch (e) {
+        setSaveErr(e instanceof Error ? e.message : "保存に失敗しました");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     if (!stock) return;
     setSaving(true);
     setSaveErr(null);
     try {
       const memoNext = memoDraft.trim().length > 0 ? memoDraft.trim() : null;
       const memoPrev = stock.memo != null && stock.memo.trim().length > 0 ? stock.memo.trim() : null;
-      if (memoNext !== memoPrev) {
-        const res = await patchHoldingMemo(stock.id, memoNext, { userId });
-        if (!res.ok) {
-          setSaveErr(res.message ?? "銘柄メモの保存に失敗しました");
-          return;
-        }
-      }
-
       const earnPrev = (stock.earningsSummaryNote ?? "").trim();
       const earnNext = earningsDraft.trim();
-      if (earnNext !== earnPrev) {
-        const res = await fetchWithTimeout(
-          "/api/holdings/earnings-summary-note",
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId,
-              holdingId: stock.id,
-              earningsSummaryNote: earningsDraft,
-            }),
-          },
-          { timeoutMs: 12_000 },
-        );
-        const json = (await res.json()) as { error?: string };
-        if (!res.ok) {
-          setSaveErr(json.error ?? `決算要約の保存に失敗しました（HTTP ${res.status}）`);
-          return;
-        }
-      }
-
       const composedNarrative = encodeStoryPanelLynchPersist(
         {
           drivers: selectedDrivers,
@@ -206,26 +295,36 @@ export function StorySidePanel({
       const narrNextFull = composedNarrative.trim();
       const storyPrev = (stock.lynchStoryText ?? "").trim();
       const storyNext = storyText.trim();
-      if (narrNextFull !== narrPrevFull || storyNext !== storyPrev) {
+
+      const hasDbChanges =
+        memoNext !== memoPrev || earnNext !== earnPrev || narrNextFull !== narrPrevFull || storyNext !== storyPrev;
+
+      if (hasDbChanges) {
         const res = await fetchWithTimeout(
-          "/api/holdings/lynch-story",
+          "/api/holdings/story-hub",
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userId,
               holdingId: stock.id,
+              memo: memoNext,
+              earningsSummaryNote: earningsDraft,
               lynchDriversNarrative: composedNarrative,
               lynchStoryText: storyText,
             }),
           },
-          { timeoutMs: 12_000 },
+          { timeoutMs: 25_000 },
         );
         const json = (await res.json()) as { error?: string };
         if (!res.ok) {
-          setSaveErr(json.error ?? `リンチ分析の保存に失敗しました（HTTP ${res.status}）`);
+          setSaveErr(json.error ?? `ストーリーの保存に失敗しました（HTTP ${res.status}）`);
           return;
         }
+        patchStockStoryHubFields(
+          stock.id,
+          buildStoryHubPersistFields(memoNext, earningsDraft, composedNarrative, storyText),
+        );
       }
 
       queueStoryForNotionSync({
@@ -246,7 +345,7 @@ export function StorySidePanel({
         universalPatches: [...universalPatches],
       });
 
-      await onAfterSave?.();
+      void onAfterSave?.();
       onClose();
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : "保存に失敗しました");
@@ -255,7 +354,13 @@ export function StorySidePanel({
     }
   }
 
-  if (!stock) return null;
+  if (variant === "holding" && !stock) return null;
+  if (variant === "themeMember" && !member) return null;
+
+  const panelTicker = stock?.ticker ?? member!.ticker;
+  const panelName = stock != null ? stock.name : member!.companyName;
+  const panelNextEarningsDate = stock?.nextEarningsDate ?? member?.nextEarningsDate ?? null;
+  const panelDaysToEarnings = stock?.daysToEarnings ?? member?.daysToEarnings ?? null;
 
   const sectionFrame = "rounded-lg border border-border bg-card/30";
 
@@ -284,9 +389,9 @@ export function StorySidePanel({
             <h2 id="story-side-panel-title" className="text-sm font-semibold text-foreground">
               ストーリー
             </h2>
-            <p className="font-mono text-sm font-bold text-foreground">{stock.ticker}</p>
-            {stock.name ? (
-              <p className="text-[11px] leading-relaxed text-muted-foreground line-clamp-2">{stock.name}</p>
+            <p className="font-mono text-sm font-bold text-foreground">{panelTicker}</p>
+            {panelName ? (
+              <p className="text-[11px] leading-relaxed text-muted-foreground line-clamp-2">{panelName}</p>
             ) : null}
           </div>
           <button
@@ -353,10 +458,10 @@ export function StorySidePanel({
             )}
           </div>
 
-          {stock.nextEarningsDate ? (
+          {panelNextEarningsDate ? (
             <p className="text-[10px] text-stone-600 dark:text-stone-400">
-              次回決算: {stock.nextEarningsDate}
-              {stock.daysToEarnings != null ? `（あと ${stock.daysToEarnings} 日）` : ""}
+              次回決算: {panelNextEarningsDate}
+              {panelDaysToEarnings != null ? `（あと ${panelDaysToEarnings} 日）` : ""}
             </p>
           ) : (
             <p className="text-[10px] text-stone-600 dark:text-stone-400">次回決算日: 未取得</p>
@@ -403,7 +508,7 @@ export function StorySidePanel({
             <div className="flex flex-col gap-5">
               <section className={cn("p-3", sectionFrame)}>
                 <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                  銘柄メモ（holdings.memo）
+                  銘柄メモ（{variant === "themeMember" ? "theme_ecosystem_members.memo" : "holdings.memo"}）
                 </h3>
                 <HoldingOrEcosystemMemoTextarea
                   id="story-modal-holding-memo"
@@ -418,7 +523,8 @@ export function StorySidePanel({
 
               <section className={cn("p-3", sectionFrame)}>
                 <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300">
-                  決算要約（earnings_summary_note）
+                  決算要約（
+                  {variant === "themeMember" ? "theme_ecosystem_members.earnings_summary_note" : "earnings_summary_note"}）
                 </h3>
                 <div className="mb-2 inline-flex gap-1 rounded-md border border-stone-300/60 p-0.5 dark:border-stone-700" role="tablist">
                   <button

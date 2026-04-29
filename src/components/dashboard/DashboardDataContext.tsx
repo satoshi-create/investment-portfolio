@@ -15,6 +15,7 @@ import { recordPortfolioSnapshotAction } from "@/app/actions/snapshot";
 import { generateSignalsAction } from "@/app/actions/signals";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { fetchWithTimeout } from "@/src/lib/fetch-utils";
+import type { StoryHubPersistFields } from "@/src/lib/story-hub-optimistic";
 import type {
   DashboardSummary,
   EcosystemWatchlistSearchItem,
@@ -96,6 +97,8 @@ type DashboardContextValue = {
   structuralSparklineByThemeId: Record<string, number[]>;
   portfolioThemeSet: Set<string>;
   satelliteStockCount: number;
+  /** Story パネル保存後: 該当保有行のメモ・決算・リンチ文を即時反映（フル再取得を待たない） */
+  patchStockStoryHubFields: (holdingId: string, fields: StoryHubPersistFields) => void;
 };
 
 const DashboardDataContext = createContext<DashboardContextValue | null>(null);
@@ -231,6 +234,24 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     setTradeInitial(null);
   }, []);
 
+  const patchStockStoryHubFields = useCallback((holdingId: string, fields: StoryHubPersistFields) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const stocks = prev.stocks.map((s) =>
+        s.id === holdingId
+          ? {
+              ...s,
+              memo: fields.memo,
+              earningsSummaryNote: fields.earningsSummaryNote,
+              lynchDriversNarrative: fields.lynchDriversNarrative,
+              lynchStoryText: fields.lynchStoryText,
+            }
+          : s,
+      );
+      return { ...prev, stocks };
+    });
+  }, []);
+
   const stocks = useMemo(() => data?.stocks ?? [], [data]);
   const portfolioThemeSet = useMemo(
     () => new Set(stocks.map((s) => (s.tag ?? "").trim()).filter((x) => x.length > 0)),
@@ -279,6 +300,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       structuralSparklineByThemeId,
       portfolioThemeSet,
       satelliteStockCount,
+      patchStockStoryHubFields,
     }),
     [
       clientReady,
@@ -303,6 +325,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       structuralSparklineByThemeId,
       portfolioThemeSet,
       satelliteStockCount,
+      patchStockStoryHubFields,
     ],
   );
 

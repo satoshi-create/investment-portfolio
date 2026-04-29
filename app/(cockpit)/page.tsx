@@ -67,7 +67,7 @@ function CockpitPortfolioContent() {
           summary.portfolioAverageFxNeutralAlpha ?? summary.portfolioAverageAlpha
         }
         userId={userId}
-        onEarningsNoteSaved={() => void loadDashboard()}
+        onEarningsNoteSaved={() => loadDashboard()}
         onAfterInstrumentMetaSync={() => void loadDashboard()}
         onTrade={(init) => openTradeForm(init)}
         onTradeNew={() => openTradeForm(null)}

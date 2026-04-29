@@ -36,6 +36,7 @@ import {
   type InvestmentThemeRecord,
   type LynchCategory,
   type ResourceStructuralSyncData,
+  type Stock,
   type ThemeDetailData,
   type ThemeEcosystemWatchItem,
   type TickerInstrumentKind,
@@ -144,11 +145,14 @@ import {
   type EcoLynchLensUiFilterKey,
 } from "@/src/lib/ecosystem-lynch-lens-column-ui";
 import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import { resolvePortfolioStockForEcosystemRow } from "@/src/lib/resolve-portfolio-stock-for-ecosystem-row";
 import { ECOSYSTEM_ASSET_COL_WIDTH_CLASS } from "@/src/lib/ecosystem-watchlist-table-layout";
 import { EcosystemWatchlistColumnToolbar } from "@/src/components/dashboard/EcosystemWatchlistColumnToolbar";
 import { EcosystemLynchFilterBar } from "@/src/components/dashboard/EcosystemLynchFilterBar";
 import { EcosystemWatchlistValuationCluster } from "@/src/components/dashboard/EcosystemWatchlistValuationCluster";
 import { LynchAllocationPiePanel } from "@/src/components/dashboard/LynchAllocationPiePanel";
+import { useStoryPanel } from "@/src/components/dashboard/StoryPanelContext";
+import type { StoryHubPersistFields } from "@/src/lib/story-hub-optimistic";
 import { EcosystemThemeTableMappedRow } from "@/src/components/dashboard/EcosystemThemeTableMappedRow";
 import { sortStructuralEcosystemWatchlist } from "@/src/components/dashboard/ecosystem-structural-watchlist-sort";
 import {
@@ -539,6 +543,20 @@ function normalizeThemeDetailResponse(
           earningsSummaryNote: (() => {
             const a = (item as Record<string, unknown>).earningsSummaryNote;
             const b = (item as Record<string, unknown>).earnings_summary_note;
+            const s = typeof a === "string" ? a : typeof b === "string" ? b : "";
+            const t = s.trim();
+            return t.length > 0 ? t : null;
+          })(),
+          lynchDriversNarrative: (() => {
+            const a = (item as Record<string, unknown>).lynchDriversNarrative;
+            const b = (item as Record<string, unknown>).lynch_drivers_narrative;
+            const s = typeof a === "string" ? a : typeof b === "string" ? b : "";
+            const t = s.trim();
+            return t.length > 0 ? t : null;
+          })(),
+          lynchStoryText: (() => {
+            const a = (item as Record<string, unknown>).lynchStoryText;
+            const b = (item as Record<string, unknown>).lynch_story_text;
             const s = typeof a === "string" ? a : typeof b === "string" ? b : "";
             const t = s.trim();
             return t.length > 0 ? t : null;
@@ -1072,6 +1090,58 @@ export function ThemePageClient({
   }, []);
 
   const stocks = data?.stocks ?? [];
+  const { openStory, openThemeMemberStory, registerThemeMemberStoryOptimistic } = useStoryPanel();
+  const onThemeStoryAfterSave = useCallback(() => {
+    const ac = new AbortController();
+    return refetchThemeDetailQuiet(ac.signal);
+  }, [refetchThemeDetailQuiet]);
+
+  const patchEcosystemMemberStoryFields = useCallback(
+    (tid: string, memberId: string, fields: StoryHubPersistFields) => {
+      setData((cur) => {
+        if (!cur?.ecosystem) return cur;
+        return {
+          ...cur,
+          ecosystem: cur.ecosystem.map((m) =>
+            m.id === memberId && m.themeId === tid
+              ? {
+                  ...m,
+                  memo: fields.memo,
+                  earningsSummaryNote: fields.earningsSummaryNote,
+                  lynchDriversNarrative: fields.lynchDriversNarrative,
+                  lynchStoryText: fields.lynchStoryText,
+                }
+              : m,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    registerThemeMemberStoryOptimistic(patchEcosystemMemberStoryFields);
+    return () => registerThemeMemberStoryOptimistic(null);
+  }, [registerThemeMemberStoryOptimistic, patchEcosystemMemberStoryFields]);
+  const openThemeEcosystemStory = useCallback(
+    (stock: Stock) => {
+      openStory(stock, onThemeStoryAfterSave);
+    },
+    [openStory, onThemeStoryAfterSave],
+  );
+  const openThemeMemberStoryFromEcoRow = useCallback(
+    (row: ThemeEcosystemWatchItem) => {
+      openThemeMemberStory(
+        {
+          themeId: row.themeId,
+          member: row,
+          themeSlugForRevalidate: themeQueryName,
+        },
+        onThemeStoryAfterSave,
+      );
+    },
+    [openThemeMemberStory, themeQueryName, onThemeStoryAfterSave],
+  );
   const {
     convert,
     viewCurrency,
@@ -2543,7 +2613,7 @@ export function ThemePageClient({
                 userId={DEFAULT_USER_ID}
                 onEarningsNoteSaved={() => {
                   const ac = new AbortController();
-                  void refetchThemeDetailQuiet(ac.signal);
+                  return refetchThemeDetailQuiet(ac.signal);
                 }}
                 onTrade={(init) =>
                   openTradeForm({ ...init, themeId: theme?.id ?? init.themeId })
@@ -3474,6 +3544,9 @@ export function ThemePageClient({
                                   holderBadgeClass={holderBadgeClass}
                                   dividendCalendar={dividendCalendar}
                                   defensiveZClass={defensiveZClass}
+                                  storyStockResolved={resolvePortfolioStockForEcosystemRow(e, stocks)}
+                                  onOpenStory={openThemeEcosystemStory}
+                                  onOpenThemeMemberStory={openThemeMemberStoryFromEcoRow}
                                 />
                               </tr>
                             </React.Fragment>

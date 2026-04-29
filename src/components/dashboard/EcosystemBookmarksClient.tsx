@@ -46,10 +46,13 @@ import {
   type StructuralEcoSortKey,
 } from "@/src/components/dashboard/StructuralEcosystemThead";
 import { useDashboardData } from "@/src/components/dashboard/DashboardDataContext";
+import { useStoryPanel } from "@/src/components/dashboard/StoryPanelContext";
+import type { StoryHubPersistFields } from "@/src/lib/story-hub-optimistic";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { classifyTickerInstrument } from "@/src/lib/alpha-logic";
 import { cn } from "@/src/lib/cn";
+import { resolvePortfolioStockForEcosystemRow } from "@/src/lib/resolve-portfolio-stock-for-ecosystem-row";
 import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import {
   applyEcosystemWatchlistUserHidden,
@@ -85,6 +88,7 @@ import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryFor
 import type {
   EcosystemCrossThemeBookmarkItem,
   LynchCategory,
+  Stock,
   ThemeEcosystemWatchItem,
   TickerInstrumentKind,
 } from "@/src/types/investment";
@@ -202,7 +206,30 @@ function ecoSortModeHelp(mode: "column" | "dip_rank" | "deep_value_rank"): strin
 
 export function EcosystemBookmarksClient({ initialItems }: { initialItems: EcosystemCrossThemeBookmarkItem[] }) {
   const router = useRouter();
-  const { openTradeForm, data: dashboardPayload } = useDashboardData();
+  const { openTradeForm, data: dashboardPayload, loadDashboard } = useDashboardData();
+  const { openStory, openThemeMemberStory, registerThemeMemberStoryOptimistic } = useStoryPanel();
+  const dashboardStocks = dashboardPayload?.stocks ?? [];
+  const onBookmarkStoryAfterSave = useCallback(() => {
+    void loadDashboard();
+    router.refresh();
+  }, [loadDashboard, router]);
+  const openBookmarkEcosystemStory = useCallback(
+    (stock: Stock) => openStory(stock, onBookmarkStoryAfterSave),
+    [openStory, onBookmarkStoryAfterSave],
+  );
+  const openBookmarkThemeMemberStory = useCallback(
+    (row: ThemeEcosystemWatchItem) => {
+      openThemeMemberStory(
+        {
+          themeId: row.themeId,
+          member: row,
+          themeSlugForRevalidate: (row as EcosystemCrossThemeBookmarkItem).themeName ?? null,
+        },
+        onBookmarkStoryAfterSave,
+      );
+    },
+    [openThemeMemberStory, onBookmarkStoryAfterSave],
+  );
   const { convert, viewCurrency } = useCurrencyConverter();
   const [isPending, startTransition] = useTransition();
 
@@ -246,6 +273,30 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
   const [ecoEarningsSummaryDraft, setEcoEarningsSummaryDraft] = useState("");
   const [ecoEarningsSummaryModalTab, setEcoEarningsSummaryModalTab] = useState<"edit" | "preview">("edit");
   const [ecoEarningsSummarySaving, setEcoEarningsSummarySaving] = useState(false);
+
+  const patchBookmarkEcosystemMemberStoryFields = useCallback(
+    (_tid: string, memberId: string, fields: StoryHubPersistFields) => {
+      setItems((prev) =>
+        prev.map((e) =>
+          e.id === memberId
+            ? {
+                ...e,
+                memo: fields.memo,
+                earningsSummaryNote: fields.earningsSummaryNote,
+                lynchDriversNarrative: fields.lynchDriversNarrative,
+                lynchStoryText: fields.lynchStoryText,
+              }
+            : e,
+        ),
+      );
+    },
+    [],
+  );
+
+  useEffect(() => {
+    registerThemeMemberStoryOptimistic(patchBookmarkEcosystemMemberStoryFields);
+    return () => registerThemeMemberStoryOptimistic(null);
+  }, [registerThemeMemberStoryOptimistic, patchBookmarkEcosystemMemberStoryFields]);
 
   useEffect(() => {
     setItems(initialItems);
@@ -1350,6 +1401,9 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
                             dividendCalendar={dividendCalendar}
                             defensiveZClass={defensiveZClass}
                             resourceSync={null}
+                            storyStockResolved={resolvePortfolioStockForEcosystemRow(e, dashboardStocks)}
+                            onOpenStory={openBookmarkEcosystemStory}
+                            onOpenThemeMemberStory={openBookmarkThemeMemberStory}
                           />
                         </tr>
                       </React.Fragment>

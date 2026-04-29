@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { CalendarClock, FileText, Gem, MessageSquare, Star } from "lucide-react";
+import { BookOpen, CalendarClock, FileText, Gem, MessageSquare, Star } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
@@ -56,7 +56,12 @@ import {
 } from "@/src/lib/expectation-category";
 import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
 import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
-import type { InvestmentThemeRecord, ResourceSyncJudgment, ThemeEcosystemWatchItem } from "@/src/types/investment";
+import type {
+  InvestmentThemeRecord,
+  ResourceSyncJudgment,
+  Stock,
+  ThemeEcosystemWatchItem,
+} from "@/src/types/investment";
 import {
   INVESTMENT_METRIC_TONE_TEXT_CLASS,
   investmentMetricToneForSignedPercent,
@@ -275,6 +280,14 @@ export type EcosystemThemeTableMappedRowProps = {
   dividendCalendar: (months: number[]) => React.ReactNode;
   defensiveZClass: (z: number | null) => string;
   resourceSync?: { spread: number; judgment: ResourceSyncJudgment } | null;
+  /**
+   * ストーリー・ハブ（StorySidePanel）: 保有 `Stock` が解決できた行のみ活性化。
+   * メモ/決算のインラインモーダルはテーマメンバー用フィールドのまま；保有メモ・lynch 系はパネルが統合ハブ。
+   */
+  storyStockResolved?: Stock | null;
+  onOpenStory?: (stock: Stock) => void;
+  /** ウォッチのみ: テーマメンバー行を StorySidePanel（themeMember モード）で開く */
+  onOpenThemeMemberStory?: (e: ThemeEcosystemWatchItem) => void;
 };
 
 export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRowProps) {
@@ -323,6 +336,9 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
     dividendCalendar,
     defensiveZClass,
     resourceSync,
+    storyStockResolved,
+    onOpenStory,
+    onOpenThemeMemberStory,
   } = props;
 
   const { convert, viewCurrency } = useCurrencyConverter();
@@ -377,6 +393,39 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         {formatTickerForDisplay(e.ticker, e.instrumentKind)}
                       </span>
                     </EcosystemStructuralInsightHoverWrap>
+                    {e.inPortfolio && onOpenStory != null ? (
+                      <button
+                        type="button"
+                        disabled={storyStockResolved == null}
+                        onClick={() => {
+                          if (storyStockResolved != null) onOpenStory(storyStockResolved);
+                        }}
+                        className={cn(
+                          "shrink-0 rounded-md p-1 transition-all",
+                          storyStockResolved != null
+                            ? "opacity-0 group-hover:opacity-100 hover:bg-teal-500/20"
+                            : "cursor-not-allowed opacity-40",
+                        )}
+                        title={
+                          storyStockResolved != null
+                            ? "ストーリー・ハブを開く"
+                            : "保有と銘柄データを結び付けられません（一覧の再読み込み後にもう一度お試しください）"
+                        }
+                        aria-disabled={storyStockResolved == null}
+                      >
+                        <BookOpen size={14} className="shrink-0" aria-hidden />
+                      </button>
+                    ) : null}
+                    {!e.inPortfolio && onOpenThemeMemberStory != null ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenThemeMemberStory(e)}
+                        className="shrink-0 rounded-md p-1 transition-all opacity-0 group-hover:opacity-100 hover:bg-teal-500/20"
+                        title="ストーリー・ハブ（テーマウォッチ）を開く"
+                      >
+                        <BookOpen size={14} className="shrink-0" aria-hidden />
+                      </button>
+                    ) : null}
                     {e.companyName ? (
                       <EcosystemStructuralInsightHoverWrap e={e} className="min-w-0 flex-1 basis-[6rem]">
                         <span

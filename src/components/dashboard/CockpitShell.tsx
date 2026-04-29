@@ -76,7 +76,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
     setFocusedTicker,
   } = useDashboardData();
 
-  const { storyStock, panelWidth, setPanelWidth, closeStory, runAfterSave } = useStoryPanel();
+  const { storyOpen, panelWidth, setPanelWidth, closeStory, runAfterSave } = useStoryPanel();
 
   useEffect(() => {
     if (pathname !== "/") setFocusedTicker(null);
@@ -480,15 +480,30 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </div>
-        {storyStock != null ? (
-          <StorySidePanel
-            stock={storyStock}
-            userId={userId}
-            onClose={closeStory}
-            onAfterSave={runAfterSave}
-            width={panelWidth}
-            onWidthChange={setPanelWidth}
-          />
+        {storyOpen != null ? (
+          storyOpen.variant === "holding" ? (
+            <StorySidePanel
+              variant="holding"
+              stock={storyOpen.stock}
+              userId={userId}
+              onClose={closeStory}
+              onAfterSave={runAfterSave}
+              width={panelWidth}
+              onWidthChange={setPanelWidth}
+            />
+          ) : (
+            <StorySidePanel
+              variant="themeMember"
+              themeId={storyOpen.themeId}
+              member={storyOpen.member}
+              themeSlugForRevalidate={storyOpen.themeSlugForRevalidate}
+              userId={userId}
+              onClose={closeStory}
+              onAfterSave={runAfterSave}
+              width={panelWidth}
+              onWidthChange={setPanelWidth}
+            />
+          )
         ) : null}
       </div>
       </div>

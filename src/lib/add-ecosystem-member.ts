@@ -50,6 +50,10 @@ export type UpdateEcosystemMemberInput = {
   ecosystemField?: string | null;
   /** DB `earnings_summary_note`。undefined=変更なし null=クリア */
   earningsSummaryNote?: string | null;
+  /** DB `lynch_drivers_narrative`（Story パネル永続化 JSON+叙述）。undefined=変更なし null=クリア */
+  lynchDriversNarrative?: string | null;
+  /** DB `lynch_story_text`。undefined=変更なし null=クリア */
+  lynchStoryText?: string | null;
 };
 
 /**
@@ -183,6 +187,20 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
         ? String(input.earningsSummaryNote).trim().slice(0, EARNINGS_SUMMARY_NOTE_MAX_LEN)
         : null;
 
+  const nextLynchDriversNarrative =
+    input.lynchDriversNarrative === undefined
+      ? undefined
+      : input.lynchDriversNarrative != null && String(input.lynchDriversNarrative).trim().length > 0
+        ? String(input.lynchDriversNarrative).trim()
+        : null;
+
+  const nextLynchStoryText =
+    input.lynchStoryText === undefined
+      ? undefined
+      : input.lynchStoryText != null && String(input.lynchStoryText).trim().length > 0
+        ? String(input.lynchStoryText).trim()
+        : null;
+
   // Only update the fields that were provided.
   const sets: string[] = [];
   const args: (string | number | null)[] = [];
@@ -221,6 +239,14 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
   if (nextEarningsSummary !== undefined) {
     sets.push(`earnings_summary_note = ?`);
     args.push(nextEarningsSummary);
+  }
+  if (nextLynchDriversNarrative !== undefined) {
+    sets.push(`lynch_drivers_narrative = ?`);
+    args.push(nextLynchDriversNarrative);
+  }
+  if (nextLynchStoryText !== undefined) {
+    sets.push(`lynch_story_text = ?`);
+    args.push(nextLynchStoryText);
   }
   if (sets.length === 0) return;
 

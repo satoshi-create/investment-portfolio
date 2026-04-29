@@ -65,6 +65,10 @@ type Body = {
   ecosystemField?: string | null;
   /** 決算要約メモ（Markdown）。PATCH でのみ送る場合あり */
   earningsSummaryNote?: string | null;
+  /** Story パネル: `encodeStoryPanelLynchPersist` 同梱の叙述 */
+  lynchDriversNarrative?: string | null;
+  /** Story パネル: 2 分間の物語本文 */
+  lynchStoryText?: string | null;
   /** `revalidatePath` 用（URL のテーマスラッグ・`themeLabel` と同じ） */
   themeSlugForRevalidate?: string | null;
   memberId?: string;
@@ -246,6 +250,30 @@ export async function PATCH(request: Request) {
   }
   const earningsNotePatch = normalizeEarningsSummaryNoteBody(body.earningsSummaryNote);
 
+  let lynchDriversPatch: string | null | undefined = undefined;
+  if (body.lynchDriversNarrative !== undefined) {
+    if (body.lynchDriversNarrative === null) {
+      lynchDriversPatch = null;
+    } else if (typeof body.lynchDriversNarrative === "string") {
+      const t = body.lynchDriversNarrative.trim();
+      lynchDriversPatch = t.length > 0 ? t : null;
+    } else {
+      return NextResponse.json({ error: "lynchDriversNarrative は文字列または null です" }, { status: 400 });
+    }
+  }
+
+  let lynchStoryPatch: string | null | undefined = undefined;
+  if (body.lynchStoryText !== undefined) {
+    if (body.lynchStoryText === null) {
+      lynchStoryPatch = null;
+    } else if (typeof body.lynchStoryText === "string") {
+      const t = body.lynchStoryText.trim();
+      lynchStoryPatch = t.length > 0 ? t : null;
+    } else {
+      return NextResponse.json({ error: "lynchStoryText は文字列または null です" }, { status: 400 });
+    }
+  }
+
   try {
     await updateEcosystemMember(getDb(), {
       userId,
@@ -260,6 +288,8 @@ export async function PATCH(request: Request) {
       listingPrice: listingPricePatch,
       ecosystemField: ecosystemFieldPatch,
       earningsSummaryNote: earningsNotePatch,
+      lynchDriversNarrative: lynchDriversPatch,
+      lynchStoryText: lynchStoryPatch,
     });
     revalidateThemeRelatedPaths(body.themeSlugForRevalidate);
     return NextResponse.json({ ok: true });
