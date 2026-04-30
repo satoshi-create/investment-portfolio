@@ -45,8 +45,10 @@ import {
 } from "@/src/lib/expectation-category";
 import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
 import {
-  aggregateLynchCategoryCounts,
-  getLynchCategory,
+  aggregateEffectiveLynchCategoryCounts,
+  getEffectiveLynchCategoryForStock,
+} from "@/src/lib/lynch-display";
+import {
   LYNCH_RULE_TOOLTIP_ALL_JA,
   LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA,
   LYNCH_RULE_TOOLTIP_UNSET_JA,
@@ -790,7 +792,7 @@ export function InventoryTable({
 
   const lynchLensKey = inventoryLynchLensKeyFromFilter(lynchFilter);
   /** 件数は `stocks` 全件（構造検索・リンチ行フィルター等のテーブル絞り込み前） */
-  const lynchCountSnapshot = useMemo(() => aggregateLynchCategoryCounts(stocks), [stocks]);
+  const lynchCountSnapshot = useMemo(() => aggregateEffectiveLynchCategoryCounts(stocks), [stocks]);
   const lynchToolbarSorted = useMemo(
     () => sortLynchToolbarSegments(lynchCountSnapshot),
     [lynchCountSnapshot],
@@ -940,9 +942,9 @@ export function InventoryTable({
       });
     }
     if (lynchFilter === "__unset__") {
-      list = list.filter((s) => getLynchCategory(s) == null);
+      list = list.filter((s) => getEffectiveLynchCategoryForStock(s) == null);
     } else if (lynchFilter !== "") {
-      list = list.filter((s) => getLynchCategory(s) === lynchFilter);
+      list = list.filter((s) => getEffectiveLynchCategoryForStock(s) === lynchFilter);
     }
     if (bookmarksOnly) {
       list = list.filter((s) => bookmarkDisplayed(s));
@@ -976,8 +978,8 @@ export function InventoryTable({
 
       if (key === "asset") return dir * cmpStr(a.ticker, b.ticker);
       if (key === "lynch") {
-        const ra = lynchCategorySortRank(getLynchCategory(a));
-        const rb = lynchCategorySortRank(getLynchCategory(b));
+        const ra = lynchCategorySortRank(getEffectiveLynchCategoryForStock(a));
+        const rb = lynchCategorySortRank(getEffectiveLynchCategoryForStock(b));
         if (ra !== rb) return dir * (ra - rb);
         return dir * cmpStr(a.ticker, b.ticker);
       }
@@ -2169,7 +2171,7 @@ export function InventoryTable({
                           </td>
                         );
                       case "lynch": {
-                        const computedLynch = getLynchCategory(stock);
+                        const computedLynch = getEffectiveLynchCategoryForStock(stock);
                         const hintLines =
                           computedLynch != null
                             ? lynchAlignmentHintLines({
@@ -2204,7 +2206,7 @@ export function InventoryTable({
                                 </ul>
                               ) : null}
                               <p className="text-[8px] text-muted-foreground leading-snug">
-                                自動分類（DB の手動値は未使用）
+                                ルール優先。自動で付かないときは expectation_category を表示
                               </p>
                             </div>
                           </td>

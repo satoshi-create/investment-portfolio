@@ -4,6 +4,7 @@ import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { invalidateDashboardCacheForUser } from "@/src/lib/dashboard-api-cache";
 import { getDb, isDbConfigured } from "@/src/lib/db";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import { parseExpectationCategory } from "@/src/lib/expectation-category";
 import { updateHoldingStoryHub } from "@/src/lib/update-holding-story-hub";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,8 @@ type Body = {
   earningsSummaryNote?: string | null;
   lynchDriversNarrative?: string | null;
   lynchStoryText?: string | null;
+  /** クライアントが省略した場合は DB の expectation_category を更新しない */
+  expectationCategory?: string | null;
 };
 
 export async function PATCH(request: Request) {
@@ -73,6 +76,18 @@ export async function PATCH(request: Request) {
     );
   }
 
+  let expectationCategory: ReturnType<typeof parseExpectationCategory> | undefined = undefined;
+  if (body.expectationCategory !== undefined) {
+    if (body.expectationCategory === null) {
+      expectationCategory = null;
+    } else if (typeof body.expectationCategory === "string") {
+      const parsed = parseExpectationCategory(body.expectationCategory);
+      expectationCategory = parsed;
+    } else {
+      return NextResponse.json({ error: "expectationCategory は文字列または null です" }, { status: 400 });
+    }
+  }
+
   const db = getDb();
   const result = await updateHoldingStoryHub(db, {
     userId,
@@ -81,6 +96,7 @@ export async function PATCH(request: Request) {
     earningsSummaryNote,
     lynchDriversNarrative,
     lynchStoryText,
+    expectationCategory,
   });
 
   if (!result.ok) {

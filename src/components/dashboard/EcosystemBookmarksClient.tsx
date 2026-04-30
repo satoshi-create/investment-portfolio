@@ -79,7 +79,7 @@ import {
   type EcoLynchLensColumnUiByFilter,
   type EcoLynchLensUiFilterKey,
 } from "@/src/lib/ecosystem-lynch-lens-column-ui";
-import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import { getEffectiveLynchCategoryForWatchItem } from "@/src/lib/lynch-display";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { formatLocalPriceForView } from "@/src/lib/format-display-currency";
 import {
@@ -312,6 +312,9 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
                 earningsSummaryNote: fields.earningsSummaryNote,
                 lynchDriversNarrative: fields.lynchDriversNarrative,
                 lynchStoryText: fields.lynchStoryText,
+                ...(fields.expectationCategory !== undefined
+                  ? { expectationCategory: fields.expectationCategory }
+                  : {}),
               }
             : e,
         ),
@@ -449,9 +452,9 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
       out = out.filter((e) => ecoHasUsableQuote(e));
     }
     if (ecoLynchFilter === "__unset__") {
-      out = out.filter((e) => getLynchCategoryFromWatchItem(e) == null);
+      out = out.filter((e) => getEffectiveLynchCategoryForWatchItem(e) == null);
     } else if (ecoLynchFilter !== "") {
-      out = out.filter((e) => getLynchCategoryFromWatchItem(e) === ecoLynchFilter);
+      out = out.filter((e) => getEffectiveLynchCategoryForWatchItem(e) === ecoLynchFilter);
     }
     return out;
   }, [

@@ -1,7 +1,10 @@
 import type { LynchCategory, Stock, ThemeEcosystemWatchItem } from "@/src/types/investment";
 import { LYNCH_CATEGORY_LABEL_JA } from "@/src/types/investment";
 import { lynchCategorySortRank } from "@/src/lib/expectation-category";
-import { getLynchCategory, getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import {
+  getEffectiveLynchCategoryForStock,
+  getEffectiveLynchCategoryForWatchItem,
+} from "@/src/lib/lynch-display";
 
 /** インべントリのバッジ色に近い塗り（recharts 用） */
 export const LYNCH_PIE_FILL: Record<LynchCategory, string> = {
@@ -23,7 +26,7 @@ export type LynchPieRow = {
   count: number;
 };
 
-/** Strategy / テーマ保有と同じ母集団: 数量 > 0 かつ評価額あり。分類は getLynchCategory（ルールベース）。 */
+/** Strategy / テーマ保有と同じ母集団: 数量 > 0 かつ評価額あり。分類はルール優先、未分類時は DB expectation_category。 */
 export function buildLynchPieRows(stocks: Stock[]): LynchPieRow[] {
   const rows = stocks.filter(
     (s) => s.quantity > 0 && Number.isFinite(s.marketValue) && s.marketValue > 0,
@@ -32,7 +35,7 @@ export function buildLynchPieRows(stocks: Stock[]): LynchPieRow[] {
 
   const byKey = new Map<string, { mv: number; count: number }>();
   for (const s of rows) {
-    const k = getLynchCategory(s) ?? "__unset__";
+    const k = getEffectiveLynchCategoryForStock(s) ?? "__unset__";
     const cur = byKey.get(k) ?? { mv: 0, count: 0 };
     cur.mv += s.marketValue;
     cur.count += 1;
@@ -77,7 +80,7 @@ export function watchItemPieWeight(e: ThemeEcosystemWatchItem): number {
 
 /**
  * テーマ観測エコシステム行からリンチ円用の行を構築する。
- * 分類は `getLynchCategoryFromWatchItem`（ルールベース）。DB `expectation_category` は使わない。
+ * 分類はルール優先、未分類時は DB `expectation_category` を補完。
  */
 export function buildLynchPieRowsFromWatchItems(items: readonly ThemeEcosystemWatchItem[]): LynchPieRow[] {
   if (items.length === 0) return [];
@@ -85,7 +88,7 @@ export function buildLynchPieRowsFromWatchItems(items: readonly ThemeEcosystemWa
   const byKey = new Map<string, { w: number; count: number }>();
   for (const e of items) {
     const w = watchItemPieWeight(e);
-    const k = getLynchCategoryFromWatchItem(e) ?? "__unset__";
+    const k = getEffectiveLynchCategoryForWatchItem(e) ?? "__unset__";
     const cur = byKey.get(k) ?? { w: 0, count: 0 };
     cur.w += w;
     cur.count += 1;

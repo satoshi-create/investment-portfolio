@@ -4,7 +4,9 @@ import React, { useMemo } from "react";
 
 import { cn } from "@/src/lib/cn";
 import {
-  aggregateLynchCategoryCountsForWatchItems,
+  aggregateEffectiveLynchCategoryCountsForWatchItems,
+} from "@/src/lib/lynch-display";
+import {
   LYNCH_RULE_TOOLTIP_ALL_JA,
   LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA,
   LYNCH_RULE_TOOLTIP_UNSET_JA,
@@ -28,7 +30,7 @@ export function EcosystemLynchFilterBar({
   onLynchFilterChange,
 }: EcosystemLynchFilterBarProps) {
   const lynchCountSnapshot = useMemo(
-    () => aggregateLynchCategoryCountsForWatchItems(ecosystem),
+    () => aggregateEffectiveLynchCategoryCountsForWatchItems(ecosystem),
     [ecosystem],
   );
   const lynchToolbarSorted = useMemo(

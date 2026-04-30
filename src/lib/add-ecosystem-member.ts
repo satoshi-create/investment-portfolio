@@ -5,6 +5,7 @@ import type { Client } from "@libsql/client";
 import { normalizeEcosystemMemberField } from "@/src/lib/ecosystem-field-meta";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import { ecosystemTickerShouldBeUnlisted } from "@/src/lib/ecosystem-ticker-hygiene";
+import type { LynchCategory } from "@/src/types/investment";
 
 export class EcosystemMemberAuthError extends Error {
   readonly code = "THEME_NOT_FOUND" as const;
@@ -54,6 +55,8 @@ export type UpdateEcosystemMemberInput = {
   lynchDriversNarrative?: string | null;
   /** DB `lynch_story_text`。undefined=変更なし null=クリア */
   lynchStoryText?: string | null;
+  /** DB `expectation_category`（手動リンチ分類）。undefined=変更なし null=クリア */
+  expectationCategory?: LynchCategory | null;
 };
 
 /**
@@ -201,7 +204,8 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
         ? String(input.lynchStoryText).trim()
         : null;
 
-  // Only update the fields that were provided.
+  const nextExpectationCategory =
+    input.expectationCategory === undefined ? undefined : input.expectationCategory;
   const sets: string[] = [];
   const args: (string | number | null)[] = [];
   if (nextRole !== undefined) {
@@ -247,6 +251,10 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
   if (nextLynchStoryText !== undefined) {
     sets.push(`lynch_story_text = ?`);
     args.push(nextLynchStoryText);
+  }
+  if (nextExpectationCategory !== undefined) {
+    sets.push(`expectation_category = ?`);
+    args.push(nextExpectationCategory);
   }
   if (sets.length === 0) return;
 

@@ -1,8 +1,9 @@
 /**
  * ピーター・リンチ6分類のルールベース自動判定（Inventory / Strategy / 観測 Ecosystem）。
  *
- * DB の `expectation_category` は取引フォーム等で利用可能だが、
- * Inventory・観測テーブル・Strategy「リンチ分類（評価額）」の表示は本モジュールの判定を用いる。
+ * DB の `expectation_category` は取引フォーム・ストーリーパネル等で設定される。
+ * ルールベース自動判定は `getLynchCategory` / `getLynchCategoryFromWatchItem` のみ。
+ * ダッシュのリンチ列・円グラフ等の表示用の有効分類は `lynch-display`（ルール優先、未分類時に DB を補完）を用いる。
  *
  * 複数ルールに該当する場合の優先順位（先にマッチしたものを採用）:
  * Cyclical → Turnaround → FastGrower → Stalwart → SlowGrower → AssetPlay
@@ -168,10 +169,10 @@ export function getLynchCategoryFromWatchItem(e: ThemeEcosystemWatchItem): Lynch
 
 /** 保有・観測テーブル共通（`title` 用）。件数の母集団は呼び出し側で行フィルター前の全行。 */
 export const LYNCH_RULE_TOOLTIP_ALL_JA =
-  "リンチによる行の絞り込みを解除し、列は通常表示に戻ります。件数はテーブルに渡る行の全件（検索・市場フィルター等の絞り込み前）です。自動分類の優先順位は「市況関連 → 業績回復 → 急成長 → 優良 → 低成長 → 資産株」。DB の expectation_category は参照しません。";
+  "リンチによる行の絞り込みを解除し、列は通常表示に戻ります。件数はテーブルに渡る行の全件（検索・市場フィルター等の絞り込み前）です。ルールベースの優先順位は「市況関連 → 業績回復 → 急成長 → 優良 → 低成長 → 資産株」。有効分類はルールを優先し、いずれにも当てはまらない行は DB の expectation_category（手動含む）を補完します。";
 
 export const LYNCH_RULE_TOOLTIP_UNSET_JA =
-  "上記6分類のいずれの条件も満たさない銘柄です（データ欠損で判定不能な場合も含み得ます）。DB の手動分類は使用しません。";
+  "上記6分類のいずれのルール条件も満たさず、かつ DB に expectation_category が無い銘柄です（データ欠損で判定不能な場合も含み得ます）。";
 
 export const LYNCH_RULE_TOOLTIP_BY_CATEGORY_JA: Record<LynchCategory, string> = {
   Cyclical:

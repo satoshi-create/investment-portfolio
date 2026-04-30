@@ -28,7 +28,7 @@ export const METRIC_HEADER_TIP = {
   asset:
     "銘柄識別子・地域バッジ・（テーマ時）エコキープ。Asset 行頭の★で `holdings.is_bookmarked` をトグル。ティッカーは `classifyTickerInstrument` に基づき表示用整形。",
   lynch:
-    "ピーター・リンチ6分類（保有 Inventory・観測 Ecosystem はルールベース自動分類。DB の expectation_category は本列では参照しません。取引フォーム等では従来どおり手動値を利用）。",
+    "ピーター・リンチ6分類。ルールベース自動判定を優先し、どのルールにも当てはまらない銘柄は DB の expectation_category（取引フォーム・ストーリーパネル等の手動値）を表示に使用します。",
   listing:
     "上場（初回取引）日の年で並べ替え。値は DB / Yahoo first trade の近似で、公式 IPO 日とは限りません。",
   mktCap:

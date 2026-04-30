@@ -56,7 +56,7 @@ import {
   expectationCategoryBadgeShortJa,
 } from "@/src/lib/expectation-category";
 import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
-import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import { getEffectiveLynchCategoryForWatchItem } from "@/src/lib/lynch-display";
 import { extractChipLabelFromObservationNotes } from "@/src/lib/ecosystem-observation-notes";
 import { isMagnificentArchitectsThemePage } from "@/src/lib/magnificent-architects-theme";
 import type {
@@ -705,7 +705,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               </td>
             );
           case "lynch": {
-            const computedLynch = getLynchCategoryFromWatchItem(e);
+            const computedLynch = getEffectiveLynchCategoryForWatchItem(e);
             const hintLines =
               computedLynch != null
                 ? lynchAlignmentHintLines({
@@ -740,7 +740,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                     </ul>
                   ) : null}
                   <p className="text-[8px] text-muted-foreground leading-snug">
-                    自動分類（DB の手動値は未使用）
+                    ルール優先。自動で付かないときは expectation_category を表示
                   </p>
                 </div>
               </td>

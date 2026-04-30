@@ -3,7 +3,7 @@ import type { StructuralEcoSortKey } from "@/src/components/dashboard/Structural
 import { lastDailyAlphaForTrendSort } from "@/src/lib/eco-trend-daily";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { lynchCategorySortRank } from "@/src/lib/expectation-category";
-import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import { getEffectiveLynchCategoryForWatchItem } from "@/src/lib/lynch-display";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
 import type { ThemeEcosystemWatchItem } from "@/src/types/investment";
 
@@ -126,8 +126,8 @@ export function sortStructuralEcosystemWatchlist<T extends ThemeEcosystemWatchIt
 
     if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
     if (ecoSortKey === "lynch") {
-      const ra = lynchCategorySortRank(getLynchCategoryFromWatchItem(a));
-      const rb = lynchCategorySortRank(getLynchCategoryFromWatchItem(b));
+      const ra = lynchCategorySortRank(getEffectiveLynchCategoryForWatchItem(a));
+      const rb = lynchCategorySortRank(getEffectiveLynchCategoryForWatchItem(b));
       if (ra !== rb) return dir * (ra - rb);
       return dir * cmpStr(a.ticker, b.ticker);
     }

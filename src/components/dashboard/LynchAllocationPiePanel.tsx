@@ -82,18 +82,18 @@ export function LynchAllocationPiePanel({ stocks, ecosystem, bare = false, class
       {lynchPieRows.length === 0 ? (
         <p className="text-[9px] text-muted-foreground mb-3 leading-relaxed">
           テーマ内保有（数量 &gt; 0 かつ評価額あり）を優先し、該当がなければ観測ウォッチ全行で表示します（ウェイトは
-          時価総額→ラウンド評価額→等重み）。分類はルールベース自動判定で、DB の expectation_category は参照しません。
+          時価総額→ラウンド評価額→等重み）。分類はルール優先、ルールで付かない行は DB の expectation_category（手動含む）を補完します。
         </p>
       ) : pieSource === "holdings" ? (
         <p className="text-[9px] text-muted-foreground mb-3 leading-relaxed">
           数量 &gt; 0 かつ評価額がある銘柄のみ。シェアは円ベース評価額の合計に対する比率です。分類は Inventory
-          と同じルールベース自動判定です。DB の expectation_category は参照しません。
+          と同じくルール優先、未分類時は expectation_category を反映します。
         </p>
       ) : (
         <p className="text-[9px] text-muted-foreground mb-3 leading-relaxed">
           テーマ内の評価額付き保有がないため、観測ウォッチ全行を対象にしています。シェアは時価総額（取得時）→
-          直近ラウンド評価額→等重み（1）の合成ウェイトに対する比率です。分類は観測表と同じルールベース自動判定で、DB
-          の expectation_category は参照しません。
+          直近ラウンド評価額→等重み（1）の合成ウェイトに対する比率です。分類は観測表と同じくルール優先、未分類時は
+          expectation_category を反映します。
         </p>
       )}
       {lynchPieRows.length > 0 ? (

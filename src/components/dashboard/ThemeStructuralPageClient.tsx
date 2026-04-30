@@ -147,7 +147,7 @@ import {
   type EcoLynchLensColumnUiByFilter,
   type EcoLynchLensUiFilterKey,
 } from "@/src/lib/ecosystem-lynch-lens-column-ui";
-import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import { getEffectiveLynchCategoryForWatchItem } from "@/src/lib/lynch-display";
 import { resolvePortfolioStockForEcosystemRow } from "@/src/lib/resolve-portfolio-stock-for-ecosystem-row";
 import { ECOSYSTEM_ASSET_COL_WIDTH_CLASS } from "@/src/lib/ecosystem-watchlist-table-layout";
 import { EcosystemWatchlistColumnToolbar } from "@/src/components/dashboard/EcosystemWatchlistColumnToolbar";
@@ -1124,6 +1124,9 @@ export function ThemePageClient({
                   earningsSummaryNote: fields.earningsSummaryNote,
                   lynchDriversNarrative: fields.lynchDriversNarrative,
                   lynchStoryText: fields.lynchStoryText,
+                  ...(fields.expectationCategory !== undefined
+                    ? { expectationCategory: fields.expectationCategory }
+                    : {}),
                 }
               : m,
           ),
@@ -1893,9 +1896,9 @@ export function ThemePageClient({
       out = out.filter((e) => ecoHasUsableQuote(e));
     }
     if (ecoLynchFilter === "__unset__") {
-      out = out.filter((e) => getLynchCategoryFromWatchItem(e) == null);
+      out = out.filter((e) => getEffectiveLynchCategoryForWatchItem(e) == null);
     } else if (ecoLynchFilter !== "") {
-      out = out.filter((e) => getLynchCategoryFromWatchItem(e) === ecoLynchFilter);
+      out = out.filter((e) => getEffectiveLynchCategoryForWatchItem(e) === ecoLynchFilter);
     }
     return out;
   }, [

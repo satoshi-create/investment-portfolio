@@ -245,6 +245,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
               earningsSummaryNote: fields.earningsSummaryNote,
               lynchDriversNarrative: fields.lynchDriversNarrative,
               lynchStoryText: fields.lynchStoryText,
+              ...(fields.expectationCategory !== undefined ? { expectationCategory: fields.expectationCategory } : {}),
             }
           : s,
       );

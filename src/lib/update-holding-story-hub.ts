@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import type { LynchCategory } from "@/src/types/investment";
 
 export type UpdateHoldingStoryHubResult =
   | { ok: true }
@@ -37,6 +38,8 @@ export async function updateHoldingStoryHub(
     earningsSummaryNote: string | null;
     lynchDriversNarrative: string | null;
     lynchStoryText: string | null;
+    /** 未送信時は expectation_category 列を更新しない */
+    expectationCategory?: LynchCategory | null;
   },
 ): Promise<UpdateHoldingStoryHubResult> {
   const memo = normalizeMemo(params.memo);
@@ -44,16 +47,17 @@ export async function updateHoldingStoryHub(
   const drivers = clipLynchNote(params.lynchDriversNarrative);
   const story = clipLynchNote(params.lynchStoryText);
 
+  const sets = ["memo = ?", "earnings_summary_note = ?", "lynch_drivers_narrative = ?", "lynch_story_text = ?"];
+  const args: (string | null)[] = [memo, earnings, drivers, story];
+  if (params.expectationCategory !== undefined) {
+    sets.push("expectation_category = ?");
+    args.push(params.expectationCategory);
+  }
+
   try {
     const rs = await db.execute({
-      sql: `UPDATE holdings
-            SET memo = ?,
-                earnings_summary_note = ?,
-                lynch_drivers_narrative = ?,
-                lynch_story_text = ?
-            WHERE id = ? AND user_id = ?
-            RETURNING id`,
-      args: [memo, earnings, drivers, story, params.holdingId, params.userId],
+      sql: `UPDATE holdings SET ${sets.join(", ")} WHERE id = ? AND user_id = ? RETURNING id`,
+      args: [...args, params.holdingId, params.userId],
     });
     if (rs.rows.length === 0) {
       return { ok: false, code: "NOT_FOUND", message: "保有行が見つからないか、権限がありません。" };
@@ -62,7 +66,10 @@ export async function updateHoldingStoryHub(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const lower = message.toLowerCase();
-    if (lower.includes("no such column") && (lower.includes("lynch_") || lower.includes("earnings_summary"))) {
+    if (
+      lower.includes("no such column") &&
+      (lower.includes("lynch_") || lower.includes("earnings_summary") || lower.includes("expectation_category"))
+    ) {
       return {
         ok: false,
         code: "DB_ERROR",

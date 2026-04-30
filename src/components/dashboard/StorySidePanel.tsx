@@ -74,14 +74,19 @@ function buildStoryHubPersistFields(
   earningsDraft: string,
   composedNarrative: string,
   storyText: string,
+  expectationCategoryForOptimistic?: LynchCategory | null,
 ): StoryHubPersistFields {
   const et = earningsDraft.trim();
-  return {
+  const out: StoryHubPersistFields = {
     memo: memoNext,
     earningsSummaryNote: et.length > 0 ? et : null,
     lynchDriversNarrative: composedNarrative,
     lynchStoryText: storyText,
   };
+  if (expectationCategoryForOptimistic !== undefined) {
+    out.expectationCategory = expectationCategoryForOptimistic;
+  }
+  return out;
 }
 
 /**
@@ -173,6 +178,10 @@ export function StorySidePanel(props: StorySidePanelProps) {
       const allowedPatch = new Set(UNIVERSAL_FIVE_PATCHES.map((p) => p.id));
       setUniversalPatches(meta.universalPatches.filter((id) => allowedPatch.has(id)));
       setStoryText(stock.lynchStoryText ?? "");
+      {
+        const rule = getLynchCategory(stock);
+        setManualLens(rule == null ? (stock.expectationCategory ?? "Stalwart") : "Stalwart");
+      }
     } else if (variant === "themeMember" && member) {
       setMemoDraft(member.memo ?? "");
       setEarningsDraft(member.earningsSummaryNote ?? "");
@@ -183,10 +192,13 @@ export function StorySidePanel(props: StorySidePanelProps) {
       const allowedPatch = new Set(UNIVERSAL_FIVE_PATCHES.map((p) => p.id));
       setUniversalPatches(meta.universalPatches.filter((id) => allowedPatch.has(id)));
       setStoryText(member.lynchStoryText ?? "");
+      {
+        const rule = getLynchCategoryFromWatchItem(member);
+        setManualLens(rule == null ? (member.expectationCategory ?? "Stalwart") : "Stalwart");
+      }
     }
     setEarningsSubTab("edit");
     setMainTab("basic");
-    setManualLens("Stalwart");
     setSaveErr(null);
   }, [variant, stock, member]);
 
@@ -227,11 +239,14 @@ export function StorySidePanel(props: StorySidePanelProps) {
         const narrNextFull = composedNarrative.trim();
         const storyPrev = (member.lynchStoryText ?? "").trim();
         const storyNext = storyText.trim();
+        const categoryDirty =
+          computedLynch == null && manualLens !== (member.expectationCategory ?? "Stalwart");
         if (
           memoNext === memoPrev &&
           earnNext === earnPrev &&
           narrNextFull === narrPrevFull &&
-          storyNext === storyPrev
+          storyNext === storyPrev &&
+          !categoryDirty
         ) {
           void onAfterSave?.();
           onClose();
@@ -251,6 +266,7 @@ export function StorySidePanel(props: StorySidePanelProps) {
               lynchDriversNarrative: composedNarrative,
               lynchStoryText: storyText,
               themeSlugForRevalidate: themeSlugForRevalidate ?? undefined,
+              ...(computedLynch == null ? { expectationCategory: manualLens } : {}),
             }),
           },
           { timeoutMs: 25_000 },
@@ -263,7 +279,13 @@ export function StorySidePanel(props: StorySidePanelProps) {
         applyThemeMemberStoryOptimistic(
           themeId,
           member.id,
-          buildStoryHubPersistFields(memoNext, earningsDraft, composedNarrative, storyText),
+          buildStoryHubPersistFields(
+            memoNext,
+            earningsDraft,
+            composedNarrative,
+            storyText,
+            computedLynch == null ? manualLens : undefined,
+          ),
         );
         void onAfterSave?.();
         onClose();
@@ -295,9 +317,15 @@ export function StorySidePanel(props: StorySidePanelProps) {
       const narrNextFull = composedNarrative.trim();
       const storyPrev = (stock.lynchStoryText ?? "").trim();
       const storyNext = storyText.trim();
+      const categoryDbDirty =
+        computedLynch == null && manualLens !== (stock.expectationCategory ?? "Stalwart");
 
       const hasDbChanges =
-        memoNext !== memoPrev || earnNext !== earnPrev || narrNextFull !== narrPrevFull || storyNext !== storyPrev;
+        memoNext !== memoPrev ||
+        earnNext !== earnPrev ||
+        narrNextFull !== narrPrevFull ||
+        storyNext !== storyPrev ||
+        categoryDbDirty;
 
       if (hasDbChanges) {
         const res = await fetchWithTimeout(
@@ -312,6 +340,7 @@ export function StorySidePanel(props: StorySidePanelProps) {
               earningsSummaryNote: earningsDraft,
               lynchDriversNarrative: composedNarrative,
               lynchStoryText: storyText,
+              ...(computedLynch == null ? { expectationCategory: manualLens } : {}),
             }),
           },
           { timeoutMs: 25_000 },
@@ -323,7 +352,13 @@ export function StorySidePanel(props: StorySidePanelProps) {
         }
         patchStockStoryHubFields(
           stock.id,
-          buildStoryHubPersistFields(memoNext, earningsDraft, composedNarrative, storyText),
+          buildStoryHubPersistFields(
+            memoNext,
+            earningsDraft,
+            composedNarrative,
+            storyText,
+            computedLynch == null ? manualLens : undefined,
+          ),
         );
       }
 

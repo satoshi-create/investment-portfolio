@@ -14,6 +14,7 @@ import { getDb, isDbConfigured } from "@/src/lib/db";
 import { fetchCompanyNameForTicker } from "@/src/lib/price-service";
 import { normalizeEcosystemMemberField } from "@/src/lib/ecosystem-field-meta";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import { parseExpectationCategory } from "@/src/lib/expectation-category";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,8 @@ type Body = {
   lynchDriversNarrative?: string | null;
   /** Story パネル: 2 分間の物語本文 */
   lynchStoryText?: string | null;
+  /** DB `expectation_category`（省略時は更新しない） */
+  expectationCategory?: string | null;
   /** `revalidatePath` 用（URL のテーマスラッグ・`themeLabel` と同じ） */
   themeSlugForRevalidate?: string | null;
   memberId?: string;
@@ -274,6 +277,17 @@ export async function PATCH(request: Request) {
     }
   }
 
+  let expectationCategoryPatch: ReturnType<typeof parseExpectationCategory> | undefined = undefined;
+  if (body.expectationCategory !== undefined) {
+    if (body.expectationCategory === null) {
+      expectationCategoryPatch = null;
+    } else if (typeof body.expectationCategory === "string") {
+      expectationCategoryPatch = parseExpectationCategory(body.expectationCategory);
+    } else {
+      return NextResponse.json({ error: "expectationCategory は文字列または null です" }, { status: 400 });
+    }
+  }
+
   try {
     await updateEcosystemMember(getDb(), {
       userId,
@@ -290,6 +304,7 @@ export async function PATCH(request: Request) {
       earningsSummaryNote: earningsNotePatch,
       lynchDriversNarrative: lynchDriversPatch,
       lynchStoryText: lynchStoryPatch,
+      expectationCategory: expectationCategoryPatch,
     });
     revalidateThemeRelatedPaths(body.themeSlugForRevalidate);
     return NextResponse.json({ ok: true });

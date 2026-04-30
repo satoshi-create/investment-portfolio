@@ -163,7 +163,7 @@ import {
 } from "@/src/lib/ecosystem-lynch-lens-column-ui";
 import { resolvePortfolioStockForEcosystemRow } from "@/src/lib/resolve-portfolio-stock-for-ecosystem-row";
 import { ECOSYSTEM_ASSET_COL_WIDTH_CLASS } from "@/src/lib/ecosystem-watchlist-table-layout";
-import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import { getEffectiveLynchCategoryForWatchItem } from "@/src/lib/lynch-display";
 import { lynchCategorySortRank } from "@/src/lib/expectation-category";
 import type { LynchCategory } from "@/src/types/investment";
 
@@ -952,6 +952,9 @@ export function ThemePageClient({
                   earningsSummaryNote: fields.earningsSummaryNote,
                   lynchDriversNarrative: fields.lynchDriversNarrative,
                   lynchStoryText: fields.lynchStoryText,
+                  ...(fields.expectationCategory !== undefined
+                    ? { expectationCategory: fields.expectationCategory }
+                    : {}),
                 }
               : m,
           ),
@@ -1634,9 +1637,9 @@ export function ThemePageClient({
       out = out.filter((e) => ecoHasUsableQuote(e));
     }
     if (ecoLynchFilter === "__unset__") {
-      out = out.filter((e) => getLynchCategoryFromWatchItem(e) == null);
+      out = out.filter((e) => getEffectiveLynchCategoryForWatchItem(e) == null);
     } else if (ecoLynchFilter !== "") {
-      out = out.filter((e) => getLynchCategoryFromWatchItem(e) === ecoLynchFilter);
+      out = out.filter((e) => getEffectiveLynchCategoryForWatchItem(e) === ecoLynchFilter);
     }
     return out;
   }, [
@@ -1727,8 +1730,8 @@ export function ThemePageClient({
 
       if (ecoSortKey === "asset") return dir * cmpStr(a.ticker, b.ticker);
       if (ecoSortKey === "lynch") {
-        const ra = lynchCategorySortRank(getLynchCategoryFromWatchItem(a));
-        const rb = lynchCategorySortRank(getLynchCategoryFromWatchItem(b));
+        const ra = lynchCategorySortRank(getEffectiveLynchCategoryForWatchItem(a));
+        const rb = lynchCategorySortRank(getEffectiveLynchCategoryForWatchItem(b));
         if (ra !== rb) return dir * (ra - rb);
         return dir * cmpStr(a.ticker, b.ticker);
       }
