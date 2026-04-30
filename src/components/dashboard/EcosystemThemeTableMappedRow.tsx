@@ -57,6 +57,8 @@ import {
 } from "@/src/lib/expectation-category";
 import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
 import { getLynchCategoryFromWatchItem } from "@/src/lib/lynch-category-computed";
+import { extractChipLabelFromObservationNotes } from "@/src/lib/ecosystem-observation-notes";
+import { isMagnificentArchitectsThemePage } from "@/src/lib/magnificent-architects-theme";
 import type {
   InvestmentThemeRecord,
   ResourceSyncJudgment,
@@ -349,6 +351,9 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
 
   const { convert, viewCurrency } = useCurrencyConverter();
 
+  const magnificentPage = isMagnificentArchitectsThemePage(themeLabel, theme);
+  const maChipLabel = extractChipLabelFromObservationNotes(e.observationNotes);
+
   return (
     <>
       {visibleColumnIds.map((colId, colIdx) => {
@@ -461,6 +466,17 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         title="分類タグ（field）"
                       >
                         {e.field.trim()}
+                      </span>
+                    ) : null}
+                    {magnificentPage && maChipLabel != null ? (
+                      <span
+                        className="shrink-0 text-[8px] font-bold tracking-wide text-orange-200/95 border border-orange-400/45 bg-orange-500/10 px-1.5 py-0.5 rounded"
+                        title={`独自チップ: ${maChipLabel}`}
+                      >
+                        独自チップ{" "}
+                        <span className="inline" aria-hidden>
+                          🔥
+                        </span>
                       </span>
                     ) : null}
                   </div>
@@ -944,8 +960,24 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td key={colId} className={`px-6 py-3 text-right font-mono text-xs ${stickyFirst}`}>
                 {(() => {
                   const t = ecoRuleOf40Tone(e.ruleOf40);
+                  const nvdaExtremeMetabolism =
+                    magnificentPage &&
+                    e.ticker.trim().toUpperCase() === "NVDA" &&
+                    Number.isFinite(e.ruleOf40) &&
+                    e.ruleOf40 > 100;
                   return (
-                    <span className={t.cls} title="Rule of 40">
+                    <span
+                      className={cn(
+                        t.cls,
+                        nvdaExtremeMetabolism &&
+                          "relative z-0 font-extrabold text-cyan-100 drop-shadow-[0_0_10px_rgba(34,211,238,0.9)]",
+                      )}
+                      title={
+                        nvdaExtremeMetabolism
+                          ? "R40 が 100% 超（売上成長% + FCF マージン%）— 高代謝"
+                          : "Rule of 40"
+                      }
+                    >
                       {t.text}
                     </span>
                   );

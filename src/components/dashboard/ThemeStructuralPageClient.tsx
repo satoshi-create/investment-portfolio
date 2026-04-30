@@ -177,6 +177,10 @@ import {
   MOBILITY_REFACTORING_THEME_QUERY_NAME,
   MOBILITY_REFACTORING_THEME_SLUG,
 } from "@/src/lib/mobility-refactoring-theme";
+import {
+  MAGNIFICENT_ARCHITECTS_THEME_QUERY_NAME,
+  MAGNIFICENT_ARCHITECTS_THEME_SLUG,
+} from "@/src/lib/magnificent-architects-theme";
 import { JtcRefactoringCockpitPanel } from "@/src/components/dashboard/JtcRefactoringCockpitPanel";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
@@ -320,6 +324,13 @@ function mapThemeLabelForQuery(raw: string): {
       query: MOBILITY_REFACTORING_THEME_QUERY_NAME,
       display: MOBILITY_REFACTORING_THEME_QUERY_NAME,
       slug: MOBILITY_REFACTORING_THEME_SLUG,
+    };
+  }
+  if (s.toLowerCase() === MAGNIFICENT_ARCHITECTS_THEME_SLUG || s === MAGNIFICENT_ARCHITECTS_THEME_QUERY_NAME) {
+    return {
+      query: MAGNIFICENT_ARCHITECTS_THEME_QUERY_NAME,
+      display: MAGNIFICENT_ARCHITECTS_THEME_QUERY_NAME,
+      slug: MAGNIFICENT_ARCHITECTS_THEME_SLUG,
     };
   }
   return { query: s, display: s, slug: s };

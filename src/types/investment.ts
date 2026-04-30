@@ -120,6 +120,15 @@ export const LYNCH_CATEGORY_LABEL_JA: Record<LynchCategory, string> = {
   Turnaround: "業績回復株",
 };
 
+/**
+ * 構造分類タグ（自前 AI チップの設計主体など、ツール・UI 用のキー）。
+ * DB の自由文とは別系統。拡張時はここに足す。
+ */
+export type StructureTag = "INFERENCE_SOVEREIGNTY";
+
+/** 推論主権: 自前で AI 向けチップを設計・握る企業に付与するセマンティクス。 */
+export const STRUCTURE_TAG_INFERENCE_SOVEREIGNTY: StructureTag = "INFERENCE_SOVEREIGNTY";
+
 /** テーマまたはセクター軸の評価額シェア（サーバー集計、円ベース）。 */
 export interface StructureTagSlice {
   tag: string;
