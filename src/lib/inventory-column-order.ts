@@ -1,5 +1,4 @@
 export const INVENTORY_COLUMN_IDS = [
-  "bookmark",
   "asset",
   "lynch",
   "trend5d",
@@ -43,6 +42,7 @@ export function normalizeInventoryColumnOrder(raw: string[]): InventoryColId[] {
   const seen = new Set<string>();
   const out: InventoryColId[] = [];
   for (const id of raw) {
+    if (id === "bookmark") continue;
     const mapped = id === "trend" ? "trend5d" : id;
     if (!allowed.has(mapped)) continue;
     if (seen.has(mapped)) continue;

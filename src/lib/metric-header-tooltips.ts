@@ -25,10 +25,8 @@ export const METRIC_HEADER_TIP = {
     "トータル・リターン・レシオ: 予想EPS成長と配当利回りを PER で割った「収益フロー対バリュエーション」。高いほど割安な高還元・高成長に近い目安（前提の質は別途）。【式】TRR = (予想成長% + 配当利回り%) ÷ PER（Forward PER 優先・`computeTotalReturnYieldRatio`）",
   volumeRatio:
     "本セッション出来高 ÷ 直近10日平均出来高（Yahoo quote / 日次）。【式】本日出来高 / 10日平均出来高",
-  bookmark:
-    "ブックマーク（★）: `holdings.is_bookmarked`。列は並べ替え専用のドラッグハンドルと併用。",
   asset:
-    "銘柄識別子・地域バッジ・（テーマ時）エコキープ。ティッカーは `classifyTickerInstrument` に基づき表示用整形。",
+    "銘柄識別子・地域バッジ・（テーマ時）エコキープ。Asset 行頭の★で `holdings.is_bookmarked` をトグル。ティッカーは `classifyTickerInstrument` に基づき表示用整形。",
   lynch:
     "ピーター・リンチ6分類（保有 Inventory・観測 Ecosystem はルールベース自動分類。DB の expectation_category は本列では参照しません。取引フォーム等では従来どおり手動値を利用）。",
   listing:

@@ -130,8 +130,11 @@ import {
 } from "@/src/lib/ecosystem-watchlist-column-order";
 import {
   applyEcosystemWatchlistUserHidden,
+  ecosystemHiddenIdsForDisplayPreset,
+  loadEcosystemColumnDisplayPreset,
   loadEcosystemWatchlistHiddenColumns,
   loadEcosystemWatchlistTableCompact,
+  saveEcosystemColumnDisplayPreset,
   saveEcosystemWatchlistHiddenColumns,
   saveEcosystemWatchlistTableCompact,
 } from "@/src/lib/ecosystem-watchlist-column-visibility";
@@ -1932,8 +1935,18 @@ export function ThemePageClient({
 
   useEffect(() => {
     setEcoColumnOrder(loadEcosystemWatchlistColumnOrder());
-    setEcoHiddenColumnIds(loadEcosystemWatchlistHiddenColumns());
     setEcoTableCompact(loadEcosystemWatchlistTableCompact());
+    const order = loadEcosystemWatchlistColumnOrder();
+    const preset = loadEcosystemColumnDisplayPreset();
+    const base = visibleEcoColumnsStructural(order, { isDefensiveTheme, ecoShowValueCols: false });
+    const togglable = base.filter((id) => id !== "asset");
+    if (preset === "full" || preset === "medium" || preset === "simple") {
+      const h = ecosystemHiddenIdsForDisplayPreset(preset, togglable);
+      setEcoHiddenColumnIds(h);
+      saveEcosystemWatchlistHiddenColumns(h);
+    } else {
+      setEcoHiddenColumnIds(loadEcosystemWatchlistHiddenColumns());
+    }
   }, []);
 
   const persistEcoHiddenColumnIds = useCallback((next: EcosystemWatchlistColId[]) => {
@@ -1962,6 +1975,20 @@ export function ThemePageClient({
   }, [ecoLynchLensKey, ecoBaseVisibleColumnIds]);
 
   const columnToolbarEcoBaseIds = ecoBaseVisibleColumnIds;
+
+  const applyEcoColumnDisplayPreset = useCallback(
+    (preset: "full" | "medium" | "simple") => {
+      const togglable = ecoBaseVisibleColumnIds.filter((id) => id !== "asset");
+      const next = ecosystemHiddenIdsForDisplayPreset(preset, togglable);
+      persistEcoHiddenColumnIds(next);
+      saveEcosystemColumnDisplayPreset(preset);
+    },
+    [ecoBaseVisibleColumnIds, persistEcoHiddenColumnIds],
+  );
+
+  const markEcoColumnDisplayPresetCustom = useCallback(() => {
+    saveEcosystemColumnDisplayPreset("custom");
+  }, []);
 
   const ecoVisibleColumnIds = useMemo(() => {
     if (ecoLynchLensColumnIds == null) {
@@ -2061,6 +2088,7 @@ export function ThemePageClient({
     (colId: EcosystemWatchlistColId) => {
       if (colId === "asset") return;
       if (effectiveHiddenColumnIds.includes(colId)) return;
+      saveEcosystemColumnDisplayPreset("custom");
       handleEcoHiddenColumnIdsChange([...effectiveHiddenColumnIds, colId]);
     },
     [effectiveHiddenColumnIds, handleEcoHiddenColumnIdsChange],
@@ -3123,8 +3151,11 @@ export function ThemePageClient({
                       <div className="shrink-0 rounded-lg border border-border/80 bg-card/40 p-1.5">
                         <EcosystemWatchlistColumnToolbar
                           baseVisibleColumnIds={columnToolbarEcoBaseIds}
+                          userHiddenColumnIds={ecoHiddenColumnIds}
                           hiddenColumnIds={effectiveHiddenColumnIds}
                           setHiddenColumnIds={handleEcoHiddenColumnIdsChange}
+                          applyDisplayPreset={applyEcoColumnDisplayPreset}
+                          markDisplayPresetCustom={markEcoColumnDisplayPresetCustom}
                           compactTable={ecoTableCompact}
                           setCompactTable={persistEcoTableCompact}
                           isDefensiveTheme={isDefensiveTheme}
@@ -3385,9 +3416,9 @@ export function ThemePageClient({
                   </div>
                   <div
                     className={cn(
-                      "overflow-x-auto relative",
+                      "relative w-full max-w-full overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]",
                       ecoTableCompact &&
-                        "[&_thead_th]:!px-2.5 [&_thead_th]:!py-2 [&_thead_th]:!text-[9px] [&_thead_th]:!tracking-[0.08em] [&_tbody_td]:!px-2.5 [&_tbody_td]:!py-1.5 [&_tbody_td]:!text-[11px]",
+                        "[&_thead_th]:!px-2.5 [&_thead_th]:!py-2 [&_thead_th]:!text-[9px] [&_thead_th]:!tracking-[0.08em] [&_tbody_td]:!px-2.5 [&_tbody_td]:!py-1.5 [&_tbody_td]:!text-[11px] [&_tfoot_td]:!px-2.5 [&_tfoot_td]:!py-2 [&_tfoot_td]:!text-[10px]",
                     )}
                   >
                     <DndContext
@@ -3395,7 +3426,7 @@ export function ThemePageClient({
                       collisionDetection={closestCenter}
                       onDragEnd={handleEcoColumnDragEnd}
                     >
-                      <table className="w-full table-fixed text-left text-sm">
+                      <table className="w-full min-w-[1200px] text-left text-xs lg:text-sm">
                         <SortableContext items={ecoVisibleColumnIds} strategy={horizontalListSortingStrategy}>
                           <StructuralEcosystemThead
                             ecoVisibleColumnIds={ecoVisibleColumnIds}
@@ -3405,7 +3436,7 @@ export function ThemePageClient({
                             onRequestHideColumn={handleEcoHeaderHideColumn}
                           />
                         </SortableContext>
-                      <tbody className="divide-y divide-border/50">
+                      <tbody className="divide-y divide-border/60">
                         {ecosystemSorted.length === 0 &&
                         (patrolOn ||
                           ecoBookmarksOnly ||
@@ -3515,7 +3546,7 @@ export function ThemePageClient({
                               <tr
                                 id={`eco-row-${ecoRowKey}`}
                                 className={cn(
-                                  "group hover:bg-muted/45 transition-all scroll-mt-24",
+                                  "group hover:bg-muted/60 transition-all scroll-mt-24",
                                   regionDisplayFromYahooCountry(e.yahooCountry).rowBg,
                                 )}
                               >

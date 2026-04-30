@@ -5,11 +5,11 @@
 import type { LynchCategory } from "@/src/types/investment";
 import type { InventoryColId } from "@/src/lib/inventory-column-order";
 
-const LYNCH_LENS_BASE: readonly InventoryColId[] = ["bookmark", "asset", "lynch"];
+const LYNCH_LENS_BASE: readonly InventoryColId[] = ["asset", "lynch"];
 
 export type InventoryLynchLensKey = LynchCategory | "__unset__";
 
-/** 各キー 6〜10 列程度（bookmark+asset+lynch + 指標） */
+/** 各キー 6〜10 列程度（asset+lynch + 指標） */
 export const INVENTORY_LYNCH_LENS_COLUMNS: Record<InventoryLynchLensKey, readonly InventoryColId[]> = {
   __unset__: [...LYNCH_LENS_BASE, "egrowth", "pe", "eps", "forecastEps", "judgment", "position", "price"],
   FastGrower: [...LYNCH_LENS_BASE, "egrowth", "peg", "pe", "ruleOf40", "alpha", "position", "price"],

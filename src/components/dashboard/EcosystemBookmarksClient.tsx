@@ -56,8 +56,11 @@ import { resolvePortfolioStockForEcosystemRow } from "@/src/lib/resolve-portfoli
 import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import {
   applyEcosystemWatchlistUserHidden,
+  ecosystemHiddenIdsForDisplayPreset,
+  loadEcosystemColumnDisplayPreset,
   loadEcosystemWatchlistHiddenColumns,
   loadEcosystemWatchlistTableCompact,
+  saveEcosystemColumnDisplayPreset,
   saveEcosystemWatchlistHiddenColumns,
   saveEcosystemWatchlistTableCompact,
 } from "@/src/lib/ecosystem-watchlist-column-visibility";
@@ -204,6 +207,30 @@ function ecoSortModeHelp(mode: "column" | "dip_rank" | "deep_value_rank"): strin
   return "深掘り（Deep）探索。Z が強くマイナス＝直近だけ相対的に冷えた銘柄を上位へ。落率と CUM・A を併読して優先度を作ります。";
 }
 
+function bookmarkInitialEcoHidden(
+  items: EcosystemCrossThemeBookmarkItem[],
+): EcosystemWatchlistColId[] {
+  if (typeof window === "undefined") return [];
+  const preset = loadEcosystemColumnDisplayPreset();
+  const order = loadEcosystemWatchlistColumnOrder();
+  const isDefensive = items.some((e) => (e.holderTags?.length ?? 0) > 0);
+  const base = visibleEcoColumnsStructural(order, {
+    isDefensiveTheme: isDefensive,
+    ecoShowValueCols: false,
+  });
+  const togglable = base.filter((id) => id !== "asset");
+  if (preset === "full") {
+    saveEcosystemWatchlistHiddenColumns([]);
+    return [];
+  }
+  if (preset === "medium" || preset === "simple") {
+    const h = ecosystemHiddenIdsForDisplayPreset(preset, togglable);
+    saveEcosystemWatchlistHiddenColumns(h);
+    return h;
+  }
+  return loadEcosystemWatchlistHiddenColumns();
+}
+
 export function EcosystemBookmarksClient({ initialItems }: { initialItems: EcosystemCrossThemeBookmarkItem[] }) {
   const router = useRouter();
   const { openTradeForm, data: dashboardPayload, loadDashboard } = useDashboardData();
@@ -254,7 +281,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
   const [ecoLynchLensColumnUiByFilter, setEcoLynchLensColumnUiByFilter] =
     useState<EcoLynchLensColumnUiByFilter>({});
   const [ecoColumnOrder, setEcoColumnOrder] = useState<EcosystemWatchlistColId[]>(loadEcosystemWatchlistColumnOrder);
-  const [ecoHiddenColumnIds, setEcoHiddenColumnIds] = useState(() => loadEcosystemWatchlistHiddenColumns());
+  const [ecoHiddenColumnIds, setEcoHiddenColumnIds] = useState(() => bookmarkInitialEcoHidden(initialItems));
   const [ecoTableCompact, setEcoTableCompact] = useState(loadEcosystemWatchlistTableCompact);
 
   const [ecoEditingId, setEcoEditingId] = useState<string | null>(null);
@@ -478,6 +505,20 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
 
   const columnToolbarEcoBaseIds = ecoBaseVisibleColumnIds;
 
+  const applyEcoColumnDisplayPreset = useCallback(
+    (preset: "full" | "medium" | "simple") => {
+      const togglable = ecoBaseVisibleColumnIds.filter((id) => id !== "asset");
+      const next = ecosystemHiddenIdsForDisplayPreset(preset, togglable);
+      persistEcoHiddenColumnIds(next);
+      saveEcosystemColumnDisplayPreset(preset);
+    },
+    [ecoBaseVisibleColumnIds, persistEcoHiddenColumnIds],
+  );
+
+  const markEcoColumnDisplayPresetCustom = useCallback(() => {
+    saveEcosystemColumnDisplayPreset("custom");
+  }, []);
+
   const ecoVisibleColumnIds = useMemo(() => {
     if (ecoLynchLensColumnIds == null) {
       return applyEcosystemWatchlistUserHidden(ecoBaseVisibleColumnIds, ecoHiddenColumnIds);
@@ -576,6 +617,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
     (colId: EcosystemWatchlistColId) => {
       if (colId === "asset") return;
       if (effectiveHiddenColumnIds.includes(colId)) return;
+      saveEcosystemColumnDisplayPreset("custom");
       handleEcoHiddenColumnIdsChange([...effectiveHiddenColumnIds, colId]);
     },
     [effectiveHiddenColumnIds, handleEcoHiddenColumnIdsChange],
@@ -1136,8 +1178,11 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
               <div className="shrink-0 rounded-lg border border-border/80 bg-card/40 p-1.5">
                 <EcosystemWatchlistColumnToolbar
                   baseVisibleColumnIds={columnToolbarEcoBaseIds}
+                  userHiddenColumnIds={ecoHiddenColumnIds}
                   hiddenColumnIds={effectiveHiddenColumnIds}
                   setHiddenColumnIds={handleEcoHiddenColumnIdsChange}
+                  applyDisplayPreset={applyEcoColumnDisplayPreset}
+                  markDisplayPresetCustom={markEcoColumnDisplayPresetCustom}
                   compactTable={ecoTableCompact}
                   setCompactTable={persistEcoTableCompact}
                   isDefensiveTheme={isDefensiveTheme}
@@ -1302,9 +1347,9 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
 
           <div
             className={cn(
-              "overflow-x-auto relative",
+              "relative w-full max-w-full overflow-x-auto overscroll-x-contain touch-auto [-webkit-overflow-scrolling:touch]",
               ecoTableCompact &&
-                "[&_thead_th]:!px-2.5 [&_thead_th]:!py-2 [&_thead_th]:!text-[9px] [&_thead_th]:!tracking-[0.08em] [&_tbody_td]:!px-2.5 [&_tbody_td]:!py-1.5 [&_tbody_td]:!text-[11px]",
+                "[&_thead_th]:!px-2.5 [&_thead_th]:!py-2 [&_thead_th]:!text-[9px] [&_thead_th]:!tracking-[0.08em] [&_tbody_td]:!px-2.5 [&_tbody_td]:!py-1.5 [&_tbody_td]:!text-[11px] [&_tfoot_td]:!px-2.5 [&_tfoot_td]:!py-2 [&_tfoot_td]:!text-[10px]",
             )}
           >
             <DndContext
@@ -1312,7 +1357,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
               collisionDetection={closestCenter}
               onDragEnd={handleEcoColumnDragEnd}
             >
-              <table className="w-full table-fixed text-left text-sm">
+              <table className="w-full min-w-[1200px] text-left text-xs lg:text-sm">
                 <SortableContext items={ecoVisibleColumnIds} strategy={horizontalListSortingStrategy}>
                   <StructuralEcosystemThead
                     ecoVisibleColumnIds={ecoVisibleColumnIds}
@@ -1322,7 +1367,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
                     onRequestHideColumn={handleEcoHeaderHideColumn}
                   />
                 </SortableContext>
-                <tbody className="divide-y divide-border/50">
+                <tbody className="divide-y divide-border/60">
                   {ecosystemSorted.length === 0 && items.length > 0 ? (
                     <tr>
                       <td colSpan={ecosystemColSpan} className="px-6 py-8 text-center text-sm text-muted-foreground">
@@ -1366,7 +1411,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
                         <tr
                           id={`eco-row-${e.id}`}
                           className={cn(
-                            "group hover:bg-muted/45 transition-all scroll-mt-24",
+                            "group hover:bg-muted/60 transition-all scroll-mt-24",
                             regionDisplayFromYahooCountry(e.yahooCountry).rowBg,
                           )}
                         >

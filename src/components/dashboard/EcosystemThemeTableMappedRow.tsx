@@ -369,8 +369,8 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                   stickyFirst,
                 )}
               >
-                <div className="flex min-w-0 flex-col gap-1.5">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5">
                     <button
                       type="button"
                       onClick={() => void handleToggleEcosystemBookmark(e.id)}
@@ -719,7 +719,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`px-3 py-3 align-middle min-w-[7.5rem] max-w-[11rem] text-center ${stickyFirst}`}
+                className={`px-3 py-4 align-middle min-w-[7.5rem] max-w-[11rem] text-center ${stickyFirst}`}
               >
                 <div className="mx-auto flex max-w-full flex-col items-center gap-1 text-center">
                   {computedLynch ? (
@@ -749,7 +749,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
           case "trend5d": {
             const { series, hasIntradayPulse } = fiveDayPulseForEcosystem(e);
             return (
-              <td key={colId} className={`px-4 py-3 align-middle text-center ${stickyFirst}`}>
+              <td key={colId} className={`px-4 py-4 align-middle text-center ${stickyFirst}`}>
                 {series.length === 0 ? (
                   <span className="text-muted-foreground text-xs">No data</span>
                 ) : (
@@ -762,7 +762,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`px-3 py-3 text-center font-mono text-xs tabular-nums text-foreground/90 ${stickyFirst}`}
+                className={`px-3 py-4 text-center font-mono text-xs tabular-nums text-foreground/90 ${stickyFirst}`}
                 title={
                   e.listingDate
                     ? `初回取引日（参照）: ${e.listingDate}（IPO 日とは限らない）`
@@ -776,7 +776,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`px-4 py-3 text-right font-mono text-xs text-foreground/90 ${stickyFirst}`}
+                className={`px-4 py-4 text-right font-mono text-xs text-foreground/90 ${stickyFirst}`}
                 title={e.marketCap != null ? `時価総額（参照・同期時点）: ${e.marketCap}` : undefined}
               >
                 {ecoFmtMarketCapShort(e.marketCap)}
@@ -788,7 +788,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`px-4 py-3 text-right font-mono text-xs font-bold tabular-nums ${tone} ${stickyFirst}`}
+                className={`px-4 py-4 text-right font-mono text-xs font-bold tabular-nums ${tone} ${stickyFirst}`}
                 title="長期変動率: 日足の最古〜最新（adj ペア優先）。チャート取得不能時は現在価÷listing_price（IPO 公式ではない）"
               >
                 {pf == null || !Number.isFinite(pf) ? "—" : (
@@ -802,7 +802,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
           }
           case "earnings":
             return (
-              <td key={colId} className={`px-4 py-3 text-center ${stickyFirst}`}>
+              <td key={colId} className={`px-4 py-4 text-center ${stickyFirst}`}>
                 {e.nextEarningsDate ? (
                   <div className="flex flex-col items-center gap-0.5">
                     <span className="text-[11px] font-bold font-mono tabular-nums text-foreground">
@@ -817,7 +817,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "holder":
             return (
-              <td key={colId} className={`px-6 py-3 align-middle ${stickyFirst}`}>
+              <td key={colId} className={`px-6 py-4 align-middle ${stickyFirst}`}>
                 <div className="flex min-h-[2.5rem] flex-wrap content-center items-center justify-center gap-1.5">
                   {e.holderTags.length > 0 ? (
                     e.holderTags.map((h) => (
@@ -834,7 +834,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "dividend":
             return (
-              <td key={colId} className={`px-6 py-3 align-top min-w-0 ${stickyFirst}`}>
+              <td key={colId} className={`px-6 py-4 align-top min-w-0 ${stickyFirst}`}>
                 <div className="flex flex-col gap-2">
                   <div className="whitespace-nowrap">{dividendCalendar(e.dividendMonths)}</div>
                   {isDefensiveTheme ? <EcosystemDividendTradingStrip e={e} /> : null}
@@ -856,7 +856,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`whitespace-nowrap px-4 py-3 text-right font-mono text-xs font-bold tabular-nums ${dividendPayoutCellClassName(po)} ${stickyFirst}`}
+                className={`whitespace-nowrap px-4 py-4 text-right font-mono text-xs font-bold tabular-nums ${dividendPayoutCellClassName(po)} ${stickyFirst}`}
                 title="配当性向 = 年間配当（1株）÷ TTM EPS ×100。高すぎると内部留保が薄く減配リスクに注意"
               >
                 {formatDividendPayoutPercent(po)}
@@ -865,7 +865,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
           }
           case "defensiveRole":
             return (
-              <td key={colId} className={`min-w-[10rem] px-6 py-3 align-top ${stickyFirst}`}>
+              <td key={colId} className={`min-w-[10rem] px-6 py-4 align-top ${stickyFirst}`}>
                 <div className="hidden md:block">
                   {e.defensiveStrength ? (
                     <p
@@ -901,7 +901,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "research":
             return (
-              <td key={colId} className={`min-w-[12rem] px-6 py-3 align-top ${stickyFirst}`}>
+              <td key={colId} className={`min-w-[12rem] px-6 py-4 align-top ${stickyFirst}`}>
                 <div className="flex flex-col gap-1">
                   <div className="flex flex-row flex-wrap items-center gap-2">
                     <span className="rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
@@ -933,7 +933,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "role":
             return (
-              <td key={colId} className={`min-w-[10rem] px-6 py-3 align-top ${stickyFirst}`}>
+              <td key={colId} className={`min-w-[10rem] px-6 py-4 align-top ${stickyFirst}`}>
                 {e.role ? (
                   <div
                     className={cn(
@@ -951,13 +951,13 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "viScore":
             return (
-              <td key={colId} className={`px-4 py-3 align-middle ${stickyFirst}`}>
+              <td key={colId} className={`px-4 py-4 align-middle ${stickyFirst}`}>
                 <EcosystemViScoreBar viScore={e.viScore ?? null} />
               </td>
             );
           case "ruleOf40":
             return (
-              <td key={colId} className={`px-6 py-3 text-right font-mono text-xs ${stickyFirst}`}>
+              <td key={colId} className={`px-6 py-4 text-right font-mono text-xs ${stickyFirst}`}>
                 {(() => {
                   const t = ecoRuleOf40Tone(e.ruleOf40);
                   const nvdaExtremeMetabolism =
@@ -986,7 +986,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "fcfYield":
             return (
-              <td key={colId} className={`px-6 py-3 text-right font-mono text-xs ${stickyFirst}`}>
+              <td key={colId} className={`px-6 py-4 text-right font-mono text-xs ${stickyFirst}`}>
                 {(() => {
                   const t = ecoFcfYieldTone(e.fcfYield);
                   return (
@@ -999,7 +999,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "netCash":
             return (
-              <td key={colId} className={`px-6 py-3 text-right font-mono text-xs ${stickyFirst}`}>
+              <td key={colId} className={`px-6 py-4 text-right font-mono text-xs ${stickyFirst}`}>
                 {e.netCash != null && Number.isFinite(e.netCash) ? (
                   <span title={METRIC_HEADER_TIP.netCash}>
                     {formatLocalPriceForView(
@@ -1016,7 +1016,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "netCashYield":
             return (
-              <td key={colId} className={`px-6 py-3 text-right font-mono text-xs ${stickyFirst}`}>
+              <td key={colId} className={`px-6 py-4 text-right font-mono text-xs ${stickyFirst}`}>
                 {(() => {
                   const v = e.netCashYieldPercent;
                   if (v == null || !Number.isFinite(v)) {
@@ -1033,7 +1033,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "judgment":
             return (
-              <td key={colId} className={`px-4 py-3 text-center align-middle ${stickyFirst}`}>
+              <td key={colId} className={`px-4 py-4 text-center align-middle ${stickyFirst}`}>
                 <div className="flex flex-col items-center gap-1.5">
                   <JudgmentBadge status={e.judgmentStatus} reason={e.judgmentReason} />
                   {resourceSync && resourceSync.judgment && (
@@ -1066,7 +1066,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`px-6 py-3 text-right font-mono text-xs font-bold ${
+                className={`px-6 py-4 text-right font-mono text-xs font-bold ${
                   isDefensiveTheme
                     ? defensiveZClass(zEco)
                     : zEco == null
@@ -1085,7 +1085,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`px-6 py-3 text-right font-mono text-xs font-bold ${
+                className={`px-6 py-4 text-right font-mono text-xs font-bold ${
                   ddEco == null ? "text-muted-foreground" : ddEco < -10 ? "text-rose-400" : "text-foreground"
                 } ${stickyFirst}`}
               >
@@ -1096,7 +1096,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums text-foreground ${stickyFirst}`}
+                className={`whitespace-nowrap px-6 py-4 text-right font-mono font-bold tabular-nums text-foreground ${stickyFirst}`}
                 title={
                   e.trailingPe != null || e.forwardPe != null
                     ? `PE trailing=${e.trailingPe ?? "—"} / forward=${e.forwardPe ?? "—"}`
@@ -1116,7 +1116,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums text-foreground ${stickyFirst}`}
+                className={`whitespace-nowrap px-6 py-4 text-right font-mono font-bold tabular-nums text-foreground ${stickyFirst}`}
                 title={METRIC_HEADER_TIP.pbr}
               >
                 {fmtPbr(ecoPbrOf(e))}
@@ -1128,7 +1128,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td
                 key={colId}
                 className={cn(
-                  "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums align-middle",
+                  "whitespace-nowrap px-6 py-4 text-right font-mono font-bold tabular-nums align-middle",
                   pegRatioTextClass(peg),
                   stickyFirst,
                 )}
@@ -1156,7 +1156,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td
                 key={colId}
                 className={cn(
-                  "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums",
+                  "whitespace-nowrap px-6 py-4 text-right font-mono font-bold tabular-nums",
                   totalReturnYieldRatioTextClass(trr),
                   stickyFirst,
                 )}
@@ -1170,7 +1170,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             return (
               <td
                 key={colId}
-                className={`whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums text-foreground ${stickyFirst}`}
+                className={`whitespace-nowrap px-6 py-4 text-right font-mono font-bold tabular-nums text-foreground ${stickyFirst}`}
                 title={
                   e.expectedGrowth != null && Number.isFinite(e.expectedGrowth)
                     ? `内部値(小数)=${e.expectedGrowth.toFixed(6)}`
@@ -1185,7 +1185,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td
                 key={colId}
                 className={cn(
-                  "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums",
+                  "whitespace-nowrap px-6 py-4 text-right font-mono font-bold tabular-nums",
                   (() => {
                     const eps = ecoEpsOf(e);
                     if (eps == null) return "text-muted-foreground";
@@ -1209,7 +1209,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td
                 key={colId}
                 className={cn(
-                  "whitespace-nowrap px-6 py-3 text-right font-mono font-bold tabular-nums",
+                  "whitespace-nowrap px-6 py-4 text-right font-mono font-bold tabular-nums",
                   (() => {
                     const fe = ecoForecastEpsOf(e);
                     if (fe == null) return "text-muted-foreground";
@@ -1233,7 +1233,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td
                 key={colId}
                 title={ecosystemMappedAlphaCellTooltip(e)}
-                className={`px-6 py-3 text-right font-mono font-bold ${
+                className={`px-6 py-4 text-right font-mono font-bold ${
                   e.latestAlpha != null && Number.isFinite(e.latestAlpha) ? pctClass(e.latestAlpha) : "text-muted-foreground"
                 } ${stickyFirst}`}
               >
@@ -1263,7 +1263,7 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "cumTrend":
             return (
-              <td key={colId} title={ecosystemCumulativeSparklineTooltip(e)} className={`px-6 py-3 ${stickyFirst}`}>
+              <td key={colId} title={ecosystemCumulativeSparklineTooltip(e)} className={`px-6 py-4 ${stickyFirst}`}>
                 <div className="flex flex-col items-center gap-1">
                   {e.isUnlisted ? (
                     <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -1279,14 +1279,14 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
               <td
                 key={colId}
                 title={e.volumeRatio != null ? `本日出来高 / 10 日平均: ${e.volumeRatio.toFixed(2)}×` : undefined}
-                className={cn("px-4 py-3 text-right font-mono text-xs tabular-nums", volumeRatioToneClass(e.volumeRatio), stickyFirst)}
+                className={cn("px-4 py-4 text-right font-mono text-xs tabular-nums", volumeRatioToneClass(e.volumeRatio), stickyFirst)}
               >
                 {fmtVolumeRatioCell(e.volumeRatio)}
               </td>
             );
           case "price":
             return (
-              <td key={colId} className={`min-w-[8rem] whitespace-nowrap px-6 py-3 text-right align-middle ${stickyFirst}`}>
+              <td key={colId} className={`min-w-[8rem] whitespace-nowrap px-6 py-4 text-right align-middle ${stickyFirst}`}>
                 <div className="flex min-h-[3.25rem] flex-col items-end justify-center gap-1.5">
                   <span className="font-mono text-xs text-foreground tabular-nums leading-none">
                     {formatEcoPriceForView(e)}

@@ -203,7 +203,7 @@ export function EcosystemWatchlistTableRow({
   return (
     <tr
       id={`eco-row-${e.id}`}
-      className={cn("group hover:bg-muted/45 transition-all scroll-mt-24", region.rowBg)}
+      className={cn("group hover:bg-muted/60 transition-all scroll-mt-24", region.rowBg)}
     >
       {ecoVisibleColumnIds.map((colId, colIdx) => {
         const stickyFirst = colIdx === 0 ? stickyTdFirst : "";

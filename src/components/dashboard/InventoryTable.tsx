@@ -102,8 +102,12 @@ import {
 } from "@/src/lib/inventory-column-order";
 import {
   applyInventoryUserHidden,
+  INVENTORY_COLUMN_ALWAYS_VISIBLE,
+  inventoryHiddenIdsForDisplayPreset,
+  loadInventoryColumnDisplayPreset,
   loadInventoryHiddenColumns,
   loadInventoryTableCompact,
+  saveInventoryColumnDisplayPreset,
   saveInventoryHiddenColumns,
   saveInventoryTableCompact,
 } from "@/src/lib/inventory-column-visibility";
@@ -569,7 +573,7 @@ function SortableInventoryTh({
    * `disabled: false` で常にドラッグ可。
    */
   disableColumnReorder?: boolean;
-  /** ヘッダ上で右クリックしたときに列を非表示（Asset/ブックマーク除く）。誤操作防止のためコンテキストメニューではなく即時非表示 */
+  /** ヘッダ上で右クリックしたときに列を非表示（Asset 除く）。誤操作防止のためコンテキストメニューではなく即時非表示 */
   onRequestHideColumn?: (id: InventoryColId) => void;
   children: React.ReactNode;
 }) {
@@ -592,7 +596,7 @@ function SortableInventoryTh({
       title={metricHelpText ? undefined : title}
       onContextMenu={(e) => {
         if (!onRequestHideColumn) return;
-        if (id === "bookmark" || id === "asset") return;
+        if (id === "asset") return;
         e.preventDefault();
         onRequestHideColumn(id);
       }}
@@ -724,9 +728,22 @@ export function InventoryTable({
   }
 
   useEffect(() => {
-    setColumnOrder(loadInventoryColumnOrder());
-    setInventoryHiddenColumnIds(loadInventoryHiddenColumns());
+    const order = loadInventoryColumnOrder();
+    setColumnOrder(order);
     setInventoryTableCompact(loadInventoryTableCompact());
+    const preset = loadInventoryColumnDisplayPreset();
+    const base = order.filter((id) => {
+      if (id === "deviation" || id === "drawdown") return false;
+      return true;
+    });
+    const togglable = base.filter((id) => !INVENTORY_COLUMN_ALWAYS_VISIBLE.has(id));
+    if (preset === "full" || preset === "medium" || preset === "simple") {
+      const h = inventoryHiddenIdsForDisplayPreset(preset, togglable);
+      setInventoryHiddenColumnIds(h);
+      saveInventoryHiddenColumns(h);
+    } else {
+      setInventoryHiddenColumnIds(loadInventoryHiddenColumns());
+    }
   }, []);
 
   const persistInventoryHiddenColumnIds = useCallback((next: InventoryColId[]) => {
@@ -755,6 +772,22 @@ export function InventoryTable({
     [columnOrder, showValueCols],
   );
 
+  const applyInventoryColumnDisplayPreset = useCallback(
+    (preset: "full" | "medium" | "simple") => {
+      const togglable = inventoryBaseVisibleColumnIds.filter(
+        (id) => !INVENTORY_COLUMN_ALWAYS_VISIBLE.has(id),
+      );
+      const next = inventoryHiddenIdsForDisplayPreset(preset, togglable);
+      persistInventoryHiddenColumnIds(next);
+      saveInventoryColumnDisplayPreset(preset);
+    },
+    [inventoryBaseVisibleColumnIds, persistInventoryHiddenColumnIds],
+  );
+
+  const markInventoryColumnDisplayPresetCustom = useCallback(() => {
+    saveInventoryColumnDisplayPreset("custom");
+  }, []);
+
   const lynchLensKey = inventoryLynchLensKeyFromFilter(lynchFilter);
   /** 件数は `stocks` 全件（構造検索・リンチ行フィルター等のテーブル絞り込み前） */
   const lynchCountSnapshot = useMemo(() => aggregateLynchCategoryCounts(stocks), [stocks]);
@@ -777,7 +810,11 @@ export function InventoryTable({
     }
     const fk = lynchFilter as InventoryLynchLensUiFilterKey;
     const { extras, hidden } = inventoryLynchLensColumnUiByFilter[fk] ?? { extras: [], hidden: [] };
-    const mergedHidden = mergeInventoryLynchLensHiddenForDisplay(hidden, inventoryHiddenColumnIds);
+    const lensShowsLynch = lynchLensColumnIds.includes("lynch");
+    const globalHiddenForMerge = lensShowsLynch
+      ? inventoryHiddenColumnIds.filter((id) => id !== "lynch")
+      : inventoryHiddenColumnIds;
+    const mergedHidden = mergeInventoryLynchLensHiddenForDisplay(hidden, globalHiddenForMerge);
     const withExtras = Array.from(new Set([...lynchLensColumnIds, ...extras]));
     return applyInventoryUserHidden(withExtras, mergedHidden);
   }, [
@@ -867,8 +904,9 @@ export function InventoryTable({
 
   const handleInventoryHeaderHideColumn = useCallback(
     (colId: InventoryColId) => {
-      if (colId === "bookmark" || colId === "asset") return;
+      if (colId === "asset") return;
       if (effectiveHiddenColumnIds.includes(colId)) return;
+      saveInventoryColumnDisplayPreset("custom");
       handleInventoryHiddenColumnIdsChange([...effectiveHiddenColumnIds, colId]);
     },
     [effectiveHiddenColumnIds, handleInventoryHiddenColumnIdsChange],
@@ -1420,8 +1458,11 @@ export function InventoryTable({
           <div className="shrink-0 rounded-lg border border-border/80 bg-card/40 p-1.5">
             <InventoryTableColumnToolbar
               baseVisibleColumnIds={inventoryBaseVisibleColumnIds}
+              userHiddenColumnIds={inventoryHiddenColumnIds}
               hiddenColumnIds={effectiveHiddenColumnIds}
               setHiddenColumnIds={handleInventoryHiddenColumnIdsChange}
+              applyDisplayPreset={applyInventoryColumnDisplayPreset}
+              markDisplayPresetCustom={markInventoryColumnDisplayPresetCustom}
               compactTable={inventoryTableCompact}
               setCompactTable={persistInventoryTableCompact}
             />
@@ -1547,20 +1588,6 @@ export function InventoryTable({
                             >
                               リンチ{sortMark("lynch")}
                             </button>
-                          </SortableInventoryTh>
-                        );
-                      case "bookmark":
-                        return (
-                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
-                            key={colId}
-                            id={colId}
-                            align="center"
-                            className="px-2 py-4 w-10 text-center"
-                            metricHelpText={METRIC_HEADER_TIP.bookmark}
-                          >
-                            <span className="pointer-events-none inline-flex justify-center" aria-hidden>
-                              <Star className="h-3.5 w-3.5 text-muted-foreground" />
-                            </span>
                           </SortableInventoryTh>
                         );
                       case "listing":
@@ -2047,6 +2074,19 @@ export function InventoryTable({
                             <div className="flex min-w-0 flex-col gap-1">
                               <div className="flex min-w-0 items-center gap-1.5">
                                 <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBookmarkClick(stock)}
+                                    className={`inline-flex shrink-0 rounded-md p-0.5 transition-colors hover:bg-muted/80 ${
+                                      bookmarkDisplayed(stock) ? "text-accent-amber" : "text-muted-foreground"
+                                    }`}
+                                    title={bookmarkDisplayed(stock) ? "ブックマークを外す" : "ブックマークに追加"}
+                                    aria-pressed={bookmarkDisplayed(stock)}
+                                  >
+                                    <Star
+                                      className={`h-3.5 w-3.5 ${bookmarkDisplayed(stock) ? "fill-accent-amber text-accent-amber" : ""}`}
+                                    />
+                                  </button>
                                   {opp ? (
                                     <span
                                       className="shrink-0 text-base leading-none"
@@ -2170,24 +2210,6 @@ export function InventoryTable({
                           </td>
                         );
                       }
-                      case "bookmark":
-                        return (
-                          <td key={colId} className="px-2 py-4 text-center align-middle">
-                            <button
-                              type="button"
-                              onClick={() => handleBookmarkClick(stock)}
-                              className={`inline-flex rounded-md p-1 transition-colors hover:bg-muted/80 ${
-                                bookmarkDisplayed(stock) ? "text-accent-amber" : "text-muted-foreground"
-                              }`}
-                              title={bookmarkDisplayed(stock) ? "ブックマークを外す" : "ブックマークに追加"}
-                              aria-pressed={bookmarkDisplayed(stock)}
-                            >
-                              <Star
-                                className={`h-4 w-4 ${bookmarkDisplayed(stock) ? "fill-accent-amber text-accent-amber" : ""}`}
-                              />
-                            </button>
-                          </td>
-                        );
                       case "listing":
                         return (
                           <td
@@ -2818,7 +2840,6 @@ export function InventoryTable({
                           : ""}
                       </td>
                     );
-                  case "bookmark":
                   case "lynch":
                   case "listing":
                   case "mktCap":

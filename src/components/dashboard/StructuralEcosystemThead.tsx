@@ -135,7 +135,7 @@ export function StructuralEcosystemThead({
   onRequestHideColumn?: (id: EcosystemWatchlistColId) => void;
 }) {
   return (
-    <thead className="sticky top-0 z-20 bg-muted/90 text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em] backdrop-blur-md supports-[backdrop-filter]:bg-muted/75 border-b border-border shadow-sm">
+    <thead className="sticky top-0 z-30 bg-background/85 text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em] backdrop-blur-md supports-[backdrop-filter]:bg-background/75 border-b border-border shadow-sm">
       <tr>
         {ecoVisibleColumnIds.map((colId, idx) => {
           const sfirst = idx === 0 ? stickyThFirst : "";
