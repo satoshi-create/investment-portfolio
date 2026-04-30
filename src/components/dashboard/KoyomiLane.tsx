@@ -3,8 +3,9 @@
 import React, { useLayoutEffect, useMemo, useRef } from "react";
 import { AlertTriangle, Loader2, Orbit, Radio, RefreshCw } from "lucide-react";
 
-import { ymdAddDays, type EarningsQualityKind } from "@/src/lib/alpha-logic";
+import { type EarningsQualityKind } from "@/src/lib/alpha-logic";
 import { cn } from "@/src/lib/cn";
+import { ymdAddDaysJst } from "@/src/lib/koyomi-week-jst";
 import type { KoyomiLaneItem, KoyomiLaneResponse, KoyomiThemeLane } from "@/src/types/koyomi";
 
 function labelForQuality(k: EarningsQualityKind): string {
@@ -59,7 +60,7 @@ function enumerateYmdIncl(startYmd: string, endYmd: string): string[] {
   while (cur <= e && guard++ < 400) {
     out.push(cur);
     if (cur === e) break;
-    cur = ymdAddDays(cur, 1);
+    cur = ymdAddDaysJst(cur, 1);
   }
   return out;
 }
@@ -128,7 +129,7 @@ type KoyomiLaneProps = {
 };
 
 /**
- * 構造投資テーマ = 1 行のスイムレーン。横軸は UTC 暦日（Koyomi API と同じ `startYmd`…`endYmd`）。
+ * 構造投資テーマ = 1 行のスイムレーン。横軸は **JST 暦日**（Koyomi API の `startYmd`…`endYmd` と一致）。
  */
 export function KoyomiLane({
   data,
@@ -282,7 +283,7 @@ export function KoyomiLane({
       ) : null}
 
       <p className="shrink-0 text-[10px] font-mono text-muted-foreground leading-relaxed">
-        タクティカル掲載: {data.startYmd} … {data.endYmd}（前後 2 週間 · 今日 {data.todayYmd} UTC） · 決算品質は EPS/売上サプライズ + 価格反応。R40
+        タクティカル掲載: {data.startYmd} … {data.endYmd}（当週 7 日 · JST 月〜日 · 今日 {data.todayYmd} JST） · 決算品質は EPS/売上サプライズ + 価格反応。R40
         は Yahoo 四半期の売上成長% + FCF マージン%。筋肉は売上成長% + 営業利益率%の四半期比。Mispriced は筋肉改善かつ当日騰落率 ≤ -3%（Yahoo
         セッション%）。横スクロールは「今日」列を中央に近づけます。
       </p>
@@ -455,9 +456,14 @@ function LaneChip({ it, comfortable }: { it: KoyomiLaneItem; comfortable: boolea
   const epic = it.isEpicenter;
   const r40Line = `R40 ${formatRuleOf40Display(it.ruleOf40Current)}`;
   const muscleLine = `筋 ${formatRuleOf40Display(it.muscleScoreCurrent)}`;
+  const companyShort =
+    it.companyName != null && it.companyName.trim().length > 0 ? it.companyName.trim() : null;
   const deltaOverlay = muscleDeltaOverlayStyle(it);
   const showFlex = it.muscleDeltaStatus === "positive";
   const dayChg = it.regularMarketChangePercent;
+
+  /** 数値データがまだない（非同期取得中または失敗）状態 */
+  const isPendingData = it.ruleOf40Current === null && it.muscleScoreCurrent === null;
 
   return (
     <li
@@ -468,8 +474,9 @@ function LaneChip({ it, comfortable }: { it: KoyomiLaneItem; comfortable: boolea
         qualityChipClass(it.qualityKind, it.hasOutcome),
         epic && "ring-2 ring-rose-400/70 shadow-[0_0_10px_rgba(244,63,94,0.35)]",
         it.isMispriced && "ring-2 ring-amber-400/90 ring-offset-0 shadow-[0_0_0_2px_rgba(251,191,36,0.45)]",
+        isPendingData && "opacity-85 border-dashed",
       )}
-      title={`${it.displayTicker} · ${r40Line} · ${muscleLine} · 当日 ${dayChg != null ? `${dayChg > 0 ? "+" : ""}${formatRuleOf40Display(dayChg)}%` : "—"} · ${it.qualityKind}${taint > 0.02 ? ` · 負の波及 ${(taint * 100).toFixed(0)}%` : ""}`}
+      title={`${it.displayTicker}${companyShort ? ` · ${companyShort}` : ""} · ${r40Line} · ${muscleLine} · 当日 ${dayChg != null ? `${dayChg > 0 ? "+" : ""}${formatRuleOf40Display(dayChg)}%` : "—"} · ${it.qualityKind}${taint > 0.02 ? ` · 負の波及 ${(taint * 100).toFixed(0)}%` : ""}`}
     >
       {deltaOverlay ? (
         <div className="pointer-events-none absolute inset-0 z-[1]" style={deltaOverlay} aria-hidden />
@@ -481,35 +488,52 @@ function LaneChip({ it, comfortable }: { it: KoyomiLaneItem; comfortable: boolea
           aria-hidden
         />
       ) : null}
-      <span
-        className={cn(
-          "relative z-[3] max-w-full min-w-0 shrink-1 font-mono font-bold tracking-tight break-all",
-          comfortable ? "text-xs sm:text-sm" : "text-[8px] sm:text-[9px]",
-        )}
-      >
-        {it.displayTicker}
+      <span className="relative z-[3] flex min-w-0 max-w-full flex-col gap-0.5">
+        <span
+          className={cn(
+            "inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-1.5 gap-y-0",
+            comfortable ? "text-xs sm:text-sm" : "text-[8px] sm:text-[9px]",
+          )}
+        >
+          <span className="font-mono font-bold tracking-tight break-all text-foreground">{it.displayTicker}</span>
+          {it.ruleOf40Current !== null ? (
+            <span className="font-mono font-semibold tabular-nums text-cyan-100/95" aria-label={`Rule of 40 最新 ${formatRuleOf40Display(it.ruleOf40Current)}`}>
+              R40 {formatRuleOf40Display(it.ruleOf40Current)}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 font-mono text-[9px] text-muted-foreground animate-pulse">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              R40...
+            </span>
+          )}
+        </span>
+        {companyShort ? (
+          <span
+            className={cn(
+              "font-sans font-medium text-muted-foreground/95 line-clamp-2 break-words [overflow-wrap:anywhere]",
+              comfortable ? "text-[9px] sm:text-[10px]" : "text-[6px] sm:text-[7px]",
+            )}
+            title={companyShort}
+          >
+            {companyShort}
+          </span>
+        ) : null}
       </span>
       {showFlex ? (
         <span className="relative z-[3] shrink-0 text-sm sm:text-base leading-none" aria-hidden title="筋肉改善">
           💪
         </span>
       ) : null}
-      <span
-        className={cn(
-          "relative z-[3] min-w-0 font-mono font-semibold tabular-nums text-foreground/95 break-words [overflow-wrap:anywhere]",
-          comfortable ? "text-[11px] sm:text-xs" : "text-[8px] sm:text-[9px]",
-        )}
-      >
-        {r40Line}
-      </span>
-      <span
-        className={cn(
-          "relative z-[3] min-w-0 font-mono font-semibold tabular-nums text-emerald-100/95 break-words [overflow-wrap:anywhere]",
-          comfortable ? "text-[10px] sm:text-[11px]" : "text-[7px] sm:text-[8px]",
-        )}
-      >
-        {muscleLine}
-      </span>
+      {it.muscleScoreCurrent !== null && (
+        <span
+          className={cn(
+            "relative z-[3] min-w-0 font-mono font-semibold tabular-nums text-emerald-100/95 break-words [overflow-wrap:anywhere]",
+            comfortable ? "text-[10px] sm:text-[11px]" : "text-[7px] sm:text-[8px]",
+          )}
+        >
+          {muscleLine}
+        </span>
+      )}
       {dayChg != null && Number.isFinite(dayChg) ? (
         <span
           className={cn(

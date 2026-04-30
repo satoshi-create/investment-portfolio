@@ -2046,6 +2046,15 @@ export function ThemePageClient({
     ],
   );
 
+  const handleEcoHeaderHideColumn = useCallback(
+    (colId: EcosystemWatchlistColId) => {
+      if (colId === "asset") return;
+      if (effectiveHiddenColumnIds.includes(colId)) return;
+      handleEcoHiddenColumnIdsChange([...effectiveHiddenColumnIds, colId]);
+    },
+    [effectiveHiddenColumnIds, handleEcoHiddenColumnIdsChange],
+  );
+
   const ecosystemColSpan = ecoVisibleColumnIds.length;
 
   const ecoColumnSensors = useSensors(
@@ -2054,7 +2063,6 @@ export function ThemePageClient({
   );
 
   function handleEcoColumnDragEnd(event: DragEndEvent) {
-    if (ecoLynchLensKey != null) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setEcoColumnOrder((items) => {
@@ -2170,10 +2178,10 @@ export function ThemePageClient({
   const canRenderContent = data != null;
 
   return (
-    <div className="bg-background text-foreground pb-8 font-sans">
+    <div className="bg-background text-foreground pb-8 font-sans min-h-0">
       <div
         className={cn(
-          "mx-auto w-full max-w-6xl lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[120rem] space-y-8",
+          "mx-auto w-full max-w-6xl lg:max-w-[90rem] xl:max-w-[100rem] 2xl:max-w-[150rem] space-y-8",
           STORY_PANEL_PAGE_SHELL_CLASS,
           STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
         )}
@@ -3382,7 +3390,8 @@ export function ThemePageClient({
                             ecoVisibleColumnIds={ecoVisibleColumnIds}
                             toggleEcoSort={toggleEcoSort}
                             ecoSortMark={ecoSortMark}
-                            disableColumnReorder={ecoLynchLensKey != null}
+                            disableColumnReorder={false}
+                            onRequestHideColumn={handleEcoHeaderHideColumn}
                           />
                         </SortableContext>
                       <tbody className="divide-y divide-border/50">

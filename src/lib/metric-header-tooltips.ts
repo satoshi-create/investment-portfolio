@@ -55,6 +55,7 @@ export const METRIC_HEADER_TIP = {
   pbr: "株価純資産倍率（PBR）。Yahoo `defaultKeyStatistics.priceToBook`。簿価ネガ・投信等では未取得になりやすい。",
   egrowth: "予想 EPS 成長率（年率イメージ）。Yahoo の expectedGrowth を % 表示（内部は小数）。",
   eps: "1株当たり利益。Trailing EPS 優先、なければ Forward（Yahoo）。",
+  forwardEps: "予想 EPS（Forward）。Yahoo `defaultKeyStatistics.forwardEps`。未上場・未取得は —。",
   price:
     "現在値（現地通貨・ビュー通貨で換算表示）と平均取得単価・含み損益%。ライブ時は Yahoo quote、確定は日次終値系列（`priceSource`）。",
   cumTrend:

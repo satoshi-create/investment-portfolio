@@ -21,6 +21,7 @@ export const INVENTORY_COLUMN_IDS = [
   "trr",
   "egrowth",
   "eps",
+  "forecastEps",
   "alpha",
   "position",
   "volRatio",

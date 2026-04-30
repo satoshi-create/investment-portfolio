@@ -37,6 +37,11 @@ function ecoEpsOf(e: ThemeEcosystemWatchItem): number | null {
   return v != null && Number.isFinite(v) ? v : null;
 }
 
+function ecoForecastEpsOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.forwardEps;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
 function ecoListingYmdKey(e: ThemeEcosystemWatchItem): string | null {
   const d = e.listingDate;
   if (d == null || String(d).trim().length < 10) return null;
@@ -147,6 +152,7 @@ export function sortStructuralEcosystemWatchlist<T extends ThemeEcosystemWatchIt
     if (ecoSortKey === "trr") return dir * cmpNum(ecoTrrOf(a), ecoTrrOf(b));
     if (ecoSortKey === "egrowth") return dir * cmpNum(ecoExpectedGrowthOf(a), ecoExpectedGrowthOf(b));
     if (ecoSortKey === "eps") return dir * cmpNum(ecoEpsOf(a), ecoEpsOf(b));
+    if (ecoSortKey === "forecastEps") return dir * cmpNum(ecoForecastEpsOf(a), ecoForecastEpsOf(b));
     if (ecoSortKey === "alpha") return dir * cmpNum(a.latestAlpha, b.latestAlpha);
     if (ecoSortKey === "trend5d") return dir * cmpNum(lastDailyAlphaForTrendSort(a), lastDailyAlphaForTrendSort(b));
     if (ecoSortKey === "cumTrend") return dir * cmpNum(lastCumulativeAlpha(a), lastCumulativeAlpha(b));

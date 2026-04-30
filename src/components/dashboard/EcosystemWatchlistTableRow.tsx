@@ -9,6 +9,7 @@ import { InstitutionalOwnershipSensor } from "@/src/components/dashboard/Institu
 import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
 import { EcosystemCumulativeSparkline } from "@/src/components/dashboard/EcosystemCumulativeSparkline";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
+import { DailyAlphaContextTooltip } from "@/src/components/dashboard/DailyAlphaContextTooltip";
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { ecoFcfYieldTone, ecoRuleOf40Tone } from "@/src/components/dashboard/eco-efficiency-display";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
@@ -80,6 +81,11 @@ function ecoPbrOf(e: ThemeEcosystemWatchItem): number | null {
 
 function ecoEpsOf(e: ThemeEcosystemWatchItem): number | null {
   const v = e.trailingEps ?? e.forwardEps ?? null;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
+function ecoForecastEpsOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.forwardEps;
   return v != null && Number.isFinite(v) ? v : null;
 }
 
@@ -640,7 +646,13 @@ export function EcosystemWatchlistTableRow({
                     : "PE: 未取得"
                 }
               >
-                {fmtPe(ecoPeOf(e))}
+                <DailyAlphaContextTooltip
+                  metricLabel="PER"
+                  dailyValues={e.alphaDailyHistory}
+                  observationDates={e.alphaDailyObservationDates}
+                >
+                  <span className="inline-block w-full text-right">{fmtPe(ecoPeOf(e))}</span>
+                </DailyAlphaContextTooltip>
               </td>
             );
           case "pbr":
@@ -730,13 +742,38 @@ export function EcosystemWatchlistTableRow({
                   })(),
                   stickyFirst,
                 )}
-                title={
-                  e.trailingEps != null || e.forwardEps != null
-                    ? `EPS trailing=${e.trailingEps ?? "—"} / forward=${e.forwardEps ?? "—"}`
-                    : "EPS: 未取得"
-                }
               >
-                {fmtEps(ecoEpsOf(e))}
+                <DailyAlphaContextTooltip
+                  metricLabel="EPS（Trailing 優先）"
+                  dailyValues={e.alphaDailyHistory}
+                  observationDates={e.alphaDailyObservationDates}
+                >
+                  <span className="inline-block w-full text-right">{fmtEps(ecoEpsOf(e))}</span>
+                </DailyAlphaContextTooltip>
+              </td>
+            );
+          case "forecastEps":
+            return (
+              <td
+                key={colId}
+                className={cn(
+                  "px-6 py-4 text-right font-mono font-bold tabular-nums whitespace-nowrap",
+                  (() => {
+                    const fe = ecoForecastEpsOf(e);
+                    if (fe == null) return "text-muted-foreground";
+                    if (fe <= 0) return "text-rose-300";
+                    return "text-cyan-200/90";
+                  })(),
+                  stickyFirst,
+                )}
+              >
+                <DailyAlphaContextTooltip
+                  metricLabel="予想EPS（Forward）"
+                  dailyValues={e.alphaDailyHistory}
+                  observationDates={e.alphaDailyObservationDates}
+                >
+                  <span className="inline-block w-full text-right">{fmtEps(ecoForecastEpsOf(e))}</span>
+                </DailyAlphaContextTooltip>
               </td>
             );
           case "trend5d":

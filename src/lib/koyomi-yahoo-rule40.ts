@@ -212,6 +212,11 @@ export type KoyomiTickerQuarterlyR40 = {
   ruleOf40DeltaStatus: RuleOf40DeltaStatus;
 };
 
+/**
+ * 直近2四半期の Rule of 40（売上成長% + FCF マージン%）: `alpha-logic` の
+ * `computeQuarterlyRuleOf40FromAdjacent` および `computeRuleOf40DeltaStatus`。
+ * 業界用語の「Rule of 55」は本プロダクトでは**別指標未実装**（55 専用ロジックは置かない）。
+ */
 function computeTwoQuarterRuleOf40(sortedNewestFirst: MergedQuarter[]): {
   current: number | null;
   prior: number | null;
@@ -309,19 +314,25 @@ function nextEarningsYmdFromCalendarProbe(qs: unknown, tickerUpper: string): str
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
-async function fetchOneCalendarProbe(input: {
-  ticker: string;
-  providerSymbol?: string | null;
-}): Promise<{ upper: string; nextYmd: string | null } | null> {
+async function fetchOneCalendarProbe(
+  input: {
+    ticker: string;
+    providerSymbol?: string | null;
+  },
+  opts?: { bypassCache?: boolean },
+): Promise<{ upper: string; nextYmd: string | null } | null> {
+  const bypassCache = opts?.bypassCache === true;
   const ticker = input.ticker.trim();
   if (ticker.length === 0) return null;
   const sym = toYahooFinanceSymbol(ticker, input.providerSymbol ?? null);
   if (!sym) return null;
   const upper = ticker.toUpperCase();
   const ck = `cal:${cacheKeyForKoyomi(upper, input.providerSymbol ?? null)}`;
-  const hit = calendarProbeCache.get(ck);
-  if (hit != null && hit.expiresAt > Date.now()) {
-    return { upper, nextYmd: hit.nextYmd };
+  if (!bypassCache) {
+    const hit = calendarProbeCache.get(ck);
+    if (hit != null && hit.expiresAt > Date.now()) {
+      return { upper, nextYmd: hit.nextYmd };
+    }
   }
   try {
     const qs = await yahooFinance.quoteSummary(sym, {
@@ -341,7 +352,7 @@ async function fetchOneCalendarProbe(input: {
  */
 export async function fetchKoyomiCalendarProbeMap(
   inputs: { ticker: string; providerSymbol?: string | null }[],
-  options?: { concurrency?: number; delayMs?: number },
+  options?: { concurrency?: number; delayMs?: number; bypassCache?: boolean },
 ): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>();
   const seen = new Set<string>();
@@ -357,6 +368,7 @@ export async function fetchKoyomiCalendarProbeMap(
 
   const concurrency = Math.max(1, Math.min(18, Math.floor(options?.concurrency ?? 16)));
   const delayMs = Math.max(0, Math.floor(options?.delayMs ?? 0));
+  const bypassCache = options?.bypassCache === true;
 
   let idx = 0;
   async function worker(): Promise<void> {
@@ -364,7 +376,7 @@ export async function fetchKoyomiCalendarProbeMap(
       const i = idx++;
       if (i >= deduped.length) return;
       const it = deduped[i]!;
-      const row = await fetchOneCalendarProbe(it);
+      const row = await fetchOneCalendarProbe(it, { bypassCache });
       if (row != null) out.set(row.upper, row.nextYmd);
       if (delayMs > 0 && i + 1 < deduped.length) await new Promise((r) => setTimeout(r, delayMs));
     }

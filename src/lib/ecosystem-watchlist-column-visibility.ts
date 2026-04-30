@@ -42,6 +42,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
   trr: "TRR",
   egrowth: "予想成長",
   eps: "EPS",
+  forecastEps: "予想EPS",
   alpha: "Cum. α",
   cumTrend: "累積トレンド",
   volRatio: "Vol 比",

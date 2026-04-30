@@ -572,6 +572,15 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
     ],
   );
 
+  const handleEcoHeaderHideColumn = useCallback(
+    (colId: EcosystemWatchlistColId) => {
+      if (colId === "asset") return;
+      if (effectiveHiddenColumnIds.includes(colId)) return;
+      handleEcoHiddenColumnIdsChange([...effectiveHiddenColumnIds, colId]);
+    },
+    [effectiveHiddenColumnIds, handleEcoHiddenColumnIdsChange],
+  );
+
   const ecosystemColSpan = ecoVisibleColumnIds.length;
 
   const ecoColumnSensors = useSensors(
@@ -580,7 +589,6 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
   );
 
   function handleEcoColumnDragEnd(event: DragEndEvent) {
-    if (ecoLynchLensKey != null) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setEcoColumnOrder((ord) => {
@@ -1310,7 +1318,8 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
                     ecoVisibleColumnIds={ecoVisibleColumnIds}
                     toggleEcoSort={toggleEcoSort}
                     ecoSortMark={ecoSortMark}
-                    disableColumnReorder={ecoLynchLensKey != null}
+                    disableColumnReorder={false}
+                    onRequestHideColumn={handleEcoHeaderHideColumn}
                   />
                 </SortableContext>
                 <tbody className="divide-y divide-border/50">

@@ -15,7 +15,8 @@ export function SortableEcoWatchlistTh({
   align = "left",
   title,
   metricHelpText,
-  disableColumnReorder,
+  disableColumnReorder = false,
+  onRequestHideColumn,
   children,
 }: {
   id: EcosystemWatchlistColId;
@@ -24,8 +25,10 @@ export function SortableEcoWatchlistTh({
   title?: string;
   /** 指定時は `th` の `title` を付けず Radix ツールチップ（二重表示防止） */
   metricHelpText?: string;
-  /** リンチレンズ中は列ドラッグを無効化 */
+  /** リンチレンズ中でも列 DnD は有効（並べ替えは保存列順に反映） */
   disableColumnReorder?: boolean;
+  /** ヘッダ右クリックで列を非表示（Asset 除く） */
+  onRequestHideColumn?: (id: EcosystemWatchlistColId) => void;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -46,6 +49,12 @@ export function SortableEcoWatchlistTh({
       className={cn("align-middle", className)}
       title={metricHelpText ? undefined : title}
       scope="col"
+      onContextMenu={(e) => {
+        if (!onRequestHideColumn) return;
+        if (id === "asset") return;
+        e.preventDefault();
+        onRequestHideColumn(id);
+      }}
     >
       <div className={cn("flex w-full min-h-[2.25rem] items-center gap-1", justify)}>
         <button
@@ -57,7 +66,7 @@ export function SortableEcoWatchlistTh({
           }`}
           {...attributes}
           {...(disableColumnReorder ? {} : listeners)}
-          aria-label={disableColumnReorder ? "リンチレンズ中は列の並べ替え不可" : "列をドラッグして並べ替え"}
+          aria-label={disableColumnReorder ? "列の並べ替え不可" : "列をドラッグして並べ替え"}
           aria-disabled={disableColumnReorder}
           disabled={disableColumnReorder}
           onClick={(ev) => ev.stopPropagation()}

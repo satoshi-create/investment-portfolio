@@ -8,7 +8,9 @@ import {
 } from "@/src/lib/alpha-logic";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { getDb, isDbConfigured } from "@/src/lib/db";
+import { isoWeekRangeJstContaining, jstTodayYmd } from "@/src/lib/koyomi-week-jst";
 import {
+  fetchKoyomiCalendarProbeMap,
   fetchKoyomiResearchAndRule40Map,
   type KoyomiTickerMuscle,
   type KoyomiTickerQuarterlyR40,
@@ -19,19 +21,18 @@ import type { KoyomiLaneItem, KoyomiLaneResponse, KoyomiThemeLane } from "@/src/
 export const dynamic = "force-dynamic";
 
 /**
- * スイムレーンに掲げる次回決算日の範囲（UTC）。Yahoo から解決した未来日が狭窓外に出やすいため、前方日を広げる。
+ * テーマ暦の掲載は **今週（JST: 月曜 0:00 〜 日曜を含む 7 暦日、YYYY-MM-DD 字列比較）** のみ。
+ * `todayYmd` / `startYmd` / `endYmd` は **すべて Asia/Tokyo 暦**（UTC 週とは一致しない境界あり）。
+ *
+ * エコシステム全行（`theme_ecosystem_members`・`status` NULL 含む）を対象に、**今週に決算がある**
+ * 銘柄（DB の `next_earnings_date` または、null のときは Yahoo カレンダー・プローブ→フルで得た
+ * 次回決算日）を掲載する。負荷: null 行のみ `calendarEvents` プローブ（一銘柄一軽量リクエスト、concurrency
+ * 上限 8）→ 今週候補だけ `quoteSummary`+Rule40（concurrency 6、既存 24h プロセス内 Yahoo キャッシュ、
+ * `force=1` ではプローブ・フル双方でキャッシュバイパス）。
+ * 加えて 75s の `laneHttpCache`（`force=1` 除く）で連続再読を軽減。サーバ L1 とクライアント「同一 JST 日
+ * 2 回目 yahoo=minimal」は併用（二重ガード・役割違いは `EventCalendarModal` 内コメント参照）。
  */
-const LANE_EARNINGS_BACK_DAYS = 5;
-/** 少なくとも「近い次回以降の決算」を多く乗せる（±15 の Yahoo 重み付け帯より広い） */
-const LANE_EARNINGS_FORWARD_DAYS = 120;
 
-/**
- * Yahoo+Rule40 多段取得の対象ティッカーは負荷が大きいため、決算日の「近傍」帯に限定（DB 日付が既に取れている枠外は r40 等は既定値のまま）。
- */
-const YAHOO_HEAVY_BACK_DAYS = 14;
-const YAHOO_HEAVY_FORWARD_DAYS = 14;
-
-/** 同一ユーザー・同一掲載ウィンドウでの再計算を避け、連続リロード時の体感を改善 */
 const LANE_HTTP_CACHE_TTL_MS = 75_000;
 const LANE_HTTP_CACHE_MAX = 16;
 type LaneCacheEntry = { expiresAt: number; body: KoyomiLaneResponse };
@@ -52,21 +53,6 @@ function laneCacheSet(key: string, body: KoyomiLaneResponse): void {
     if (first != null) laneHttpCache.delete(first);
   }
   laneHttpCache.set(key, { expiresAt: Date.now() + LANE_HTTP_CACHE_TTL_MS, body });
-}
-
-function utcTodayYmd(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-
-function ymdAddDaysUtc(ymd: string, delta: number): string {
-  const base = ymd.length >= 10 ? ymd.slice(0, 10) : utcTodayYmd();
-  const dt = new Date(`${base}T12:00:00.000Z`);
-  dt.setUTCDate(dt.getUTCDate() + Math.trunc(delta));
-  const y = dt.getUTCFullYear();
-  const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(dt.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function ymdOrNull(raw: unknown): string | null {
@@ -106,18 +92,15 @@ export async function GET(request: Request) {
   const userId =
     typeof userIdRaw === "string" && userIdRaw.trim().length > 0 ? userIdRaw.trim() : defaultProfileUserId();
 
-  /** `yahoo=minimal` で Yahoo を呼ばず DB の `next_earnings_date` のみ（クライアントが 24h キャッシュヒット時に使用） */
+  /** `yahoo=minimal` で重い `quoteSummary`+Rule40 を飛ばし、DB+プローブ分は route 内の条件で省略 */
   const useYahooFull = searchParams.get("yahoo") !== "minimal";
-  /** 手動再取得: 75s HTTP バッファと Yahoo 24h プロセス内キャッシュの読取を飛ばす */
+  /** 手動再取得: 75s HTTP バッファ、Yahoo 24h プロセス内キャッシュ、カレンダープローブ L1 の読取を飛ばす */
   const forceYahoo = searchParams.get("force") === "1" || searchParams.get("force") === "true";
 
-  const today = utcTodayYmd();
-  const startYmd = ymdAddDaysUtc(today, -LANE_EARNINGS_BACK_DAYS);
-  const endYmd = ymdAddDaysUtc(today, LANE_EARNINGS_FORWARD_DAYS);
-  const heavyStartYmd = ymdAddDaysUtc(today, -YAHOO_HEAVY_BACK_DAYS);
-  const heavyEndYmd = ymdAddDaysUtc(today, YAHOO_HEAVY_FORWARD_DAYS);
+  const today = jstTodayYmd();
+  const { start: startYmd, end: endYmd } = isoWeekRangeJstContaining(today);
 
-  const laneCacheKey = `${userId}\t${startYmd}\t${endYmd}\t${useYahooFull ? "full" : "min"}`;
+  const laneCacheKey = `jst1\t${userId}\t${startYmd}\t${endYmd}\t${useYahooFull ? "full" : "min"}`;
   if (!forceYahoo) {
     const cachedLane = laneCacheGet(laneCacheKey);
     if (cachedLane != null) {
@@ -150,7 +133,6 @@ export async function GET(request: Request) {
       /* holdings 未作成時は空集合 */
     }
 
-    /** エコシステム上の全テーマ（1 行も掲載されなくてもレーン枠を出す） */
     const allThemeNamesById = new Map<string, string>();
     let rows: Record<string, unknown>[];
     try {
@@ -187,74 +169,130 @@ export async function GET(request: Request) {
       if (!allThemeNamesById.has(tid)) allThemeNamesById.set(tid, tn);
     }
 
-    /**
-     * Yahoo フル取得（`yahoo=minimal` ではスキップ）の対象（テーマ Ecosystem 登録行は関心ありとみなし、`status` NULL は内部的に watch 扱いで下記に含む）:
-     * - 狭帯 [heavyStart..heavyEnd] に DB 日付がある
-     * - 掲載帯 [startYmd..endYmd] に DB 日付がある（遠めの日でもレーンに載るチップの R40/筋肉を出す）
-     * - `next_earnings_date` が null（全テーマ銘柄: PLTR/TEAM/日本株など Yahoo で日付・指標を補う）
-     */
-    const inWindowDbHeavy = new Map<string, TickerIn>();
+    /** 銘柄ごと: 1 有効ティッカー、保有時は provider 記号。全行を観測。 */
+    const byUpper = new Map<string, TickerIn>();
+    const probeNeededU = new Set<string>();
     for (const row of rows) {
       const isUnlisted = Number(row["is_unlisted"]) === 1;
       const ticker = String(row["ticker"] ?? "").trim();
       const proxy = row["proxy_ticker"] != null ? String(row["proxy_ticker"]).trim() : "";
       const eff = !isUnlisted ? ticker : proxy;
       if (eff.length === 0) continue;
-      const dbYmd = ymdOrNull(row["next_earnings_date"]);
       const u = eff.toUpperCase();
-      const prov = holdingProviderByUpper.get(u) ?? null;
-      const entry: TickerIn = { ticker: eff, providerSymbol: prov };
-      const inHeavyDate = dbYmd != null && dbYmd >= heavyStartYmd && dbYmd <= heavyEndYmd;
-      const inLaneDbDate = dbYmd != null && dbYmd >= startYmd && dbYmd <= endYmd;
-      if (inHeavyDate) {
-        if (!inWindowDbHeavy.has(u)) inWindowDbHeavy.set(u, entry);
-      } else if (inLaneDbDate) {
-        if (!inWindowDbHeavy.has(u)) inWindowDbHeavy.set(u, entry);
-      } else if (dbYmd == null) {
-        if (!inWindowDbHeavy.has(u)) inWindowDbHeavy.set(u, entry);
+      if (!byUpper.has(u)) {
+        const prov = holdingProviderByUpper.get(u) ?? null;
+        byUpper.set(u, { ticker: eff, providerSymbol: prov });
+      }
+      const dbY = ymdOrNull(row["next_earnings_date"]);
+      if (dbY == null) probeNeededU.add(u);
+    }
+
+    let probeByU = new Map<string, string | null>();
+    if (useYahooFull && probeNeededU.size > 0) {
+      try {
+        const probeInputs = [...probeNeededU]
+          .map((ux) => byUpper.get(ux))
+          .filter((v): v is TickerIn => v != null);
+        probeByU = await fetchKoyomiCalendarProbeMap(probeInputs, {
+          concurrency: 8,
+          delayMs: 0,
+          bypassCache: forceYahoo,
+        });
+      } catch {
+        probeByU = new Map();
       }
     }
 
-    const researchInputs: TickerIn[] = [...inWindowDbHeavy.values()];
-
-    const allEffTickers = researchInputs.map((x) => x.ticker);
+    /**
+     * 掲載週に決算が **ある**（DB 日付＋JST 週内、または null をプローブ日で今週）銘柄だけフル取得。
+     * プローブ欠損日は週外比較で弾かれる。
+     */
+    const needsFullU = new Set<string>();
+    for (const row of rows) {
+      const isUnlisted = Number(row["is_unlisted"]) === 1;
+      const ticker = String(row["ticker"] ?? "").trim();
+      const proxy = row["proxy_ticker"] != null ? String(row["proxy_ticker"]).trim() : "";
+      const eff = !isUnlisted ? ticker : proxy;
+      if (eff.length === 0) continue;
+      const u = eff.toUpperCase();
+      const dbYmd = ymdOrNull(row["next_earnings_date"]);
+      const e0 = useYahooFull ? (dbYmd ?? (probeByU.get(u) ?? null)) : dbYmd;
+      if (e0 != null && e0 >= startYmd && e0 <= endYmd) needsFullU.add(u);
+    }
 
     let researchMap = new Map<string, EquityResearchSnapshot>();
     let rule40ByTickerUpper = new Map<string, KoyomiTickerQuarterlyR40>();
     let muscleByTickerUpper = new Map<string, KoyomiTickerMuscle>();
     let regularMarketChangeByUpper = new Map<string, number | null>();
-    if (useYahooFull) {
+    if (useYahooFull && needsFullU.size > 0) {
       try {
-        if (researchInputs.length > 0) {
-          const combined = await fetchKoyomiResearchAndRule40Map(researchInputs, {
-            concurrency: 12,
+        const fullInputs = [...needsFullU]
+          .map((ux) => byUpper.get(ux))
+          .filter((v): v is TickerIn => v != null);
+
+        /**
+         * 15秒のハードタイムアウト。
+         * 全銘柄の Yahoo 取得完了を待つと 1〜2 分かかる場合があり API がハングするため、
+         * 15秒で打ち切り、取れた分だけでレスポンスを返す。
+         */
+        const combined = await Promise.race([
+          fetchKoyomiResearchAndRule40Map(fullInputs, {
+            concurrency: 6,
             delayMs: 0,
             bypassYahooCache: forceYahoo,
-          });
-          for (const [k, v] of combined) {
-            researchMap.set(k, v.research);
-            rule40ByTickerUpper.set(k, v.rule40);
-            muscleByTickerUpper.set(k, v.muscle);
-            regularMarketChangeByUpper.set(k, v.regularMarketChangePercent);
-          }
+          }),
+          new Promise<Map<string, any>>((_, reject) =>
+            setTimeout(() => reject(new Error("Yahoo fetch timeout (15s)")), 15000),
+          ),
+        ]);
+
+        for (const [k, v] of combined) {
+          researchMap.set(k, v.research);
+          rule40ByTickerUpper.set(k, v.rule40);
+          muscleByTickerUpper.set(k, v.muscle);
+          regularMarketChangeByUpper.set(k, v.regularMarketChangePercent);
         }
-      } catch {
-        researchMap = new Map();
-        rule40ByTickerUpper = new Map();
-        muscleByTickerUpper = new Map();
-        regularMarketChangeByUpper = new Map();
+      } catch (e) {
+        // タイムアウトや一部失敗時は、ログを残しつつ空の Map で続行（カレンダー枠の返却を優先）
+        console.warn(`[koyomi-lane] Yahoo fetch partial failure or timeout: ${e instanceof Error ? e.message : String(e)}`);
+        // 既に一部取れている場合は researchMap 等に残っているが、
+        // Promise.race で reject された場合は何も入らない。
+      }
+    }
+
+    const outcomeTickers: string[] = [];
+    {
+      const seenO = new Set<string>();
+      for (const row of rows) {
+        const isUnlisted = Number(row["is_unlisted"]) === 1;
+        const ticker = String(row["ticker"] ?? "").trim();
+        const proxy = row["proxy_ticker"] != null ? String(row["proxy_ticker"]).trim() : "";
+        const eff = !isUnlisted ? ticker : proxy;
+        if (eff.length === 0) continue;
+        const u = eff.toUpperCase();
+        const dbYmd = ymdOrNull(row["next_earnings_date"]);
+        const snap = researchMap.get(u);
+        const resYmd0 = snap?.nextEarningsDate != null ? snap.nextEarningsDate.trim().slice(0, 10) : null;
+        const resY = resYmd0 && /^\d{4}-\d{2}-\d{2}$/.test(resYmd0) ? resYmd0 : null;
+        const probeY = useYahooFull ? (probeByU.get(u) ?? null) : null;
+        const effectiveY = dbYmd ?? resY ?? probeY;
+        if (effectiveY == null) continue;
+        if (effectiveY < startYmd || effectiveY > endYmd) continue;
+        if (seenO.has(eff)) continue;
+        seenO.add(eff);
+        outcomeTickers.push(eff);
       }
     }
 
     try {
-      if (allEffTickers.length > 0) {
-        const placeholders = allEffTickers.map(() => "?").join(", ");
+      if (outcomeTickers.length > 0) {
+        const placeholders = outcomeTickers.map(() => "?").join(", ");
         const oRes = await db.execute({
           sql: `SELECT ticker, earnings_ymd, eps_surprise_pct, revenue_surprise_pct, price_impact_pct
                 FROM ticker_earnings_outcomes
                 WHERE ticker IN (${placeholders})
                   AND date(earnings_ymd) >= date(?) AND date(earnings_ymd) <= date(?)`,
-          args: [...allEffTickers, startYmd, endYmd],
+          args: [...outcomeTickers, startYmd, endYmd],
         });
         for (const r of oRes.rows as Record<string, unknown>[]) {
           const tk = String(r["ticker"] ?? "")
@@ -287,7 +325,6 @@ export async function GET(request: Request) {
       ymd: string;
       isUnlisted: boolean;
       displayTicker: string;
-      /** `member_status = owned` または該当ティッカーを保有（holdings） */
       owned: boolean;
     };
 
@@ -299,15 +336,18 @@ export async function GET(request: Request) {
       const isUnlisted = Number(row["is_unlisted"]) === 1;
       const proxy = row["proxy_ticker"] != null ? String(row["proxy_ticker"]).trim() : "";
       const effTicker = !isUnlisted ? ticker : proxy;
+      if (effTicker.length === 0) continue;
       const dbYmd = ymdOrNull(row["next_earnings_date"]);
-      const snap = effTicker.length > 0 ? researchMap.get(effTicker.toUpperCase()) : undefined;
+      const uu = effTicker.toUpperCase();
+      const snap = researchMap.get(uu);
       const resYmd = snap?.nextEarningsDate != null ? snap.nextEarningsDate.trim().slice(0, 10) : null;
-      const effectiveYmd = dbYmd ?? (resYmd && /^\d{4}-\d{2}-\d{2}$/.test(resYmd) ? resYmd : null);
+      const resY = resYmd && /^\d{4}-\d{2}-\d{2}$/.test(resYmd) ? resYmd : null;
+      const probeY = useYahooFull ? (probeByU.get(uu) ?? null) : null;
+      const effectiveYmd = dbYmd ?? resY ?? probeY;
       if (effectiveYmd == null) continue;
       if (effectiveYmd < startYmd || effectiveYmd > endYmd) continue;
 
       const st = row["member_status"];
-      /** `status` NULL は上の Yahoo 対象ロジックで観測（watch）相当として扱われている。 */
       const stNorm = typeof st === "string" ? st.trim().toLowerCase() : "";
       const effU = effTicker.length > 0 ? effTicker.toUpperCase() : ticker.toUpperCase();
       const ownedMember = stNorm === "owned" || holdingTickerSet.has(effU);
@@ -329,7 +369,6 @@ export async function GET(request: Request) {
       });
     }
 
-    // dayOrder: (themeId, ymd) ごとに保有優先 → displayTicker 昇順
     const orderKey = (theme: string, y: string) => `${theme}::${y}`;
     const byKeyLists = new Map<string, Draft[]>();
     for (const d of drafts) {

@@ -69,6 +69,7 @@ import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryFor
 import { EcosystemKeepButton } from "@/src/components/dashboard/EcosystemKeepButton";
 import { YahooReturnChips } from "@/src/components/dashboard/YahooReturnChips";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
+import { DailyAlphaContextTooltip } from "@/src/components/dashboard/DailyAlphaContextTooltip";
 import { stickyTdFirst, stickyTdFootFirst, stickyThFirst } from "@/src/components/dashboard/table-sticky";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import {
@@ -138,6 +139,7 @@ type SortKey =
   | "trr"
   | "egrowth"
   | "eps"
+  | "forecastEps"
   | "volRatio";
 
 function deviationOf(s: Stock): number | null {
@@ -177,6 +179,11 @@ function expectedGrowthOf(s: Stock): number | null {
 
 function epsOf(s: Stock): number | null {
   const v = s.trailingEps ?? s.forwardEps ?? null;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
+function forecastEpsOf(s: Stock): number | null {
+  const v = s.forwardEps;
   return v != null && Number.isFinite(v) ? v : null;
 }
 
@@ -547,7 +554,8 @@ function SortableInventoryTh({
   align = "left",
   title,
   metricHelpText,
-  disableColumnReorder,
+  disableColumnReorder = false,
+  onRequestHideColumn,
   children,
 }: {
   id: InventoryColId;
@@ -556,8 +564,13 @@ function SortableInventoryTh({
   title?: string;
   /** Radix ツールチップ（構造投資向け解説）。指定時は `title` を付けない（ネイティブ二重表示を防ぐ） */
   metricHelpText?: string;
-  /** リンチレンズ中は列ドラッグを無効化（表示列がプリセット固定のため） */
+  /**
+   * リンチレンズ中でも列 DnD は可能（列セットはレンズで絞るが、並べ替えはユーザーの列順に反映する）。
+   * `disabled: false` で常にドラッグ可。
+   */
   disableColumnReorder?: boolean;
+  /** ヘッダ上で右クリックしたときに列を非表示（Asset/ブックマーク除く）。誤操作防止のためコンテキストメニューではなく即時非表示 */
+  onRequestHideColumn?: (id: InventoryColId) => void;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -572,7 +585,18 @@ function SortableInventoryTh({
   const justify =
     align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
   return (
-    <th ref={setNodeRef} style={style} className={className} title={metricHelpText ? undefined : title}>
+    <th
+      ref={setNodeRef}
+      style={style}
+      className={className}
+      title={metricHelpText ? undefined : title}
+      onContextMenu={(e) => {
+        if (!onRequestHideColumn) return;
+        if (id === "bookmark" || id === "asset") return;
+        e.preventDefault();
+        onRequestHideColumn(id);
+      }}
+    >
       <div className={`flex w-full items-center gap-1 ${justify}`}>
         <button
           type="button"
@@ -583,7 +607,7 @@ function SortableInventoryTh({
           }`}
           {...attributes}
           {...(disableColumnReorder ? {} : listeners)}
-          aria-label={disableColumnReorder ? "リンチレンズ中は列の並べ替え不可" : "列をドラッグして並べ替え"}
+          aria-label={disableColumnReorder ? "列の並べ替え不可" : "列をドラッグして並べ替え"}
           aria-disabled={disableColumnReorder}
           disabled={disableColumnReorder}
           onClick={(e) => e.stopPropagation()}
@@ -841,13 +865,21 @@ export function InventoryTable({
     ],
   );
 
+  const handleInventoryHeaderHideColumn = useCallback(
+    (colId: InventoryColId) => {
+      if (colId === "bookmark" || colId === "asset") return;
+      if (effectiveHiddenColumnIds.includes(colId)) return;
+      handleInventoryHiddenColumnIdsChange([...effectiveHiddenColumnIds, colId]);
+    },
+    [effectiveHiddenColumnIds, handleInventoryHiddenColumnIdsChange],
+  );
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   function handleInventoryColumnDragEnd(event: DragEndEvent) {
-    if (lynchLensKey != null) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setColumnOrder((items) => {
@@ -933,6 +965,7 @@ export function InventoryTable({
       if (key === "trr") return dir * cmpNum(trrOf(a), trrOf(b));
       if (key === "egrowth") return dir * cmpNum(expectedGrowthOf(a), expectedGrowthOf(b));
       if (key === "eps") return dir * cmpNum(epsOf(a), epsOf(b));
+      if (key === "forecastEps") return dir * cmpNum(forecastEpsOf(a), forecastEpsOf(b));
       if (key === "ruleOf40") return dir * cmpNum(ruleOf40SortValue(a), ruleOf40SortValue(b));
       if (key === "fcfYield") return dir * cmpNum(fcfYieldSortValue(a), fcfYieldSortValue(b));
       if (key === "netCash") return dir * cmpNum(netCashSortValue(a), netCashSortValue(b));
@@ -1054,6 +1087,8 @@ export function InventoryTable({
     let egrowthN = 0;
     let epsSum = 0;
     let epsN = 0;
+    let fepsSum = 0;
+    let fepsN = 0;
     let trend5dSum = 0;
     let trend5dN = 0;
     let volRatioSum = 0;
@@ -1091,6 +1126,11 @@ export function InventoryTable({
       if (ep != null) {
         epsSum += ep;
         epsN += 1;
+      }
+      const fe = forecastEpsOf(s);
+      if (fe != null) {
+        fepsSum += fe;
+        fepsN += 1;
       }
       const p = fiveDayPulseForStock(s).series;
       if (p.length >= 5) {
@@ -1143,6 +1183,7 @@ export function InventoryTable({
       avgTrrVisible: trrN > 0 ? trrSum / trrN : null,
       avgExpectedGrowthVisible: egrowthN > 0 ? egrowthSum / egrowthN : null,
       avgEpsVisible: epsN > 0 ? epsSum / epsN : null,
+      avgForecastEpsVisible: fepsN > 0 ? fepsSum / fepsN : null,
       avgFiveDayAlphaDelta: trend5dN > 0 ? trend5dSum / trend5dN : null,
       avgVolRatioVisible: volRatioN > 0 ? volRatioSum / volRatioN : null,
       totalMarketValueVisible: totalMv,
@@ -1474,7 +1515,7 @@ export function InventoryTable({
                     switch (colId) {
                       case "asset":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="left"
@@ -1492,7 +1533,7 @@ export function InventoryTable({
                         );
                       case "lynch":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="left"
@@ -1510,7 +1551,7 @@ export function InventoryTable({
                         );
                       case "bookmark":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1524,7 +1565,7 @@ export function InventoryTable({
                         );
                       case "listing":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1542,7 +1583,7 @@ export function InventoryTable({
                         );
                       case "mktCap":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1560,7 +1601,7 @@ export function InventoryTable({
                         );
                       case "perfListed":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1578,7 +1619,7 @@ export function InventoryTable({
                         );
                       case "earnings":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1596,7 +1637,7 @@ export function InventoryTable({
                         );
                       case "research":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="left"
@@ -1614,7 +1655,7 @@ export function InventoryTable({
                         );
                       case "ruleOf40":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1632,7 +1673,7 @@ export function InventoryTable({
                         );
                       case "fcfYield":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1650,7 +1691,7 @@ export function InventoryTable({
                         );
                       case "netCash":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1668,7 +1709,7 @@ export function InventoryTable({
                         );
                       case "netCps":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1686,7 +1727,7 @@ export function InventoryTable({
                         );
                       case "judgment":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1704,7 +1745,7 @@ export function InventoryTable({
                         );
                       case "deviation":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1722,7 +1763,7 @@ export function InventoryTable({
                         );
                       case "drawdown":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1740,7 +1781,7 @@ export function InventoryTable({
                         );
                       case "alpha":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1766,7 +1807,7 @@ export function InventoryTable({
                         );
                       case "trend5d":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="center"
@@ -1784,7 +1825,7 @@ export function InventoryTable({
                         );
                       case "volRatio":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1802,7 +1843,7 @@ export function InventoryTable({
                         );
                       case "position":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1820,7 +1861,7 @@ export function InventoryTable({
                         );
                       case "pe":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1838,7 +1879,7 @@ export function InventoryTable({
                         );
                       case "pbr":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1856,7 +1897,7 @@ export function InventoryTable({
                         );
                       case "peg":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1874,7 +1915,7 @@ export function InventoryTable({
                         );
                       case "trr":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1892,7 +1933,7 @@ export function InventoryTable({
                         );
                       case "egrowth":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1910,7 +1951,7 @@ export function InventoryTable({
                         );
                       case "eps":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -1926,9 +1967,27 @@ export function InventoryTable({
                             </button>
                           </SortableInventoryTh>
                         );
+                      case "forecastEps":
+                        return (
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            metricHelpText={METRIC_HEADER_TIP.forwardEps}
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("forecastEps")}
+                            >
+                              予想EPS{sortMark("forecastEps")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
                       case "price":
                         return (
-                          <SortableInventoryTh disableColumnReorder={lynchLensKey != null}
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
@@ -2545,7 +2604,13 @@ export function InventoryTable({
                       case "pe":
                         return (
                           <td key={colId} className="px-4 py-4 text-right font-mono text-xs tabular-nums text-foreground/90">
-                            {fmtPe(peOf(stock))}
+                            <DailyAlphaContextTooltip
+                              metricLabel="PER"
+                              dailyValues={stock.alphaHistory}
+                              observationDates={stock.alphaHistoryObservationDates}
+                            >
+                              <span className="inline-block w-full text-right">{fmtPe(peOf(stock))}</span>
+                            </DailyAlphaContextTooltip>
                           </td>
                         );
                       case "pbr":
@@ -2630,13 +2695,35 @@ export function InventoryTable({
                                 return ep <= 0 ? "text-rose-300" : "text-foreground/90";
                               })()
                             }`}
-                            title={
-                              epsOf(stock) != null && epsOf(stock)! <= 0
-                                ? "EPS <= 0（赤字・特損など含む）。PERは参考になりにくい場合があります。"
-                                : undefined
-                            }
                           >
-                            {fmtEps(epsOf(stock))}
+                            <DailyAlphaContextTooltip
+                              metricLabel="EPS（Trailing 優先）"
+                              dailyValues={stock.alphaHistory}
+                              observationDates={stock.alphaHistoryObservationDates}
+                            >
+                              <span className="inline-block w-full text-right">{fmtEps(epsOf(stock))}</span>
+                            </DailyAlphaContextTooltip>
+                          </td>
+                        );
+                      case "forecastEps":
+                        return (
+                          <td
+                            key={colId}
+                            className={`px-4 py-4 text-right font-mono text-xs font-bold tabular-nums ${
+                              (() => {
+                                const fe = forecastEpsOf(stock);
+                                if (fe == null) return "text-muted-foreground";
+                                return fe <= 0 ? "text-rose-300" : "text-cyan-200/90";
+                              })()
+                            }`}
+                          >
+                            <DailyAlphaContextTooltip
+                              metricLabel="予想EPS（Forward）"
+                              dailyValues={stock.alphaHistory}
+                              observationDates={stock.alphaHistoryObservationDates}
+                            >
+                              <span className="inline-block w-full text-right">{fmtEps(forecastEpsOf(stock))}</span>
+                            </DailyAlphaContextTooltip>
                           </td>
                         );
                       case "price": {
@@ -3004,6 +3091,16 @@ export function InventoryTable({
                     return (
                       <td key={colId} className="px-4 py-3 text-right align-top font-mono text-[11px] text-foreground/90">
                         {footerStats.avgEpsVisible != null ? fmtEps(footerStats.avgEpsVisible) : "—"}
+                      </td>
+                    );
+                  case "forecastEps":
+                    return (
+                      <td
+                        key={colId}
+                        className="px-4 py-3 text-right align-top font-mono text-[11px] text-foreground/90"
+                        title="表示行の予想EPS（Forward）単純平均"
+                      >
+                        {footerStats.avgForecastEpsVisible != null ? fmtEps(footerStats.avgForecastEpsVisible) : "—"}
                       </td>
                     );
                   case "price":

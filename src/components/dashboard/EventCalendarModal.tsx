@@ -6,43 +6,9 @@ import { AlertCircle, CalendarDays, X } from "lucide-react";
 
 import { KoyomiLane } from "@/src/components/dashboard/KoyomiLane";
 import { cn } from "@/src/lib/cn";
+import { isoWeekRangeJstContaining, jstTodayYmd, ymdAddDaysJst } from "@/src/lib/koyomi-week-jst";
 import type { KoyomiLaneResponse } from "@/src/types/koyomi";
 import type { MarketEventRecord } from "@/src/types/market-events";
-
-function utcTodayYmd(): string {
-  const d = new Date();
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function ymdAddDaysUtc(ymd: string, deltaDays: number): string {
-  const base = ymd.length >= 10 ? ymd.slice(0, 10) : utcTodayYmd();
-  const d = new Date(`${base}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + Math.trunc(deltaDays));
-  return formatUtcYmd(d);
-}
-
-/** Monday .. Sunday (UTC) containing `ymd`. */
-function isoWeekRangeUtcContaining(ymd: string): { start: string; end: string } {
-  const base = ymd.length >= 10 ? ymd.slice(0, 10) : utcTodayYmd();
-  const d = new Date(`${base}T12:00:00Z`);
-  const dow = d.getUTCDay();
-  const mondayOffset = dow === 0 ? -6 : 1 - dow;
-  d.setUTCDate(d.getUTCDate() + mondayOffset);
-  const start = formatUtcYmd(d);
-  d.setUTCDate(d.getUTCDate() + 6);
-  const end = formatUtcYmd(d);
-  return { start, end };
-}
-
-function formatUtcYmd(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 function categoryBadgeClass(category: string): string {
   const c = category.trim();
@@ -55,7 +21,7 @@ function categoryBadgeClass(category: string): string {
 }
 
 function formatWeekLabel(start: string, end: string): string {
-  return `${start.replace(/-/g, "/")} 〜 ${end.replace(/-/g, "/")}（UTC 週）`;
+  return `${start.replace(/-/g, "/")} 〜 ${end.replace(/-/g, "/")}（JST 週 · 月—日）`;
 }
 
 type DashboardStockLite = {
@@ -121,9 +87,35 @@ const MODAL_SAFE_PADDING: React.CSSProperties = {
 /** サーバー側で Yahoo 多段取得のため長めに（軽量プローブ後も残タスクに依存） */
 const KOYOMI_FETCH_TIMEOUT_MS = 120_000;
 
-/** テーマ暦: v2 で窓拡大後のレスポンスに切替。TTL は短め（SWR で裏取りするため主にオフライン快適用） */
-const KOYOMI_LANE_LS_KEY = "investment-portfolio:koyomi-lane:v2";
+/**
+ * テーマ暦スナップショット: v4 = 掲載週を JST 月—日（7 暦日）に統一。`readKoyomiLaneSnapshot` は
+ * 窓外・TTL 切れのとき捨てる。1 日 1 回フル Yahoo 判定は {@link hasKoyomiFullYahooTodayJst} 側（別キー）。
+ */
+const KOYOMI_LANE_LS_KEY = "investment-portfolio:koyomi-lane:v4";
 const KOYOMI_SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
+
+const koyomiFullYahooJstKey = (uid: string) => `investment-portfolio:koyomi-yahoo-full-day-jst:${uid}`;
+
+/**
+ * 同一 JST 暦日の「先頭の yahoo=full 自動取得」用ガード。手動 `force=1` は
+ * 別経路（常に full）— 本フラグ成功後にセットし、2 回目以降の自動は `yahoo=minimal`＋鯖 L1/LS。
+ */
+function hasKoyomiFullYahooTodayJst(uid: string, jstYmd: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(koyomiFullYahooJstKey(uid)) === jstYmd;
+  } catch {
+    return false;
+  }
+}
+
+function markKoyomiFullYahooDayJst(uid: string, jstYmd: string): void {
+  try {
+    localStorage.setItem(koyomiFullYahooJstKey(uid), jstYmd);
+  } catch {
+    /* */
+  }
+}
 
 type KoyomiLaneLsPayload = {
   at: number;
@@ -196,10 +188,10 @@ export function EventCalendarModal({
   /** `/api/events` のバックグラウンド強化フェッチをモーダル閉鎖時に無効化する */
   const eventsFetchGen = useRef(0);
 
-  const today = useMemo(() => utcTodayYmd(), []);
-  const week = useMemo(() => isoWeekRangeUtcContaining(today), [today]);
+  const today = useMemo(() => jstTodayYmd(), [open]);
+  const week = useMemo(() => isoWeekRangeJstContaining(today), [today]);
   const dateWindow = useMemo(
-    () => ({ start: ymdAddDaysUtc(today, -5), end: ymdAddDaysUtc(today, 70) }),
+    () => ({ start: ymdAddDaysJst(today, -5), end: ymdAddDaysJst(today, 70) }),
     [today],
   );
 
@@ -210,6 +202,12 @@ export function EventCalendarModal({
     koyomiForceRefreshGen.current += 1;
     const my = koyomiForceRefreshGen.current;
     setKoyomiForceRefreshing(true);
+    /**
+     * メイン effect 由来の in-flight 取得が `koyomiGen++` により `stale()` になり
+     * `setKoyomiLoading(false)` をスキップする。手動 path は `koyomiForceRefreshGen` だけ制御し、
+     * ここで主ローディングを必ず下げる（KoyomiLane は `loading` 優先で常時スケルトンになるのを防ぐ）。
+     */
+    setKoyomiLoading(false);
     setKoyomiErr(null);
     const ac = new AbortController();
     const timeoutId = window.setTimeout(() => ac.abort(), KOYOMI_FETCH_TIMEOUT_MS);
@@ -235,6 +233,7 @@ export function EventCalendarModal({
       if (lane != null) {
         setKoyomiLane(lane);
         writeKoyomiLaneSnapshot(uid, lane);
+        markKoyomiFullYahooDayJst(uid, jstTodayYmd());
       } else {
         setKoyomiErr("データ取得に失敗しました。再試行してください。");
         setKoyomiLane(null);
@@ -250,6 +249,7 @@ export function EventCalendarModal({
       window.clearTimeout(timeoutId);
       if (my === koyomiForceRefreshGen.current) {
         setKoyomiForceRefreshing(false);
+        setKoyomiLoading(false);
       }
     }
   }, [userId]);
@@ -421,140 +421,152 @@ export function EventCalendarModal({
   }, [open, load]);
 
   /**
-   * テーマ暦は Yahoo が重いため **テーマ暦タブ時のみ**取得。
-   * Abort + タイムアウトで無限ローディングを防ぎ、タブを外す／閉じると中断・再入場で再取得できる。
+   * テーマ暦: 二段階ロード（プログレッシブ・ロード）アーキテクチャ。
+   * 1. 枠の即時表示: LocalStorage スナップがあれば即表示、なければ `yahoo=minimal`（DB のみ）で 2 秒以内に枠を出す。
+   * 2. 非同期補完: 枠が出た後、バックグラウンドで `yahoo=full` を実行し重い数値（R40/筋肉）を埋める。
+   * 同一 JST 日の `yahoo=full` 完了後は `markKoyomiFullYahooDayJst` により当日の再入場は `yahoo=minimal`＋鯖キャッシュ＋LS。
+   * 手動は `forceRefreshKoyomi`（常に full、`force=1`）。
    */
   useEffect(() => {
     if (!open || tab !== "themes") return;
 
     const myGen = ++koyomiGen.current;
     const uid = userId.trim().length > 0 ? userId.trim() : "";
+    if (uid.length === 0) {
+      setKoyomiErr("userId がありません");
+      setKoyomiLoading(false);
+      return;
+    }
 
     const stale = () => myGen !== koyomiGen.current;
     const baseKoyomi = `/api/koyomi-lane?userId=${encodeURIComponent(uid)}`;
-    const revalidateAc = new AbortController();
+    const jstY = jstTodayYmd();
+    const yahooTierForAuto = () => (hasKoyomiFullYahooTodayJst(uid, jstY) ? "minimal" : "full");
+
+    /**
+     * 既存のデータと新しいデータをマージする。
+     * 既に数値がある銘柄が null で上書きされないようにし、チラつきを抑える。
+     */
+    const mergeLaneData = (prev: KoyomiLaneResponse | null, next: KoyomiLaneResponse): KoyomiLaneResponse => {
+      if (!prev) return next;
+      // 掲載期間が変わっている場合はマージせず新しいものを使う
+      if (prev.startYmd !== next.startYmd || prev.endYmd !== next.endYmd) return next;
+
+      const nextLanes = next.themeLanes.map(nLane => {
+        const pLane = prev.themeLanes.find(pl => pl.themeId === nLane.themeId);
+        if (!pLane) return nLane;
+
+        const nextItems = nLane.items.map(nItem => {
+          const pItem = pLane.items.find(pi => pi.id === nItem.id);
+          if (!pItem) return nItem;
+
+          // 数値データが next で null かつ prev で存在する場合、prev を維持する
+          const merged = { ...nItem };
+          if (merged.ruleOf40Current === null && pItem.ruleOf40Current !== null) {
+            merged.ruleOf40Current = pItem.ruleOf40Current;
+            merged.ruleOf40Prior = pItem.ruleOf40Prior;
+            merged.ruleOf40Delta = pItem.ruleOf40Delta;
+            merged.ruleOf40DeltaStatus = pItem.ruleOf40DeltaStatus;
+          }
+          if (merged.muscleScoreCurrent === null && pItem.muscleScoreCurrent !== null) {
+            merged.muscleScoreCurrent = pItem.muscleScoreCurrent;
+            merged.muscleScorePrior = pItem.muscleScorePrior;
+            merged.muscleDelta = pItem.muscleDelta;
+            merged.muscleDeltaStatus = pItem.muscleDeltaStatus;
+            merged.isMispriced = pItem.isMispriced;
+          }
+          if (merged.regularMarketChangePercent === null && pItem.regularMarketChangePercent !== null) {
+            merged.regularMarketChangePercent = pItem.regularMarketChangePercent;
+          }
+          return merged;
+        });
+        return { ...nLane, items: nextItems };
+      });
+
+      return { ...next, themeLanes: nextLanes };
+    };
+
+    const fetchFull = async (signal: AbortSignal) => {
+      try {
+        const resFull = await fetch(`${baseKoyomi}&yahoo=full`, {
+          cache: "no-store",
+          signal,
+        });
+        if (stale() || signal.aborted) return;
+        const json = (await resFull.json()) as KoyomiLaneResponse & { error?: string };
+        if (stale()) return;
+        if (!resFull.ok) return;
+        if ("error" in json && typeof json.error === "string" && json.error.length > 0) return;
+        const lane = parseKoyomiLaneJson(json);
+        if (lane != null) {
+          setKoyomiLane(prev => mergeLaneData(prev, lane));
+          writeKoyomiLaneSnapshot(uid, lane);
+          markKoyomiFullYahooDayJst(uid, jstY);
+          setKoyomiErr(null);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+      }
+    };
 
     const snap = readKoyomiLaneSnapshot(uid);
     if (snap != null) {
       setKoyomiLane(snap);
       setKoyomiErr(null);
       setKoyomiLoading(false);
-      void (async () => {
-        try {
-          const resFull = await fetch(`${baseKoyomi}&yahoo=full`, {
-            cache: "no-store",
-            signal: revalidateAc.signal,
-          });
-          if (stale() || revalidateAc.signal.aborted) return;
-          const json = (await resFull.json()) as KoyomiLaneResponse & { error?: string };
-          if (stale()) return;
-          if (!resFull.ok) return;
-          if ("error" in json && typeof json.error === "string" && json.error.length > 0) return;
-          const lane = parseKoyomiLaneJson(json);
-          if (lane != null) {
-            setKoyomiLane(lane);
-            writeKoyomiLaneSnapshot(uid, lane);
-            setKoyomiErr(null);
-          }
-        } catch (e) {
-          if (e instanceof Error && e.name === "AbortError") return;
-        }
-      })();
-      return () => {
-        revalidateAc.abort();
-        koyomiGen.current += 1;
-        koyomiForceRefreshGen.current += 1;
-      };
+      
+      const yh = yahooTierForAuto();
+      if (yh === "full") {
+        const revalidateAc = new AbortController();
+        void fetchFull(revalidateAc.signal);
+        return () => {
+          revalidateAc.abort();
+          koyomiGen.current += 1;
+          koyomiForceRefreshGen.current += 1;
+        };
+      }
+      return;
     }
 
     const ac = new AbortController();
-
     setKoyomiLoading(true);
     setKoyomiErr(null);
 
     void (async () => {
-      let gotQuick = false;
+      // 1. 枠の取得 (yahoo=minimal)
       try {
         const resMin = await fetch(`${baseKoyomi}&yahoo=minimal`, {
           cache: "no-store",
           signal: ac.signal,
         });
-        if (!stale() && resMin.ok) {
-          const json = (await resMin.json()) as KoyomiLaneResponse & { error?: string };
+        if (stale() || ac.signal.aborted) return;
+        const json = (await resMin.json()) as KoyomiLaneResponse & { error?: string };
+        if (stale()) return;
+        if (resMin.ok) {
           const lane = parseKoyomiLaneJson(json);
           if (lane != null) {
             setKoyomiLane(lane);
             setKoyomiErr(null);
-            gotQuick = true;
+            setKoyomiLoading(false); // 枠が出たのでスケルトン終了
           }
         }
       } catch {
-        /* minimal は省略可 */
+        // minimal 失敗時は full に賭ける
       }
 
+      // 2. 数値の補完 (yahoo=full)
+      const yh = yahooTierForAuto();
+      if (yh === "full") {
+        await fetchFull(ac.signal);
+      }
+      
       if (!stale()) setKoyomiLoading(false);
-
-      const abortMeta = { timedOut: false };
-      const timeoutId = window.setTimeout(() => {
-        abortMeta.timedOut = true;
-        ac.abort();
-      }, KOYOMI_FETCH_TIMEOUT_MS);
-
-      try {
-        const resFull = await fetch(`${baseKoyomi}&yahoo=full`, {
-          cache: "no-store",
-          signal: ac.signal,
-        });
-        if (ac.signal.aborted || stale()) return;
-
-        const json = (await resFull.json()) as KoyomiLaneResponse & { error?: string };
-        if (ac.signal.aborted || stale()) return;
-
-        if (!resFull.ok) {
-          if (!stale()) {
-            if (!gotQuick) {
-              setKoyomiErr(json.error ?? `HTTP ${resFull.status}`);
-              setKoyomiLane(null);
-            }
-          }
-          return;
-        }
-        if ("error" in json && typeof json.error === "string") {
-          if (!stale()) {
-            if (!gotQuick) {
-              setKoyomiErr(json.error);
-              setKoyomiLane(null);
-            }
-          }
-          return;
-        }
-        const lane = parseKoyomiLaneJson(json);
-        if (lane != null && !stale()) {
-          setKoyomiLane(lane);
-          writeKoyomiLaneSnapshot(uid, lane);
-          setKoyomiErr(null);
-        }
-      } catch (e) {
-        if (ac.signal.aborted) {
-          if (abortMeta.timedOut && !stale() && !gotQuick) {
-            setKoyomiErr("テーマ暦の取得がタイムアウトしました。しばらくしてから再度お試しください。");
-            setKoyomiLane(null);
-          }
-          return;
-        }
-        if (!stale() && !gotQuick) {
-          setKoyomiErr(e instanceof Error ? e.message : "読み込みに失敗しました");
-          setKoyomiLane(null);
-        }
-      } finally {
-        window.clearTimeout(timeoutId);
-      }
     })();
 
     return () => {
+      ac.abort();
       koyomiGen.current += 1;
       koyomiForceRefreshGen.current += 1;
-      ac.abort();
       setKoyomiLoading(false);
     };
   }, [open, tab, userId]);
@@ -685,8 +697,9 @@ export function EventCalendarModal({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             className={cn(
-              "min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] px-4 py-4 text-sm sm:px-6 sm:py-5 sm:text-base",
-              tab === "themes" && "flex flex-col",
+              "min-h-0 flex-1 overscroll-contain [-webkit-overflow-scrolling:touch] px-4 py-4 text-sm sm:px-6 sm:py-5 sm:text-base",
+              /* テーマ暦: KoyomiLane 内が縦スクロール担当。ここで overflow-y すると二重スクロールになる */
+              tab === "themes" ? "flex flex-col overflow-hidden" : "overflow-y-auto",
             )}
           >
           {tab === "themes" ? (

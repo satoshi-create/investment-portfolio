@@ -26,7 +26,7 @@ export type KoyomiLaneItem = {
   displayTicker: string;
   epsSide: import("@/src/lib/alpha-logic").SurpriseKind;
   revSide: import("@/src/lib/alpha-logic").SurpriseKind;
-  /** 直近四半期の Rule of 40（売上成長% + FCF マージン%、Yahoo 四半期） */
+  /** 直近四半期の Rule of 40（売上成長% + FCF マージン%。Yahoo 四半期）。チップ常時表示の主数値。 */
   ruleOf40Current: number | null;
   /** その 1 四半期前 */
   ruleOf40Prior: number | null;

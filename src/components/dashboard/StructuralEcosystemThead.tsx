@@ -25,6 +25,7 @@ export type StructuralEcoSortKey =
   | "trr"
   | "egrowth"
   | "eps"
+  | "forecastEps"
   | "alpha"
   | "cumTrend"
   | "volRatio"
@@ -50,7 +51,8 @@ function EcoSortTh({
   toggleEcoSort,
   ecoSortMark,
   sortKey,
-  disableColumnReorder,
+  disableColumnReorder = false,
+  onRequestHideColumn,
 }: {
   id: EcosystemWatchlistColId;
   align: "left" | "right" | "center";
@@ -62,6 +64,7 @@ function EcoSortTh({
   ecoSortMark: (k: StructuralEcoSortKey) => string;
   sortKey: StructuralEcoSortKey;
   disableColumnReorder?: boolean;
+  onRequestHideColumn?: (id: EcosystemWatchlistColId) => void;
 }) {
   const sortOnlyBtnCls =
     align === "right"
@@ -82,6 +85,7 @@ function EcoSortTh({
       className={className}
       title={metricHelpText ? undefined : title}
       disableColumnReorder={disableColumnReorder}
+      onRequestHideColumn={onRequestHideColumn}
     >
       {metricHelpText ? (
         <div
@@ -120,12 +124,15 @@ export function StructuralEcosystemThead({
   toggleEcoSort,
   ecoSortMark,
   disableColumnReorder = false,
+  onRequestHideColumn,
 }: {
   ecoVisibleColumnIds: EcosystemWatchlistColId[];
   toggleEcoSort: (next: StructuralEcoSortKey) => void;
   ecoSortMark: (k: StructuralEcoSortKey) => string;
-  /** リンチレンズ中は列 DnD 無効 */
+  /** リンチレンズ中も DnD 有効のため既定 false */
   disableColumnReorder?: boolean;
+  /** 列ヘッダ右クリックで非表示（Asset 除く） */
+  onRequestHideColumn?: (id: EcosystemWatchlistColId) => void;
 }) {
   return (
     <thead className="sticky top-0 z-20 bg-muted/90 text-muted-foreground text-[10px] uppercase font-bold tracking-[0.1em] backdrop-blur-md supports-[backdrop-filter]:bg-muted/75 border-b border-border shadow-sm">
@@ -146,6 +153,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "lynch":
@@ -161,6 +169,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "trend5d":
@@ -176,6 +185,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "listing":
@@ -191,6 +201,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "mktCap":
@@ -206,6 +217,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "perfListed":
@@ -221,6 +233,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "earnings":
@@ -236,6 +249,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "holder":
@@ -247,6 +261,7 @@ export function StructuralEcosystemThead({
                   className={`px-6 py-4 whitespace-nowrap ${sfirst}`}
                   metricHelpText={METRIC_HEADER_TIP.holder}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 >
                   <span className="pointer-events-none">Holder</span>
                 </SortableEcoWatchlistTh>
@@ -264,6 +279,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "payout":
@@ -279,6 +295,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "defensiveRole":
@@ -290,6 +307,7 @@ export function StructuralEcosystemThead({
                   className={`px-6 py-4 whitespace-nowrap ${sfirst}`}
                   metricHelpText={METRIC_HEADER_TIP.defensiveRole}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 >
                   <span className="pointer-events-none">Defensive role</span>
                 </SortableEcoWatchlistTh>
@@ -307,6 +325,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "role":
@@ -318,6 +337,7 @@ export function StructuralEcosystemThead({
                   className={`px-6 py-4 whitespace-nowrap ${sfirst}`}
                   metricHelpText={METRIC_HEADER_TIP.role}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 >
                   <span className="pointer-events-none">江戸的役割</span>
                 </SortableEcoWatchlistTh>
@@ -335,6 +355,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "ruleOf40":
@@ -350,6 +371,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "fcfYield":
@@ -365,6 +387,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "netCash":
@@ -380,6 +403,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "netCashYield":
@@ -395,6 +419,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "judgment":
@@ -410,6 +435,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "deviation":
@@ -425,6 +451,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "drawdown":
@@ -440,6 +467,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "pe":
@@ -455,6 +483,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "pbr":
@@ -470,6 +499,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "peg":
@@ -485,6 +515,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "trr":
@@ -500,6 +531,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "egrowth":
@@ -515,6 +547,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "eps":
@@ -530,6 +563,23 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
+                />
+              );
+            case "forecastEps":
+              return (
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="forecastEps"
+                  align="right"
+                  className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.forwardEps}
+                  label="予想EPS"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                  disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "alpha":
@@ -545,6 +595,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "cumTrend":
@@ -560,6 +611,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "volRatio":
@@ -575,6 +627,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             case "price":
@@ -590,6 +643,7 @@ export function StructuralEcosystemThead({
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
                 />
               );
             default: {
