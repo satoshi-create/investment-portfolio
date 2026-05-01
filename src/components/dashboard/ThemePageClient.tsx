@@ -20,6 +20,7 @@ import {
   CircleSlash,
   Crosshair,
   FileSpreadsheet,
+  Flame,
   Layers,
   Search,
   Star,
@@ -69,7 +70,11 @@ import {
 } from "@/src/lib/alpha-logic";
 import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER } from "@/src/lib/edo-theme-constants";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
-import { parseAlphaDailyHistoryJson, parseAlphaObservationDatesJson } from "@/src/lib/eco-trend-daily";
+import {
+  ecosystemFiveDayTrendCellModel,
+  parseAlphaDailyHistoryJson,
+  parseAlphaObservationDatesJson,
+} from "@/src/lib/eco-trend-daily";
 import { parseYahooBuybackPostureJson } from "@/src/lib/yahoo-buyback-posture";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
@@ -647,6 +652,7 @@ function normalizeThemeDetailResponse(
       typeof rest.fxUsdJpy === "number" && Number.isFinite(rest.fxUsdJpy) && rest.fxUsdJpy > 0
         ? rest.fxUsdJpy
         : USD_JPY_RATE_FALLBACK,
+    oilMacroContext: (rest as Partial<ThemeDetailData>).oilMacroContext ?? null,
   };
 }
 
@@ -739,6 +745,7 @@ export function ThemePageClient({
   /** 半導体サプライチェーン: サーバーで CSV を読み込んだカタログ（任意） */
   supplyChainCatalogRows?: SemiconductorSupplyChainCatalogRow[] | null;
 }) {
+  const ignitionQueryAppliedRef = useRef(false);
   const { query: themeQueryName, display: themeDisplayName } = useMemo(
     () => mapThemeLabelForQuery(themeLabel),
     [themeLabel],
@@ -804,6 +811,7 @@ export function ThemePageClient({
   const [ecoEarningsSummaryModalTab, setEcoEarningsSummaryModalTab] = useState<"edit" | "preview">("edit");
   const [ecoEarningsSummarySaving, setEcoEarningsSummarySaving] = useState(false);
   const [ecoBookmarksOnly, setEcoBookmarksOnly] = useState(false);
+  const [ecoCompoundingIgnitedOnly, setEcoCompoundingIgnitedOnly] = useState(false);
   const [ecoHideIncompleteQuotes, setEcoHideIncompleteQuotes] = useState(false);
   /** リンチレンズ: 分類キーごとの手動追加列・分類内のみの非表示 */
   const [ecoLynchLensColumnUiByFilter, setEcoLynchLensColumnUiByFilter] =
@@ -1601,6 +1609,24 @@ export function ThemePageClient({
     if (patrolOn) setEcoShowValueCols(true);
   }, [patrolOn]);
 
+  useEffect(() => {
+    if (ignitionQueryAppliedRef.current) return;
+    if (typeof window === "undefined") return;
+    const v = new URLSearchParams(window.location.search).get("ignition");
+    if (v === "1") {
+      ignitionQueryAppliedRef.current = true;
+      setEcoCompoundingIgnitedOnly(true);
+    }
+  }, []);
+
+  const ecosystemMemberCompoundingIgnited = useMemo(() => {
+    const m = new Map<string, boolean>();
+    for (const row of ecosystem) {
+      m.set(row.id, ecosystemFiveDayTrendCellModel(row).isCompoundingIgnited);
+    }
+    return m;
+  }, [ecosystem]);
+
   const ecosystemFiltered = useMemo(() => {
     let out = ecosystem;
     if (ecoBookmarksOnly) {
@@ -1641,10 +1667,14 @@ export function ThemePageClient({
     } else if (ecoLynchFilter !== "") {
       out = out.filter((e) => getEffectiveLynchCategoryForWatchItem(e) === ecoLynchFilter);
     }
+    if (ecoCompoundingIgnitedOnly) {
+      out = out.filter((e) => ecosystemMemberCompoundingIgnited.get(e.id) === true);
+    }
     return out;
   }, [
     ecosystem,
     ecoBookmarksOnly,
+    ecoCompoundingIgnitedOnly,
     ecoHideIncompleteQuotes,
     patrolOn,
     ecosystemSearchQuery,
@@ -1654,6 +1684,7 @@ export function ThemePageClient({
     ecosystemMatchesHolderFilter,
     ecoEpsPositiveOnly,
     ecoLynchFilter,
+    ecosystemMemberCompoundingIgnited,
   ]);
 
   const themeAdoptionMaturity = useMemo(
@@ -2798,6 +2829,20 @@ export function ThemePageClient({
                           <CircleSlash className="h-3.5 w-3.5 shrink-0" aria-hidden />
                           株価未取得を隠す
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setEcoCompoundingIgnitedOnly((v) => !v)}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors",
+                            ecoCompoundingIgnitedOnly
+                              ? "border-emerald-500/45 bg-emerald-500/10 text-emerald-200"
+                              : "border-border text-muted-foreground hover:bg-muted/70",
+                          )}
+                          title="5D 列と同一判定の複利点火が付いている銘柄のみ表示"
+                        >
+                          <Flame className={`h-3.5 w-3.5 shrink-0 ${ecoCompoundingIgnitedOnly ? "text-accent-emerald" : ""}`} aria-hidden />
+                          複利点火のみ
+                        </button>
                       </div>
                       <div className="shrink-0 rounded-lg border border-border/80 bg-card/40 p-1.5">
                         <EcosystemWatchlistColumnToolbar
@@ -3054,6 +3099,7 @@ export function ThemePageClient({
                         <span>
                           {patrolOn ||
                           ecoBookmarksOnly ||
+                          ecoCompoundingIgnitedOnly ||
                           ecoHideIncompleteQuotes ||
                           ecosystemSearchQuery.trim().length > 0 ||
                           ecoMarketFilter !== "all" ||
@@ -3090,6 +3136,7 @@ export function ThemePageClient({
                         {ecosystemSorted.length === 0 &&
                         (patrolOn ||
                           ecoBookmarksOnly ||
+                          ecoCompoundingIgnitedOnly ||
                           ecoHideIncompleteQuotes ||
                           ecosystemSearchQuery.trim().length > 0 ||
                           ecoMarketFilter !== "all" ||
@@ -3106,11 +3153,13 @@ export function ThemePageClient({
                                 const marketOnly =
                                   ecoMarketFilter !== "all" &&
                                   !patrolOn &&
-                                  !q;
+                                  !q &&
+                                  !ecoCompoundingIgnitedOnly;
                                 const quoteOnly =
                                   ecoHideIncompleteQuotes &&
                                   !patrolOn &&
                                   !ecoBookmarksOnly &&
+                                  !ecoCompoundingIgnitedOnly &&
                                   !q &&
                                   ecoMarketFilter === "all" &&
                                   !ecoEpsPositiveOnly;
@@ -3126,6 +3175,18 @@ export function ThemePageClient({
                                 }
                                 if (patrolOn) {
                                   return "割安パトロールの条件に合う銘柄がありません（乖離 Z≤−1.5 または 高値比 ≤−12%）。";
+                                }
+                                const ignitionOnly =
+                                  ecoCompoundingIgnitedOnly &&
+                                  !patrolOn &&
+                                  !ecoBookmarksOnly &&
+                                  !q &&
+                                  ecoMarketFilter === "all" &&
+                                  !ecoHideIncompleteQuotes &&
+                                  !ecoEpsPositiveOnly &&
+                                  ecoLynchFilter === "";
+                                if (ignitionOnly) {
+                                  return "複利点火の条件に合う銘柄がありません。「複利点火のみ」のフィルターをオフにしてください。";
                                 }
                                 return "フィルター条件に合う銘柄がありません。";
                               })()}

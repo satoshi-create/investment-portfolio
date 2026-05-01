@@ -20,3 +20,29 @@ export const MARKET_GLANCE_MACRO_DEFS: readonly { label: string; symbol: string 
 export const MARKET_GLANCE_MACRO_SYMBOL_SET = new Set(
   MARKET_GLANCE_MACRO_DEFS.map((d) => d.symbol),
 );
+
+const USO_MACRO_DEF = MARKET_GLANCE_MACRO_DEFS.find((d) => d.symbol === "USO");
+
+/**
+ * テーマ「非石油文明」「石油文明」用スポット指標（`fetchOilThemeMacroSpotIndicators`）。
+ * USO は `MARKET_GLANCE_MACRO_DEFS` と同一ラベル・シンボル（MarketBar / グレンスと整合）。
+ */
+export const OIL_THEME_SPOT_MACRO_DEFS: readonly { label: string; symbol: string }[] =
+  USO_MACRO_DEF != null
+    ? [
+        { label: "WTI 近月 (CL)", symbol: "CL=F" },
+        { label: "Brent 近月 (BZ)", symbol: "BZ=F" },
+        USO_MACRO_DEF,
+      ]
+    : [
+        { label: "WTI 近月 (CL)", symbol: "CL=F" },
+        { label: "Brent 近月 (BZ)", symbol: "BZ=F" },
+        { label: "Crude (USO)", symbol: "USO" },
+      ];
+
+const OIL_STRUCTURAL_THEME_NAMES = new Set<string>(["非石油文明", "石油文明"]);
+
+/** DB / URL 解決後のテーマ名が原油対照テーマか（上記2名の完全一致のみ）。 */
+export function isOilStructuralTheme(themeName: string): boolean {
+  return OIL_STRUCTURAL_THEME_NAMES.has(themeName.trim());
+}

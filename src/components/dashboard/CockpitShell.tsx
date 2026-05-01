@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, LineChart, Menu, RefreshCw, ScrollText, X, Zap } from "lucide-react";
+import { Camera, Flame, LineChart, Menu, RefreshCw, ScrollText, X, Zap } from "lucide-react";
 import { usePathname } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -20,6 +20,7 @@ import { COCKPIT_MAIN_SCROLL_CLASS } from "@/src/components/dashboard/cockpit-la
 import { ThemeToggle } from "@/src/components/dashboard/ThemeToggle";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { cn } from "@/src/lib/cn";
+import { stockFiveDayTrendIgnitionModel } from "@/src/lib/alpha-logic";
 import { STORY_PANEL_PAGE_PAD_TRANSITION_CLASS } from "@/src/lib/story-panel-inset";
 
 function CockpitHydrationSkeleton() {
@@ -85,6 +86,80 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
   const summary = data?.summary ?? EMPTY_SUMMARY;
   const signals = data?.signals ?? [];
 
+  const structuralCompoundingIgnitionStripModel = useMemo(() => {
+    const stocks = data?.stocks;
+    const ecosystemSearch = data?.ecosystemWatchlistSearch;
+    if (stocks == null) return null;
+
+    // 1. 保有銘柄の点火済みを抽出
+    const ignitedStocks = stocks.filter((s) => stockFiveDayTrendIgnitionModel(s).isCompoundingIgnited);
+
+    // 2. 観測銘柄（非保有）の点火済みを抽出
+    const portfolioTickerSet = new Set(stocks.map((s) => s.ticker.toUpperCase()));
+    const ignitedEcosystemAll = (ecosystemSearch ?? []).filter(
+      (item) => item.isCompoundingIgnited && !portfolioTickerSet.has(item.ticker.toUpperCase()),
+    );
+
+    // エコシステム内でティッカーの重複を排除（複数のテーマに属する場合があるため）
+    const ignitedEcosystemUniqueMap = new Map<string, (typeof ignitedEcosystemAll)[0]>();
+    for (const item of ignitedEcosystemAll) {
+      const t = item.ticker.toUpperCase();
+      if (!ignitedEcosystemUniqueMap.has(t)) {
+        ignitedEcosystemUniqueMap.set(t, item);
+      }
+    }
+    const ignitedEcosystem = [...ignitedEcosystemUniqueMap.values()];
+
+    const ignitedTotal = ignitedStocks.length + ignitedEcosystem.length;
+    if (ignitedTotal === 0) {
+      return { ignitedTotal: 0, themeLines: [], otherThemeGroups: 0, tickerLinks: [], otherTickers: 0 };
+    }
+
+    // テーマ（タグ）別の集計
+    const byTagMap = new Map<string, number>();
+    for (const s of ignitedStocks) {
+      const raw = String(s.tag ?? "").trim();
+      const key = raw.length > 0 ? raw : "その他";
+      byTagMap.set(key, (byTagMap.get(key) ?? 0) + 1);
+    }
+    for (const item of ignitedEcosystemAll) {
+      const raw = String(item.themeName ?? "").trim();
+      const key = raw.length > 0 ? raw : "その他";
+      byTagMap.set(key, (byTagMap.get(key) ?? 0) + 1);
+    }
+
+    const sortedTags = [...byTagMap.entries()].sort((a, b) => b[1] - a[1]);
+    const maxThemeLines = 2;
+    const themeLines = sortedTags.slice(0, maxThemeLines).map(([label, count]) => ({
+      label,
+      count,
+      href: label === "その他" ? undefined : `/themes/${encodeURIComponent(label)}?ignition=1`,
+    }));
+    const otherThemeGroups = Math.max(0, sortedTags.length - maxThemeLines);
+
+    // ティッカーリンクの作成（保有優先、次に観測）
+    const sortedIgnitedStocks = [...ignitedStocks].sort((a, b) => b.marketValue - a.marketValue);
+    const topStocks = sortedIgnitedStocks.slice(0, 3);
+    const tickerLinks = topStocks.map((s) => ({
+      ticker: s.ticker,
+      href: `/?ticker=${encodeURIComponent(s.ticker)}`,
+    }));
+
+    if (tickerLinks.length < 3) {
+      const remaining = 3 - tickerLinks.length;
+      const topEcosystem = ignitedEcosystem.slice(0, remaining);
+      for (const item of topEcosystem) {
+        tickerLinks.push({
+          ticker: item.ticker,
+          href: `/themes/${encodeURIComponent(item.themeName)}?ignition=1`,
+        });
+      }
+    }
+
+    const otherTickers = Math.max(0, ignitedTotal - tickerLinks.length);
+    return { ignitedTotal, themeLines, otherThemeGroups, tickerLinks, otherTickers };
+  }, [data?.stocks, data?.ecosystemWatchlistSearch]);
+
   useEffect(() => {
     if (!marketOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -136,6 +211,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
               signalUserId={userId}
               onSignalResolved={resolveSignalOptimistic}
               onSignalTrade={(init) => openTradeForm(init)}
+              ignitionCount={structuralCompoundingIgnitionStripModel?.ignitedTotal ?? 0}
             />
           ) : (
             <div className="h-full border-r border-border bg-card/40 backdrop-blur-sm">
@@ -150,9 +226,18 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
                   <Menu className="h-4 w-4" aria-hidden />
                 </button>
                 <Link
+                  href="/signals?ignition=1"
+                  prefetch
+                  className="mt-auto inline-flex flex-col items-center gap-0.5 rounded-lg border border-cyan-500/30 bg-cyan-950/20 px-1.5 py-2 text-[9px] font-bold text-cyan-300 hover:bg-cyan-900/30"
+                  title={`複利点火: ${structuralCompoundingIgnitionStripModel?.ignitedTotal ?? 0} 件`}
+                >
+                  <Flame className="h-4 w-4 text-cyan-400 animate-pulse" aria-hidden />
+                  <span className="font-mono tabular-nums">{structuralCompoundingIgnitionStripModel?.ignitedTotal ?? 0}</span>
+                </Link>
+                <Link
                   href="/signals"
                   prefetch
-                  className="mt-auto inline-flex flex-col items-center gap-0.5 rounded-lg border border-border bg-background/60 px-1.5 py-2 text-[9px] font-bold text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="mt-2 inline-flex flex-col items-center gap-0.5 rounded-lg border border-border bg-background/60 px-1.5 py-2 text-[9px] font-bold text-muted-foreground hover:bg-muted hover:text-foreground"
                   title="Live Signals"
                   aria-label={`Signals${signals.length > 0 ? `: ${signals.length} unresolved` : ""}`}
                 >
@@ -181,6 +266,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
                 signalUserId={userId}
                 onSignalResolved={resolveSignalOptimistic}
                 onSignalTrade={(init) => openTradeForm(init)}
+                ignitionCount={structuralCompoundingIgnitionStripModel?.ignitedTotal ?? 0}
               />
             </div>
           </div>

@@ -14,7 +14,7 @@ import { DailyAlphaContextTooltip } from "@/src/components/dashboard/DailyAlphaC
 import { ecoFcfYieldTone, ecoRuleOf40Tone } from "@/src/components/dashboard/eco-efficiency-display";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
-import { fiveDayPulseForEcosystem } from "@/src/lib/eco-trend-daily";
+import { ecosystemFiveDayTrendCellModel } from "@/src/lib/eco-trend-daily";
 import {
   ecosystemCumulativeSparklineTooltip,
   ecosystemMappedAlphaCellTooltip,
@@ -71,6 +71,14 @@ import {
   LYNCH_CATEGORY_LABEL_JA,
 } from "@/src/types/investment";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
+
+function alphaMagnitudeBadgeClass(label: string): string {
+  const m = /^M(\d+)/.exec(label);
+  const n = m ? Number(m[1]) : 1;
+  if (n >= 6) return "text-emerald-300 border-emerald-500/45 bg-emerald-500/10";
+  if (n >= 4) return "text-cyan-200/90 border-cyan-500/40 bg-cyan-500/5";
+  return "text-muted-foreground border-border/55";
+}
 
 function fmtVolumeRatioCell(r: number | null): string {
   if (r == null || !Number.isFinite(r)) return "—";
@@ -747,13 +755,29 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           }
           case "trend5d": {
-            const { series, hasIntradayPulse } = fiveDayPulseForEcosystem(e);
+            const m = ecosystemFiveDayTrendCellModel(e);
             return (
               <td key={colId} className={`px-4 py-4 align-middle text-center ${stickyFirst}`}>
-                {series.length === 0 ? (
+                {m.series.length === 0 ? (
                   <span className="text-muted-foreground text-xs">No data</span>
                 ) : (
-                  <TrendMiniChart history={series} maxPoints={5} lastBarPulse={hasIntradayPulse} />
+                  <div className="flex flex-row flex-wrap items-end justify-center gap-1">
+                    <TrendMiniChart
+                      history={m.series}
+                      maxPoints={5}
+                      lastBarPulse={m.hasIntradayPulse}
+                      isCompoundingIgnited={m.isCompoundingIgnited}
+                    />
+                    <span
+                      className={cn(
+                        "text-[8px] font-bold tabular-nums rounded px-1 py-px border shrink-0 leading-none",
+                        alphaMagnitudeBadgeClass(m.alphaMagnitudeLabel),
+                      )}
+                      title="累積 Alpha の傾きに基づく相対スケール（αM）。直近の累積系列の勾配を M1.0–M8.0 に離散化。"
+                    >
+                      α{m.alphaMagnitudeLabel}
+                    </span>
+                  </div>
                 )}
               </td>
             );

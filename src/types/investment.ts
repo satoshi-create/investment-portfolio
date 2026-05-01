@@ -427,6 +427,12 @@ export type EcosystemWatchlistSearchItem = {
   themeName: string;
   ticker: string;
   companyName: string;
+  /** 複利点火（二階微分）検出済みフラグ。トップ画面のスリム帯表示に使用。 */
+  isCompoundingIgnited: boolean;
+  /** 最新の Alpha 値 (%) */
+  latestAlpha: number | null;
+  /** 5日間トレンドの Alpha 系列 */
+  alphaHistory5d: number[];
 };
 
 export type DashboardData = {
@@ -647,6 +653,30 @@ export type CumulativeAlphaPoint = {
   cumulative: number;
 };
 
+/**
+ * 複利点火（日次 Alpha の二階微分）判定。`calculateAlphaAcceleration` の戻り値。
+ * `skipReason` はデバッグ用（UI は未使用可）。
+ */
+export type AlphaAccelerationResult = {
+  isCompoundingIgnited: boolean;
+  lastAcceleration: number | null;
+  lastVelocity: number | null;
+  skipReason:
+    | "too_few_daily_points"
+    | "nan_in_series"
+    | "cumulative_not_upward"
+    | "accel_pair_not_both_positive"
+    | null;
+};
+
+/**
+ * 累積 Alpha の傾きから離散 Magnitude（M1.0–M8.0）。`alphaMagnitudeBadgeFromCumulativeHistory`。
+ */
+export type AlphaMagnitudeBadge = {
+  label: string;
+  slopePerStep: number | null;
+};
+
 export type ResourceSyncJudgment = "BUY_OPPORTUNITY" | "OVERHEATED" | "SYNCING" | "DECOUPLED" | null;
 
 /** 江戸循環テーマ: 資源ETF vs エコシステム銘柄の正規化騰落率（同一アンカー）と乖離。 */
@@ -686,6 +716,37 @@ export type UrbanMiningMetalSpotRow = {
   price: number | null;
   changePct: number | null;
   asOfDate: string | null;
+};
+
+/** 原油マクロ vs テーマ構造トレンド（年輪）並置チャートの 1 日。 */
+export type OilThemeMacroChartPoint = {
+  date: string;
+  /** WTI 近月（CL=F）: 系列先頭日終値を基準とした累積騰落率（%）。欠損は null。 */
+  wtiNormCumulativePct: number | null;
+  /** `themeStructuralTrendSeries.cumulative` と同一。 */
+  themeTrendCumulativePct: number | null;
+};
+
+/** WTI vs テーマ加重日次 Alpha の相関メタ付き。 */
+export type OilThemeMacroChartData = {
+  points: OilThemeMacroChartPoint[];
+  /**
+   * Pearson 相関（母標本）: 隣接する構造トレンド観測日について
+   * WTI 日次%リターン vs テーマ加重日次 Alpha（累積系列の日次差分）。
+   * ペア数が閾値未満のとき null。
+   */
+  wtiVsThemeTrendCorrelation: number | null;
+  correlationPairCount: number;
+  /** `THEME_STRUCTURAL_TREND_LOOKBACK_DAYS` と同義（表示用メタ）。 */
+  correlationWindowDays: number;
+};
+
+/** 「非石油文明」「石油文明」専用: 原油スポット指標 + 対テーマ並置チャート。 */
+export type OilThemeMacroContext = {
+  indicators: MarketIndicator[];
+  /** CL=F 日足の最終バー日付など（YYYY-MM-DD、ベストエフォート） */
+  asOf: string | null;
+  chart: OilThemeMacroChartData | null;
 };
 
 /** `/themes/[theme]` 用: テーマメタ + 該当保有の Stock（ウェイトはテーマ内評価額ベース）。 */
@@ -743,6 +804,11 @@ export type ThemeDetailData = {
   resourceStructuralSync: ResourceStructuralSyncData | null;
   /** `URBAN_MINING_THEME_NAME` のみ。金/銀/銅の Yahoo 参照価格（未取得は null 行）。 */
   urbanMiningMetalSpot: UrbanMiningMetalSpotRow[] | null;
+  /**
+   * 「非石油文明」「石油文明」のみ（フル取得時）。`fast=1` では常に null。
+   * 原油スポット指標と WTI vs 構造トレンドの並置・相関。
+   */
+  oilMacroContext: OilThemeMacroContext | null;
 };
 
 /** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */

@@ -19,7 +19,7 @@ import {
   utcTodayYmd,
   type DatedAlphaRow,
 } from "@/src/lib/alpha-logic";
-import { MARKET_GLANCE_MACRO_DEFS } from "@/src/lib/market-glance-macros";
+import { MARKET_GLANCE_MACRO_DEFS, OIL_THEME_SPOT_MACRO_DEFS } from "@/src/lib/market-glance-macros";
 import type { MarketIndicator, YahooBuybackPosture } from "@/src/types/investment";
 
 /** Yahoo アンケートの初回表示を抑止。先物など quote スキーマ不一致は `fetchLiveQuoteSnapshot` で validateResult: false を使用。 */
@@ -2096,6 +2096,23 @@ export async function fetchGlobalMarketIndicators(): Promise<MarketIndicator[]> 
     if (r.status === "fulfilled") return r.value;
     const { label } = MARKET_GLANCE_MACRO_DEFS[i]!;
     logSkip(label, "indicator fetch rejected", r.reason);
+    return { label, value: -1, changePct: 0 };
+  });
+}
+
+/** 「非石油文明」「石油文明」テーマ用: WTI / Brent / USO のスポット（`OIL_THEME_SPOT_MACRO_DEFS`）。 */
+export async function fetchOilThemeMacroSpotIndicators(): Promise<MarketIndicator[]> {
+  const settled = await Promise.allSettled(
+    OIL_THEME_SPOT_MACRO_DEFS.map(async ({ label, symbol }) => {
+      const snap = await fetchHybridCloseAndChangeForYahooSymbol(symbol);
+      if (snap == null) return { label, value: -1, changePct: 0 } satisfies MarketIndicator;
+      return { label, value: snap.close, changePct: snap.changePct };
+    }),
+  );
+  return settled.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    const { label } = OIL_THEME_SPOT_MACRO_DEFS[i]!;
+    logSkip(label, "oil theme indicator fetch rejected", r.reason);
     return { label, value: -1, changePct: 0 };
   });
 }

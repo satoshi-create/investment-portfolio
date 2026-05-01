@@ -18,9 +18,10 @@ import type {
   TickerInstrumentKind,
   ResourceStructuralSyncData,
   UrbanMiningMetalSpotRow,
+  OilThemeMacroContext,
 } from "@/src/types/investment";
 import {
-  benchmarkDailyReturnPercentByEndDate,
+  calculateAlphaAcceleration,
   calculateCumulativeAlpha,
   classifyTickerInstrument,
   computeAlphaDeviationZScore,
@@ -45,6 +46,8 @@ import {
   TOPIX_ETF_BENCHMARK_TICKER,
   toYmd,
   ymdDaysAgoUtc,
+  buildFiveDayPulseDailyAlpha,
+  benchmarkDailyReturnPercentByEndDate,
   type DatedAlphaRow,
   type ThemeSyntheticStockInput,
 } from "@/src/lib/alpha-logic";
@@ -83,6 +86,7 @@ import {
   fetchLiveQuoteSnapshot,
   fetchHoldingsHybridPriceSnapshots,
   fetchPriceHistory,
+  fetchOilThemeMacroSpotIndicators,
   type HybridHoldingPriceSnapshot,
   fetchUsdJpyRate,
   holdingLivePriceKey,
@@ -94,6 +98,8 @@ import {
 } from "@/src/lib/instrument-metadata-sync";
 import { EDO_CIRCULAR_THEME_NAME, URBAN_MINING_THEME_NAME } from "@/src/lib/edo-theme-constants";
 import { fetchEdoResourceStructuralSyncData } from "@/src/lib/edo-resource-structural-sync";
+import { isOilStructuralTheme } from "@/src/lib/market-glance-macros";
+import { buildOilThemeMacroChartData, OIL_THEME_CL_HISTORY_DAYS } from "@/src/lib/oil-theme-macro-chart";
 
 export { syncStockMetadata } from "@/src/lib/instrument-metadata-sync";
 export type { SyncStockMetadataResult } from "@/src/lib/instrument-metadata-sync";
@@ -216,24 +222,83 @@ async function fetchAllInvestmentThemes(db: Client, userId: string): Promise<Inv
   }
 }
 
-async function fetchEcosystemWatchlistSearchIndex(db: Client, userId: string): Promise<EcosystemWatchlistSearchItem[]> {
+async function fetchEcosystemWatchlistSearchIndex(
+  db: Client,
+  userId: string,
+  liveAlphaCtx: LiveAlphaBenchmarkContext,
+  alphaByTicker: Map<string, AlphaPoint[]>,
+  hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
+): Promise<EcosystemWatchlistSearchItem[]> {
   try {
     const rs = await db.execute({
-      sql: `SELECT m.id AS member_id, m.theme_id, m.ticker, m.company_name, t.name AS theme_name
+      sql: `SELECT m.id AS member_id, m.theme_id, m.ticker, m.company_name, t.name AS theme_name,
+                   m.observation_started_at, t.created_at AS theme_created_at
             FROM theme_ecosystem_members m
             INNER JOIN investment_themes t ON m.theme_id = t.id
             WHERE t.user_id = ?
             ORDER BY t.name ASC, m.ticker ASC`,
       args: [userId],
     });
+
     return (rs.rows as Record<string, unknown>[])
-      .map((row) => ({
-        memberId: String(row["member_id"] ?? "").trim(),
-        themeId: String(row["theme_id"] ?? "").trim(),
-        themeName: row["theme_name"] != null ? String(row["theme_name"]).trim() : "",
-        ticker: String(row["ticker"] ?? "").trim(),
-        companyName: row["company_name"] != null ? String(row["company_name"]).trim() : "",
-      }))
+      .map((row) => {
+        const memberId = String(row["member_id"] ?? "").trim();
+        const ticker = String(row["ticker"] ?? "").trim();
+        const themeName = row["theme_name"] != null ? String(row["theme_name"]).trim() : "";
+        const companyName = row["company_name"] != null ? String(row["company_name"]).trim() : "";
+
+        // 複利点火の判定
+        const series = alphaByTicker.get(ticker) ?? [];
+        const dailyAlphaHistory = series.map((p) => p.alpha);
+
+        // 累積系列の構築（起点を考慮）
+        const observationStartedAt = row["observation_started_at"] != null ? String(row["observation_started_at"]) : null;
+        const themeCreatedAt = row["theme_created_at"] != null ? String(row["theme_created_at"]) : null;
+        const startDate =
+          observationStartedAt != null && observationStartedAt.length === 10
+            ? observationStartedAt
+            : themeCreatedAt != null && themeCreatedAt.trim().length > 0
+              ? themeCreatedAt.trim()
+              : series[0]?.observationYmd ?? "1970-01-01";
+
+        const datedRows: DatedAlphaRow[] = series.map((p) => ({
+          recordedAt: p.observationYmd,
+          alphaValue: p.alpha,
+        }));
+        const cumPoints = calculateCumulativeAlpha(datedRows, startDate);
+        const cumulativeAlphaOldestToNewest = cumPoints.map((p) => p.cumulative);
+
+        // Pulse (本日暫定) の計算
+        // 保有銘柄であれば hybridPriceByHoldingKey から情報を取れる
+        const instrumentKind = classifyTickerInstrument(ticker);
+        const priceKey = holdingLivePriceKey(ticker, null); // providerSymbol は一旦 null
+        const hp = hybridPriceByHoldingKey.get(priceKey);
+
+        const pulse = buildFiveDayPulseDailyAlpha({
+          dailyAlphaHistory,
+          latestAlphaObservationYmd: series.length > 0 ? series[series.length - 1]!.observationYmd : null,
+          priceSource: (hp as any)?.priceSource ?? "close",
+          livePrice: hp?.price ?? (series.length > 0 ? series[series.length - 1]!.close : null),
+          previousClose: hp?.previousClose ?? (series.length > 1 ? series[series.length - 2]!.close : null),
+          benchmarkDayChangePercent: instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkChangePct : liveAlphaCtx.jpBenchmarkChangePct,
+        });
+
+        const accel = calculateAlphaAcceleration({
+          dailyAlphaOldestToNewest: pulse.series,
+          cumulativeAlphaOldestToNewest,
+        });
+
+        return {
+          memberId,
+          themeId: String(row["theme_id"] ?? "").trim(),
+          themeName,
+          ticker,
+          companyName,
+          isCompoundingIgnited: accel.isCompoundingIgnited,
+          latestAlpha: pulse.series.length > 0 ? pulse.series[pulse.series.length - 1]! : null,
+          alphaHistory5d: pulse.series,
+        };
+      })
       .filter((x) => x.memberId.length > 0 && x.ticker.length > 0);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -2965,6 +3030,7 @@ export async function getThemeDetailData(
   let cumulativeAlphaAnchorDate: string | null = null;
   let resourceStructuralSync: ResourceStructuralSyncData | null = null;
   let urbanMiningMetalSpot: UrbanMiningMetalSpotRow[] | null = null;
+  let oilMacroContext: OilThemeMacroContext | null = null;
 
   let themeSyntheticUsRatio: number | null = null;
   let themeSyntheticJpRatio: number | null = null;
@@ -3270,6 +3336,32 @@ export async function getThemeDetailData(
     }
   }
 
+  if (isOilStructuralTheme(themeName) && !fast) {
+    const tOil = perf.enabled ? Date.now() : 0;
+    try {
+      const [indicators, clBars] = await Promise.all([
+        fetchOilThemeMacroSpotIndicators(),
+        fetchPriceHistory("CL=F", OIL_THEME_CL_HISTORY_DAYS, null),
+      ]);
+      const asOf =
+        clBars.length > 0 && typeof clBars[clBars.length - 1]!.date === "string"
+          ? clBars[clBars.length - 1]!.date.trim().slice(0, 10)
+          : null;
+      const chart =
+        themeStructuralTrendSeries.length >= 2
+          ? buildOilThemeMacroChartData(themeStructuralTrendSeries, clBars)
+          : null;
+      oilMacroContext = { indicators, asOf, chart };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[getThemeDetailData] oilMacroContext failed: ${msg}`);
+      oilMacroContext = null;
+    }
+    if (perf.enabled && perf.requestId) {
+      console.log(`[perf] ${perf.requestId} oilMacroContext wallMs=${Date.now() - tOil}`);
+    }
+  }
+
   return {
     themeName,
     themeMissing: theme == null,
@@ -3297,6 +3389,7 @@ export async function getThemeDetailData(
     themeStructuralTrendStartDate,
     resourceStructuralSync,
     urbanMiningMetalSpot,
+    oilMacroContext,
   };
 }
 
@@ -3309,15 +3402,34 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   const h = await fetchHoldingsRowsWithInvestmentMeta(db, userId);
 
   if (h.rows.length === 0) {
-    const [allThemes, benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators, ecosystemWatchlistSearch] =
-      await Promise.all([
-        fetchAllInvestmentThemes(db, userId),
-        resolveBenchmarkSnapshot(),
-        resolveFxUsdJpyRate(),
-        fetchTotalRealizedPnlJpy(db, userId),
-        fetchGlobalMarketIndicators(),
-        fetchEcosystemWatchlistSearchIndex(db, userId),
-      ]);
+    const [benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators, liveAlphaCtx] = await Promise.all([
+      resolveBenchmarkSnapshot(),
+      resolveFxUsdJpyRate(),
+      fetchTotalRealizedPnlJpy(db, userId),
+      fetchGlobalMarketIndicators(),
+      resolveLiveAlphaBenchmarkContext(),
+    ]);
+
+    const allThemes = await fetchAllInvestmentThemes(db, userId);
+
+    const ecosystemTickersRs = await db.execute({
+      sql: `SELECT DISTINCT m.ticker FROM theme_ecosystem_members m
+            INNER JOIN investment_themes t ON m.theme_id = t.id
+            WHERE t.user_id = ?`,
+      args: [userId],
+    });
+    const ecosystemTickers = ecosystemTickersRs.rows.map((r) => String(r.ticker));
+    const alphaRows = await fetchAlphaHistoryRowsForTickers(db, userId, ecosystemTickers);
+    const byTicker = buildByTickerFromAlphaRows(alphaRows);
+
+    const ecosystemWatchlistSearch = await fetchEcosystemWatchlistSearchIndex(
+      db,
+      userId,
+      liveAlphaCtx,
+      byTicker,
+      new Map(),
+    );
+
     const financial = computeFinancialTotals([], totalRealizedPnlJpy);
     const indicatorValueOrNull = (label: string): number | null => {
       const m = marketIndicators.find((x) => x.label === label);
@@ -3363,7 +3475,16 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     };
   }
 
-  const tickers = [...new Set(h.rows.map((r) => String(r.ticker)))];
+  const portfolioTickers = h.rows.map((r) => String(r.ticker));
+  const ecosystemTickersRs = await db.execute({
+    sql: `SELECT DISTINCT m.ticker FROM theme_ecosystem_members m
+          INNER JOIN investment_themes t ON m.theme_id = t.id
+          WHERE t.user_id = ?`,
+    args: [userId],
+  });
+  const ecosystemTickers = ecosystemTickersRs.rows.map((r) => String(r.ticker));
+  const tickers = [...new Set([...portfolioTickers, ...ecosystemTickers])];
+
   const [
     allThemes,
     alphaRows,
@@ -3373,7 +3494,6 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     marketIndicators,
     liveAlphaCtx,
     snapshotReturnRows,
-    ecosystemWatchlistSearch,
   ] = await Promise.all([
     fetchAllInvestmentThemes(db, userId),
     fetchAlphaHistoryRowsForTickers(db, userId, tickers),
@@ -3383,13 +3503,13 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     fetchGlobalMarketIndicators(),
     resolveLiveAlphaBenchmarkContext(),
     fetchPortfolioSnapshotReturnRows(db, userId),
-    fetchEcosystemWatchlistSearchIndex(db, userId),
   ]);
 
   const byTicker = buildByTickerFromAlphaRows(alphaRows);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
   const holdingRowsForDash = h.rows as unknown as HoldingQueryRow[];
   const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, tickers);
+
   const [researchByTicker, hybridPriceByHoldingKey] = await Promise.all([
     fetchEquityResearchSnapshots(
       holdingRowsForDash.map((r) => ({
@@ -3404,6 +3524,14 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       })),
     ),
   ]);
+
+  const ecosystemWatchlistSearch = await fetchEcosystemWatchlistSearchIndex(
+    db,
+    userId,
+    liveAlphaCtx,
+    byTicker,
+    hybridPriceByHoldingKey,
+  );
   await prefetchHoldingsInstrumentMetadata(db, userId, holdingRowsForDash as unknown as Record<string, unknown>[], {
     fast: false,
   });

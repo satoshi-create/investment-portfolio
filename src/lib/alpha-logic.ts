@@ -7,6 +7,8 @@
 
 import {
   DEFAULT_BENCHMARK_BY_INSTRUMENT_KIND,
+  type AlphaAccelerationResult,
+  type AlphaMagnitudeBadge,
   type CumulativeAlphaPoint,
   type TickerInstrumentKind,
 } from "@/src/types/investment";
@@ -550,6 +552,30 @@ export function fiveDayPulseForHoldingRow(s: {
   });
 }
 
+export type StockFiveDayTrendIgnitionInput = Parameters<typeof fiveDayPulseForHoldingRow>[0];
+
+/**
+ * 保有行の「複利点火」判定。`fiveDayPulseForHoldingRow` の **series**（5D 表示と同一）を
+ * `calculateAlphaAcceleration` の日次入力に渡す。
+ *
+ * **累積入力**: `Stock.alphaHistory` は**日次** % のため、エコ行の `e.alphaHistory`（DB 累積）とは別経路で
+ * {@link cumulativePointsFromDailyAlphaOldestToNewest} により `number[]` の累積系列を作り、
+ * 上昇傾向チェックに渡す（`eco-trend-daily` のエコ行との対称）。
+ */
+export function stockFiveDayTrendIgnitionModel(s: StockFiveDayTrendIgnitionInput): {
+  isCompoundingIgnited: boolean;
+} {
+  const { series } = fiveDayPulseForHoldingRow(s);
+  const cumulativeAlphaOldestToNewest = cumulativePointsFromDailyAlphaOldestToNewest(s.alphaHistory).map(
+    (p) => p.cumulative,
+  );
+  const accel = calculateAlphaAcceleration({
+    dailyAlphaOldestToNewest: series,
+    cumulativeAlphaOldestToNewest,
+  });
+  return { isCompoundingIgnited: accel.isCompoundingIgnited };
+}
+
 /** `alpha_history` 等から渡す 1 日分の超過リターン（Ticker% − Bench%）。 */
 export type DatedAlphaRow = {
   /** `recorded_at`（YYYY-MM-DD または ISO。先頭 10 文字を日付として扱う） */
@@ -856,6 +882,166 @@ export function isThemeStructuralTrendPositiveUp(
   const idx = Math.max(0, series.length - 1 - lb);
   const prev = series[idx]!.cumulative;
   return Number.isFinite(prev) && last > prev;
+}
+
+/** 二階微分（加速度）を 2 本得るために必要な日次 Alpha の最小本数（古い→新しい）。 */
+const COMPOUND_IGNITION_MIN_DAILY_POINTS = 4;
+
+/**
+ * 保有 `Stock.alphaHistory` と同形の**日次** Alpha %（古い→新しい）から累積系列を単純合算で構築。
+ * エコシステムの `alphaHistory`（既に累積）には使わない。
+ */
+export function cumulativePointsFromDailyAlphaOldestToNewest(
+  dailyOldestToNewest: readonly number[],
+): { cumulative: number }[] {
+  let sum = 0;
+  const out: { cumulative: number }[] = [];
+  for (const raw of dailyOldestToNewest) {
+    if (!Number.isFinite(raw)) return [];
+    sum = roundAlphaMetric(sum + raw);
+    out.push({ cumulative: sum });
+  }
+  return out;
+}
+
+/**
+ * 複利点火（日次 Alpha の二階微分）エンジン。
+ *
+ * **入力の向き**は {@link buildFiveDayPulseDailyAlpha} / `fiveDayPulseForHoldingRow` と同じく
+ * **古い営業日 → 新しい営業日** の日次 Alpha %。
+ * エコ「5D」列では `eco-trend-daily` の `fiveDayPulseForEcosystem` が返す **表示と同一の `series`**
+ * （最大 5 点・ライブ暫定を含み得る）を渡し、チャート上の棒と判定を一致させる。
+ * 本数が 4 本未満（内部定数 `COMPOUND_IGNITION_MIN_DAILY_POINTS`）なら非点火。
+ *
+ * 定義（固定）:
+ * - α_t: 各日の日次 Alpha %
+ * - v_t = α_t − α_{t−1}（t ≥ 1、初日は v なし）
+ * - a_t = v_t − v_{t−1}（t ≥ 2）
+ *
+ * **点火条件**:
+ * - 「直近 2 営業日分の加速度がともに正」= 渡された系列上の**最後の a** と**その 1 つ前の a** がともに > 0。
+ * - かつ累積 Alpha が上昇傾向: {@link isCumulativeSeriesTrendUpward} を `cumulativeAlphaOldestToNewest` を
+ *   `{ cumulative }[]` に写した系列に対して適用（既定 lookback と同一）。
+ *
+ * 数値例（手計算用）:
+ * - daily = [0.1, 0.1, 0.1, 0.2] → v = [0, 0, 0.1], a = [0, 0.1] → 最終二つの a は 0 と 0.1 → ともに正ではない → 非点火。
+ * - daily = [0.1, 0.1, 0.2, 0.5] → v = [0, 0.1, 0.3], a = [0.1, 0.2] → 最後二つとも正。累積が右肩上がりなら点火し得る。
+ */
+export function calculateAlphaAcceleration(input: {
+  dailyAlphaOldestToNewest: readonly number[];
+  cumulativeAlphaOldestToNewest: readonly number[];
+}): AlphaAccelerationResult {
+  const daily = input.dailyAlphaOldestToNewest;
+  const baseFalse = (
+    partial: Pick<AlphaAccelerationResult, "lastAcceleration" | "lastVelocity" | "skipReason">,
+  ): AlphaAccelerationResult => ({
+    isCompoundingIgnited: false,
+    lastAcceleration: partial.lastAcceleration ?? null,
+    lastVelocity: partial.lastVelocity ?? null,
+    skipReason: partial.skipReason,
+  });
+
+  if (!Array.isArray(daily) || daily.length < COMPOUND_IGNITION_MIN_DAILY_POINTS) {
+    return baseFalse({ lastAcceleration: null, lastVelocity: null, skipReason: "too_few_daily_points" });
+  }
+  for (const x of daily) {
+    if (!Number.isFinite(x)) {
+      return baseFalse({ lastAcceleration: null, lastVelocity: null, skipReason: "nan_in_series" });
+    }
+  }
+
+  const velocities: number[] = [];
+  for (let t = 1; t < daily.length; t += 1) {
+    velocities.push(roundAlphaMetric(daily[t]! - daily[t - 1]!));
+  }
+  const accelerations: number[] = [];
+  for (let t = 1; t < velocities.length; t += 1) {
+    accelerations.push(roundAlphaMetric(velocities[t]! - velocities[t - 1]!));
+  }
+  if (accelerations.length < 2) {
+    return baseFalse({
+      lastAcceleration: accelerations[accelerations.length - 1] ?? null,
+      lastVelocity: velocities[velocities.length - 1] ?? null,
+      skipReason: "too_few_daily_points",
+    });
+  }
+
+  const lastA = accelerations[accelerations.length - 1]!;
+  const prevA = accelerations[accelerations.length - 2]!;
+  const lastV = velocities[velocities.length - 1]!;
+
+  const cum = input.cumulativeAlphaOldestToNewest;
+  const cumPts: { cumulative: number }[] = [];
+  if (Array.isArray(cum)) {
+    for (const x of cum) {
+      if (!Number.isFinite(x)) {
+        return baseFalse({
+          lastAcceleration: lastA,
+          lastVelocity: lastV,
+          skipReason: "nan_in_series",
+        });
+      }
+      cumPts.push({ cumulative: x });
+    }
+  }
+  if (cumPts.length < 2 || !isCumulativeSeriesTrendUpward(cumPts)) {
+    return baseFalse({
+      lastAcceleration: lastA,
+      lastVelocity: lastV,
+      skipReason: "cumulative_not_upward",
+    });
+  }
+
+  if (!(lastA > 0 && prevA > 0)) {
+    return baseFalse({
+      lastAcceleration: lastA,
+      lastVelocity: lastV,
+      skipReason: "accel_pair_not_both_positive",
+    });
+  }
+
+  return {
+    isCompoundingIgnited: true,
+    lastAcceleration: lastA,
+    lastVelocity: lastV,
+    skipReason: null,
+  };
+}
+
+/** αM 区分の上端（%pt / ステップ、slope = (last−first)/max(1, n−1)）。M2:(0, e0], M3:(e0,e1], … M8:>e6。 */
+const ALPHA_MAGNITUDE_SLOPE_UPPER: readonly number[] = [0.04, 0.08, 0.14, 0.22, 0.34, 0.5, 0.75];
+
+/**
+ * αM（マグニチュード）: 累積 Alpha の勾配を離散 M1.0–M8.0 に写像。
+ *
+ * slope = (last − first) / max(1, n − 1)（直近 `lookbackPoints` 本の累積%、1 ステップあたりの平均変化 %pt）。
+ * M1: slope ≤ 0 または系列不足。M2–M8: 上端閾値 `ALPHA_MAGNITUDE_SLOPE_UPPER` による左開右閉の段階（実装は上端 inclusive でループ）。
+ */
+export function alphaMagnitudeBadgeFromCumulativeHistory(
+  cumulativeOldestToNewest: readonly number[],
+  lookbackPoints = 12,
+): AlphaMagnitudeBadge {
+  if (!Array.isArray(cumulativeOldestToNewest) || cumulativeOldestToNewest.length < 2) {
+    return { label: "M1.0", slopePerStep: null };
+  }
+  const finite = cumulativeOldestToNewest.filter((x): x is number => Number.isFinite(x));
+  if (finite.length < 2) return { label: "M1.0", slopePerStep: null };
+  const k = Math.min(Math.max(2, Math.floor(lookbackPoints)), finite.length);
+  const slice = finite.slice(-k);
+  const first = slice[0]!;
+  const last = slice[slice.length - 1]!;
+  const span = slice.length - 1;
+  const slope = roundAlphaMetric((last - first) / Math.max(1, span));
+  if (!Number.isFinite(slope) || slope <= 0) {
+    return { label: "M1.0", slopePerStep: Number.isFinite(slope) ? slope : null };
+  }
+
+  for (let i = 0; i < ALPHA_MAGNITUDE_SLOPE_UPPER.length; i += 1) {
+    if (slope <= ALPHA_MAGNITUDE_SLOPE_UPPER[i]!) {
+      return { label: `M${i + 2}.0`, slopePerStep: slope };
+    }
+  }
+  return { label: "M8.0", slopePerStep: slope };
 }
 
 /**

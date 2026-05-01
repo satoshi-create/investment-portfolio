@@ -14,6 +14,8 @@ export default function CockpitSignalsPage() {
         userId={userId}
         onSignalResolved={resolveSignalOptimistic}
         onTrade={(init) => openTradeForm(init)}
+        stocks={data?.stocks}
+        ecosystemSearch={data?.ecosystemWatchlistSearch}
       />
     </div>
   );

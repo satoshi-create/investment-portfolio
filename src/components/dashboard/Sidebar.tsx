@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, FileText, Layers, Menu, Radio, X } from "lucide-react";
+import { BarChart3, FileText, Flame, Layers, Menu, Radio, X } from "lucide-react";
 
 import { LiveSignalsStrip } from "@/src/components/dashboard/LiveSignalsStrip";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
@@ -34,6 +34,7 @@ export function Sidebar({
   signalUserId = "",
   onSignalResolved,
   onSignalTrade,
+  ignitionCount = 0,
 }: {
   onNavigate?: () => void;
   onToggleCollapse?: () => void;
@@ -43,6 +44,7 @@ export function Sidebar({
   signalUserId?: string;
   onSignalResolved?: (signalId: string) => void;
   onSignalTrade?: (initial: TradeEntryInitial) => void;
+  ignitionCount?: number;
 }) {
   const pathname = usePathname() ?? "";
 
@@ -92,7 +94,23 @@ export function Sidebar({
           );
         })}
       </nav>
-      <div className="shrink-0 border-t border-border bg-muted/10 p-2">
+      <div className="shrink-0 border-t border-border bg-muted/10 p-2 space-y-2">
+        {ignitionCount > 0 && (
+          <Link
+            href="/signals?ignition=1"
+            className="flex items-center justify-between rounded-lg border border-cyan-500/30 bg-cyan-950/20 px-3 py-2 text-[11px] font-bold text-cyan-300 transition-colors hover:bg-cyan-900/30"
+            onClick={onNavigate}
+          >
+            <div className="flex items-center gap-2">
+              <Flame size={14} className="text-cyan-400 animate-pulse" />
+              <span>複利点火</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-xs">{ignitionCount}</span>
+              <span className="text-[9px] opacity-70">詳細</span>
+            </div>
+          </Link>
+        )}
         <LiveSignalsStrip
           signals={signals}
           presentation={liveSignalsPresentation}

@@ -16,6 +16,7 @@ import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { stickyTdFirst } from "@/src/components/dashboard/table-sticky";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
+import { ecosystemFiveDayTrendCellModel } from "@/src/lib/eco-trend-daily";
 import {
   EcosystemStructuralInsightExpandable,
   EcosystemStructuralInsightHoverWrap,
@@ -132,6 +133,15 @@ function volumeRatioToneClass(r: number | null): string {
   return "text-slate-500";
 }
 
+/** αM バッジの色温度（離散ラベル M1–M8）。 */
+function alphaMagnitudeBadgeClass(label: string): string {
+  const m = /^M(\d+)/.exec(label);
+  const n = m ? Number(m[1]) : 1;
+  if (n >= 6) return "text-emerald-300 border-emerald-500/45 bg-emerald-500/10";
+  if (n >= 4) return "text-cyan-200/90 border-cyan-500/40 bg-cyan-500/5";
+  return "text-muted-foreground border-border/55";
+}
+
 function extractGeopoliticalPotential(observationNotes: string | null | undefined): string | null {
   if (observationNotes == null) return null;
   const s = observationNotes.trim();
@@ -200,6 +210,7 @@ export function EcosystemWatchlistTableRow({
 }: EcosystemWatchlistTableRowProps) {
   const { convert, viewCurrency } = useCurrencyConverter();
   const region = regionDisplayFromYahooCountry(e.yahooCountry);
+
   return (
     <tr
       id={`eco-row-${e.id}`}
@@ -776,7 +787,34 @@ export function EcosystemWatchlistTableRow({
                 </DailyAlphaContextTooltip>
               </td>
             );
-          case "trend5d":
+          case "trend5d": {
+            const m = ecosystemFiveDayTrendCellModel(e);
+            return (
+              <td key={colId} className={`px-6 py-4 align-middle text-center ${stickyFirst}`}>
+                {m.series.length === 0 ? (
+                  <span className="text-muted-foreground text-xs">No data</span>
+                ) : (
+                  <div className="flex flex-row flex-wrap items-end justify-center gap-1">
+                    <TrendMiniChart
+                      history={m.series}
+                      maxPoints={5}
+                      lastBarPulse={m.hasIntradayPulse}
+                      isCompoundingIgnited={m.isCompoundingIgnited}
+                    />
+                    <span
+                      className={cn(
+                        "text-[8px] font-bold tabular-nums rounded px-1 py-px border shrink-0 leading-none",
+                        alphaMagnitudeBadgeClass(m.alphaMagnitudeLabel),
+                      )}
+                      title="累積 Alpha の傾きに基づく相対スケール（αM）。直近の累積系列の勾配を M1.0–M8.0 に離散化。"
+                    >
+                      α{m.alphaMagnitudeLabel}
+                    </span>
+                  </div>
+                )}
+              </td>
+            );
+          }
           case "listing":
           case "mktCap":
           case "perfListed":
@@ -815,9 +853,6 @@ export function EcosystemWatchlistTableRow({
                     >
                       CSV
                     </button>
-                  ) : null}
-                  {e.alphaDailyHistory && e.alphaDailyHistory.length > 1 ? (
-                    <TrendMiniChart history={e.alphaDailyHistory} maxPoints={18} lastBarPulse={e.priceSource === "live"} />
                   ) : null}
                 </div>
               </td>

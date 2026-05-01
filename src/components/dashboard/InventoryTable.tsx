@@ -85,7 +85,7 @@ import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
 import { InstitutionalOwnershipSensor } from "@/src/components/dashboard/InstitutionalOwnershipSensor";
 import { judgmentPriorityRank, type JudgmentStatus } from "@/src/lib/judgment-logic";
-import { computeLiveAlphaDayPercent, fiveDayPulseForHoldingRow } from "@/src/lib/alpha-logic";
+import { computeLiveAlphaDayPercent, fiveDayPulseForHoldingRow, stockFiveDayTrendIgnitionModel } from "@/src/lib/alpha-logic";
 import {
   fmtExpectedGrowthPercent,
   fmtPegRatio,
@@ -2570,12 +2570,18 @@ export function InventoryTable({
                         );
                       case "trend5d": {
                         const { series, hasIntradayPulse } = fiveDayPulseForStock(stock);
+                        const isCompoundingIgnited = stockFiveDayTrendIgnitionModel(stock).isCompoundingIgnited;
                         return (
                           <td key={colId} className="px-4 py-4 align-middle">
                             {series.length === 0 ? (
                               <span className="text-muted-foreground text-xs">No data</span>
                             ) : (
-                              <TrendMiniChart history={series} maxPoints={5} lastBarPulse={hasIntradayPulse} />
+                              <TrendMiniChart
+                                history={series}
+                                maxPoints={5}
+                                lastBarPulse={hasIntradayPulse}
+                                isCompoundingIgnited={isCompoundingIgnited}
+                              />
                             )}
                           </td>
                         );
