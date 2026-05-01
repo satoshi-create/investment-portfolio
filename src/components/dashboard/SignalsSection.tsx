@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import type { EcosystemWatchlistSearchItem, Signal, Stock } from "@/src/types/investment";
 import { SignalCard } from "@/src/components/dashboard/SignalCard";
 import type { TradeEntryInitial } from "@/src/components/dashboard/TradeEntryForm";
-import { fiveDayPulseForHoldingRow, stockFiveDayTrendIgnitionModel } from "@/src/lib/alpha-logic";
+import { fiveDayPulseForHoldingRow, resolveStockCompoundingIgnited } from "@/src/lib/alpha-logic";
 import Link from "next/link";
 import { TrendMiniChart } from "@/src/components/dashboard/TrendMiniChart";
 import { cn } from "@/src/lib/cn";
@@ -48,7 +48,7 @@ export function SignalsSection({
 
     // 1. 保有銘柄
     for (const s of stocks) {
-      if (stockFiveDayTrendIgnitionModel(s).isCompoundingIgnited) {
+      if (resolveStockCompoundingIgnited(s)) {
         const { series } = fiveDayPulseForHoldingRow(s);
         items.push({
           ticker: s.ticker,

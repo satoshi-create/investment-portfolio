@@ -59,3 +59,7 @@ curl -sS -X POST "http://localhost:3000/api/backfill" \
 ```
 
 本番でシークレットを一切設定していない場合、開発時のみ認証なしで通ります（`NODE_ENV !== "production"`）。
+
+### Dashboard API（`/api/dashboard`）
+
+- **`DASHBOARD_SOFT_BUDGET_MS`** — ダッシュボード JSON 生成のソフトタイムアウト（ミリ秒）。未設定時は **45000**。Yahoo / DB が重い環境で 503 が続く場合に上限を上げられる（値は `.env` にのみ書き、リポジトリにはコミットしない）。

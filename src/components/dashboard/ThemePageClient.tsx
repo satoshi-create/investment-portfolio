@@ -71,7 +71,6 @@ import {
 import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER } from "@/src/lib/edo-theme-constants";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import {
-  ecosystemFiveDayTrendCellModel,
   parseAlphaDailyHistoryJson,
   parseAlphaObservationDatesJson,
 } from "@/src/lib/eco-trend-daily";
@@ -550,6 +549,13 @@ function normalizeThemeDetailResponse(
             const b = (item as Record<string, unknown>).institutional_ownership;
             const n = Number(a ?? b);
             return Number.isFinite(n) ? n : null;
+          })(),
+          isCompoundingIgnited: (() => {
+            const v =
+              (item as Record<string, unknown>).isCompoundingIgnited ??
+              (item as Record<string, unknown>).is_compounding_ignited;
+            if (typeof v === "boolean") return v;
+            return Number(v) === 1;
           })(),
           earningsSummaryNote: (() => {
             const a = (item as Record<string, unknown>).earningsSummaryNote;
@@ -1622,7 +1628,7 @@ export function ThemePageClient({
   const ecosystemMemberCompoundingIgnited = useMemo(() => {
     const m = new Map<string, boolean>();
     for (const row of ecosystem) {
-      m.set(row.id, ecosystemFiveDayTrendCellModel(row).isCompoundingIgnited);
+      m.set(row.id, row.isCompoundingIgnited);
     }
     return m;
   }, [ecosystem]);

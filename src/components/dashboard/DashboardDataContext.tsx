@@ -69,6 +69,8 @@ export type DashboardPayload = {
   totalMarketValue: number;
   summary: DashboardSummary;
   ecosystemWatchlistSearch: EcosystemWatchlistSearchItem[];
+  /** Server returned a cached snapshot (e.g. soft-timeout fallback); UI may warn the user. */
+  stale?: boolean;
 };
 
 type DashboardContextValue = {
@@ -131,7 +133,11 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       );
       const json = (await res.json()) as Partial<DashboardPayload> & { error?: string; hint?: string };
       if (!res.ok) {
-        setError(json.error ?? `HTTP ${res.status}${json.hint ? ` — ${json.hint}` : ""}`);
+        const fallback503 =
+          res.status === 503
+            ? "ダッシュボードの更新に失敗しました。前回に取得成功したデータをそのまま表示しています。"
+            : null;
+        setError(json.error ?? fallback503 ?? `HTTP ${res.status}${json.hint ? ` — ${json.hint}` : ""}`);
         return;
       }
       setData({
@@ -146,7 +152,14 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         ecosystemWatchlistSearch: Array.isArray(json.ecosystemWatchlistSearch)
           ? (json.ecosystemWatchlistSearch as EcosystemWatchlistSearchItem[])
           : [],
+        stale: json.stale === true,
       });
+      if (json.stale === true) {
+        toast.message("表示は直近の取得成功データです（更新が遅延している可能性があります）", {
+          id: "dashboard-stale",
+          duration: 4500,
+        });
+      }
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
         setError("接続タイムアウト：通信環境を確認してください");

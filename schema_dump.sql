@@ -219,6 +219,7 @@ CREATE TABLE theme_ecosystem_members (
       'Turnaround'
     )
   ),
+  is_compounding_ignited INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (theme_id) REFERENCES investment_themes(id) ON DELETE CASCADE,
   UNIQUE (theme_id, ticker)
 );

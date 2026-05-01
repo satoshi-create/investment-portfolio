@@ -324,6 +324,11 @@ export interface Stock {
   averageDailyVolume10Day: number | null;
   /** 出来高 / 10 日平均。商い急増の目安。 */
   volumeRatio: number | null;
+  /**
+   * 複利点火（ホームの Compounding Ignition 等）。ダッシュボード API がサーバで `stockFiveDayTrendIgnitionModel`
+   * と同一ロジックにより設定。未送信の銘柄ではクライアントが再計算する。
+   */
+  isCompoundingIgnited?: boolean;
 }
 
 /** DB `signals.signal_type` and client-side synthetic live signals. */
@@ -429,6 +434,8 @@ export type EcosystemWatchlistSearchItem = {
   companyName: string;
   /** 複利点火（二階微分）検出済みフラグ。トップ画面のスリム帯表示に使用。 */
   isCompoundingIgnited: boolean;
+  /** API で hybrid 注入後の価格ソース（永続化バックフィルは close のみ）。 */
+  compoundingIgnitionPriceSource?: "live" | "close";
   /** 最新の Alpha 値 (%) */
   latestAlpha: number | null;
   /** 5日間トレンドの Alpha 系列 */
@@ -625,6 +632,14 @@ export type ThemeEcosystemWatchItem = {
   regularMarketVolume: number | null;
   averageDailyVolume10Day: number | null;
   volumeRatio: number | null;
+
+  /**
+   * 複利点火（物理永続 + API で hybrid 再計算）。
+   * `fast` スケルトン時は DB の `is_compounding_ignited` のみ参照。
+   */
+  isCompoundingIgnited: boolean;
+  /** hybrid 再計算に使った株価ソース（live = Yahoo quote 優先が効いた）。 */
+  compoundingIgnitionPriceSource?: "live" | "close";
 };
 
 /** 全テーマ横断のウォッチブックマーク 1 行（`getEcosystemCrossThemeBookmarks` 用） */

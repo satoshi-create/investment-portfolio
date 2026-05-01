@@ -24,6 +24,7 @@
     "verify:pick-live-quote": "tsx scripts/verify-pick-live-quote.ts",
     "set:provider-symbol": "tsx scripts/set-provider-symbol.ts",
     "backfill:alpha": "tsx scripts/backfill-alpha-history.ts",
+    "backfill:ecosystem-ignition": "tsx scripts/backfill-ecosystem-compounding-ignition.ts",
     "clean:alpha-extreme": "tsx scripts/clean-alpha-history-extreme-rows.ts",
     "clean:jp-alpha-spike-range": "tsx scripts/clean-jp-alpha-spike-date-range.ts",
     "fix:jp-alpha": "tsx scripts/fix-jp-alpha-spikes.ts",

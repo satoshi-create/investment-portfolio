@@ -20,7 +20,7 @@ import { COCKPIT_MAIN_SCROLL_CLASS } from "@/src/components/dashboard/cockpit-la
 import { ThemeToggle } from "@/src/components/dashboard/ThemeToggle";
 import { useCurrencyConverter } from "@/src/hooks/use-currency-converter";
 import { cn } from "@/src/lib/cn";
-import { stockFiveDayTrendIgnitionModel } from "@/src/lib/alpha-logic";
+import { resolveStockCompoundingIgnited } from "@/src/lib/alpha-logic";
 import { STORY_PANEL_PAGE_PAD_TRANSITION_CLASS } from "@/src/lib/story-panel-inset";
 
 function CockpitHydrationSkeleton() {
@@ -92,7 +92,7 @@ export function CockpitShell({ children }: { children: React.ReactNode }) {
     if (stocks == null) return null;
 
     // 1. 保有銘柄の点火済みを抽出
-    const ignitedStocks = stocks.filter((s) => stockFiveDayTrendIgnitionModel(s).isCompoundingIgnited);
+    const ignitedStocks = stocks.filter((s) => resolveStockCompoundingIgnited(s));
 
     // 2. 観測銘柄（非保有）の点火済みを抽出
     const portfolioTickerSet = new Set(stocks.map((s) => s.ticker.toUpperCase()));

@@ -40,6 +40,7 @@ import {
   mergeWeightedCumulativeAlphaSeries,
   quoteCurrencyForDashboardWeights,
   resolveStockPegRatio,
+  stockFiveDayTrendIgnitionModel,
   roundAlphaMetric,
   SIGNAL_BENCHMARK_TICKER,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
@@ -92,6 +93,11 @@ import {
   holdingLivePriceKey,
   fetchChartTotalReturnPercentSinceFirstDailyBar,
 } from "@/src/lib/price-service";
+import {
+  benchmarkPctForInstrumentKind,
+  computeCompoundingIgnitionForEcosystemWatchItem,
+  computeCompoundingIgnitionFromAlphaSeries,
+} from "@/src/lib/compounding-ignition";
 import {
   prefetchHoldingsInstrumentMetadata,
   prefetchThemeEcosystemInstrumentMetadata,
@@ -230,15 +236,31 @@ async function fetchEcosystemWatchlistSearchIndex(
   hybridPriceByHoldingKey: Map<string, HybridHoldingPriceSnapshot>,
 ): Promise<EcosystemWatchlistSearchItem[]> {
   try {
-    const rs = await db.execute({
-      sql: `SELECT m.id AS member_id, m.theme_id, m.ticker, m.company_name, t.name AS theme_name,
-                   m.observation_started_at, t.created_at AS theme_created_at
-            FROM theme_ecosystem_members m
-            INNER JOIN investment_themes t ON m.theme_id = t.id
-            WHERE t.user_id = ?
-            ORDER BY t.name ASC, m.ticker ASC`,
-      args: [userId],
-    });
+    let rs;
+    let hasDbIgnitionColumn = true;
+    try {
+      rs = await db.execute({
+        sql: `SELECT m.id AS member_id, m.theme_id, m.ticker, m.company_name, t.name AS theme_name,
+                     m.observation_started_at, t.created_at AS theme_created_at, m.is_compounding_ignited
+              FROM theme_ecosystem_members m
+              INNER JOIN investment_themes t ON m.theme_id = t.id
+              WHERE t.user_id = ?
+              ORDER BY t.name ASC, m.ticker ASC`,
+        args: [userId],
+      });
+    } catch (e) {
+      if (!isSqliteMissingColumn(e, "is_compounding_ignited")) throw e;
+      hasDbIgnitionColumn = false;
+      rs = await db.execute({
+        sql: `SELECT m.id AS member_id, m.theme_id, m.ticker, m.company_name, t.name AS theme_name,
+                     m.observation_started_at, t.created_at AS theme_created_at
+              FROM theme_ecosystem_members m
+              INNER JOIN investment_themes t ON m.theme_id = t.id
+              WHERE t.user_id = ?
+              ORDER BY t.name ASC, m.ticker ASC`,
+        args: [userId],
+      });
+    }
 
     return (rs.rows as Record<string, unknown>[])
       .map((row) => {
@@ -268,25 +290,36 @@ async function fetchEcosystemWatchlistSearchIndex(
         const cumPoints = calculateCumulativeAlpha(datedRows, startDate);
         const cumulativeAlphaOldestToNewest = cumPoints.map((p) => p.cumulative);
 
-        // Pulse (本日暫定) の計算
-        // 保有銘柄であれば hybridPriceByHoldingKey から情報を取れる
         const instrumentKind = classifyTickerInstrument(ticker);
-        const priceKey = holdingLivePriceKey(ticker, null); // providerSymbol は一旦 null
+        const priceKey = holdingLivePriceKey(ticker, null);
         const hp = hybridPriceByHoldingKey.get(priceKey);
+        /** Dashboard hybrid batch にこのキーが含まれるときだけライブ点火を表示；含まれない（cap 外）は DB フォールバック。 */
+        const hadHybridBatchSlot = hybridPriceByHoldingKey.has(priceKey);
+        const latestYmd =
+          series.length > 0 && series[series.length - 1]!.observationYmd != null
+            ? String(series[series.length - 1]!.observationYmd).slice(0, 10)
+            : null;
+        const two = lastTwoClosesFromSeries(series);
+        const fallbackLivePrice = hp?.price ?? two?.latestClose ?? null;
+        const fallbackPreviousClose = hp?.previousClose ?? two?.prevClose ?? null;
 
-        const pulse = buildFiveDayPulseDailyAlpha({
-          dailyAlphaHistory,
-          latestAlphaObservationYmd: series.length > 0 ? series[series.length - 1]!.observationYmd : null,
-          priceSource: (hp as any)?.priceSource ?? "close",
-          livePrice: hp?.price ?? (series.length > 0 ? series[series.length - 1]!.close : null),
-          previousClose: hp?.previousClose ?? (series.length > 1 ? series[series.length - 2]!.close : null),
-          benchmarkDayChangePercent: instrumentKind === "US_EQUITY" ? liveAlphaCtx.usBenchmarkChangePct : liveAlphaCtx.jpBenchmarkChangePct,
-        });
-
-        const accel = calculateAlphaAcceleration({
-          dailyAlphaOldestToNewest: pulse.series,
+        const ign = computeCompoundingIgnitionFromAlphaSeries({
+          dailyAlphaOldestToNewest: dailyAlphaHistory,
           cumulativeAlphaOldestToNewest,
+          latestDailyAlphaObservationYmd: latestYmd,
+          hybrid: hp ?? null,
+          fallbackLivePrice,
+          fallbackPreviousClose,
+          benchmarkDayChangePercent: benchmarkPctForInstrumentKind(
+            instrumentKind,
+            liveAlphaCtx.usBenchmarkChangePct,
+            liveAlphaCtx.jpBenchmarkChangePct,
+          ),
         });
+
+        const dbIgnited = hasDbIgnitionColumn ? Number(row["is_compounding_ignited"]) === 1 : false;
+        const isCompoundingIgnited =
+          hadHybridBatchSlot ? ign.isCompoundingIgnited : hasDbIgnitionColumn ? dbIgnited : ign.isCompoundingIgnited;
 
         return {
           memberId,
@@ -294,9 +327,10 @@ async function fetchEcosystemWatchlistSearchIndex(
           themeName,
           ticker,
           companyName,
-          isCompoundingIgnited: accel.isCompoundingIgnited,
-          latestAlpha: pulse.series.length > 0 ? pulse.series[pulse.series.length - 1]! : null,
-          alphaHistory5d: pulse.series,
+          isCompoundingIgnited,
+          compoundingIgnitionPriceSource: ign.compoundingIgnitionPriceSource,
+          latestAlpha: ign.pulse5d.length > 0 ? ign.pulse5d[ign.pulse5d.length - 1]! : null,
+          alphaHistory5d: ign.pulse5d,
         };
       })
       .filter((x) => x.memberId.length > 0 && x.ticker.length > 0);
@@ -571,6 +605,159 @@ function isSqliteMissingColumn(e: unknown, col: string): boolean {
   return lower.includes("no such column") && lower.includes(col.toLowerCase());
 }
 
+/**
+ * Compounding Ignition — dashboard vs theme detail vs DB（許容ズレの固定）
+ *
+ * - **表示の真実（ホーム `/`）**: API が返す値を正とする。保有は `Stock.isCompoundingIgnited`（サーバが
+ *   `stockFiveDayTrendIgnitionModel` と同一ロジックで計算）。エコ検索行は `ecosystemWatchlistSearch[]`
+ *   の `isCompoundingIgnited`。クライアントはフィールドがあるときそれを優先し、無いときのみ再計算。
+ * - **テーマ詳細**: テーマ API が返す各エコ行の `isCompoundingIgnited`（テーマ単位で hybrid を当てた結果）。
+ * - **DB `is_compounding_ignited`**: バックフィルは終値ベースのベースライン。ライブ hybrid と自動では一致しない。
+ *   ダッシュボード横断検索では hybrid batch に **入った**ティッカーはライブ計算を表示し、**cap 外**で hybrid
+ *   キーが無い行は DB フラグをフォールバックとして表示し、テーマページとの完全一致は目標にしない。
+ */
+/** Max ecosystem-only tickers for Yahoo hybrid quotes (dashboard timeout mitigation). Production-tunable alongside {@link DASHBOARD_HYBRID_FETCH_OPTIONS}. */
+const DASHBOARD_ECOSYSTEM_HYBRID_QUOTE_MAX = 96;
+/** Hybrid quote fetch pacing: higher concurrency may reduce wall time but increases Yahoo throttle risk; tune via env-driven overrides only if needed. */
+const DASHBOARD_HYBRID_FETCH_OPTIONS = { concurrency: 2, batchDelayMs: 480 } as const;
+
+function createDashboardTimingSegmentLogger(): { seg: (label: string) => void } | null {
+  if (process.env.DEBUG_DASHBOARD_TIMING !== "1") return null;
+  let last = performance.now();
+  return {
+    seg(label: string) {
+      const now = performance.now();
+      console.log(`[dashboard-data timing] ${label}: ${Math.round(now - last)}ms`);
+      last = now;
+    },
+  };
+}
+
+/** Theme-detail JSON: trim alpha arrays to limit payload (sparklines use trailing window only). */
+const ECOSYSTEM_API_TRIM_CUMULATIVE_MAX = 140;
+const ECOSYSTEM_API_TRIM_DAILY_MAX = 90;
+
+function isPlaceholderEcosystemTickerSymbol(raw: string): boolean {
+  const t = raw.trim();
+  if (t.length === 0) return true;
+  const u = t.toUpperCase();
+  if (u.startsWith("N/A:")) return true;
+  if (u === "-" || u === "N/A") return true;
+  return false;
+}
+
+async function fetchListedEcosystemTickersForHybridQuotes(db: Client, userId: string): Promise<string[]> {
+  const rs = await db.execute({
+    sql: `SELECT TRIM(m.ticker) AS ticker
+          FROM theme_ecosystem_members m
+          INNER JOIN investment_themes t ON m.theme_id = t.id
+          WHERE t.user_id = ?
+          GROUP BY TRIM(m.ticker)
+          HAVING MAX(COALESCE(m.is_unlisted, 0)) = 0
+             AND LENGTH(TRIM(m.ticker)) > 0
+             AND TRIM(m.ticker) NOT LIKE 'N/A:%'
+             AND UPPER(TRIM(m.ticker)) NOT IN ('-', 'N/A')
+          ORDER BY MIN(TRIM(m.ticker)) ASC`,
+    args: [userId],
+  });
+  return rs.rows.map((r) => String(r.ticker ?? "").trim()).filter((t) => t.length > 0);
+}
+
+async function fetchEcosystemDbIgnitionFlagsForTheme(
+  db: Client,
+  themeId: string,
+): Promise<Map<string, boolean>> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT id, is_compounding_ignited FROM theme_ecosystem_members WHERE theme_id = ?`,
+      args: [themeId],
+    });
+    return new Map(rs.rows.map((r) => [String(r.id ?? ""), Number(r.is_compounding_ignited) === 1]));
+  } catch (e) {
+    if (isSqliteMissingColumn(e, "is_compounding_ignited")) return new Map();
+    throw e;
+  }
+}
+
+async function fetchEcosystemDbIgnitionMetaForUser(
+  db: Client,
+  userId: string,
+): Promise<{ byMemberId: Map<string, boolean>; columnAvailable: boolean }> {
+  try {
+    const rs = await db.execute({
+      sql: `SELECT m.id, m.is_compounding_ignited
+            FROM theme_ecosystem_members m
+            INNER JOIN investment_themes t ON m.theme_id = t.id
+            WHERE t.user_id = ?`,
+      args: [userId],
+    });
+    return {
+      byMemberId: new Map(rs.rows.map((r) => [String(r.id ?? "").trim(), Number(r.is_compounding_ignited) === 1])),
+      columnAvailable: true,
+    };
+  } catch (e) {
+    if (isSqliteMissingColumn(e, "is_compounding_ignited")) {
+      return { byMemberId: new Map(), columnAvailable: false };
+    }
+    throw e;
+  }
+}
+
+async function fetchEcosystemDbIgnitionFlagsForUser(db: Client, userId: string): Promise<Map<string, boolean>> {
+  const meta = await fetchEcosystemDbIgnitionMetaForUser(db, userId);
+  return meta.byMemberId;
+}
+
+function trimThemeEcosystemWatchItemForApi(item: ThemeEcosystemWatchItem): ThemeEcosystemWatchItem {
+  const cmax = ECOSYSTEM_API_TRIM_CUMULATIVE_MAX;
+  const dmax = ECOSYSTEM_API_TRIM_DAILY_MAX;
+  return {
+    ...item,
+    alphaHistory: item.alphaHistory.slice(-cmax),
+    alphaCumulativeObservationDates: item.alphaCumulativeObservationDates.slice(-cmax),
+    alphaDailyHistory: item.alphaDailyHistory.slice(-dmax),
+    alphaDailyObservationDates: item.alphaDailyObservationDates.slice(-dmax),
+  };
+}
+
+async function applyCompoundingIgnitionToEcosystemWatchItems(
+  items: ThemeEcosystemWatchItem[],
+  opts: { fast: boolean; dbIgnitionByMemberId: Map<string, boolean> },
+): Promise<void> {
+  if (opts.fast) {
+    for (const it of items) {
+      it.isCompoundingIgnited = opts.dbIgnitionByMemberId.get(it.id) ?? false;
+    }
+    return;
+  }
+  const targets = items
+    .map((e) => {
+      const eff =
+        e.isUnlisted && e.proxyTicker != null && e.proxyTicker.trim().length > 0
+          ? e.proxyTicker.trim()
+          : e.ticker.trim();
+      return { ticker: eff, providerSymbol: null as string | null };
+    })
+    .filter((t) => t.ticker.length > 0);
+  if (targets.length === 0) return;
+  const hybrid = await fetchHoldingsHybridPriceSnapshots(targets, DASHBOARD_HYBRID_FETCH_OPTIONS);
+  for (const item of items) {
+    const eff =
+      item.isUnlisted && item.proxyTicker != null && item.proxyTicker.trim().length > 0
+        ? item.proxyTicker.trim()
+        : item.ticker.trim();
+    const hp = eff.length > 0 ? hybrid.get(holdingLivePriceKey(eff, null)) : undefined;
+    const r = computeCompoundingIgnitionForEcosystemWatchItem(item, hp ?? null);
+    item.isCompoundingIgnited = r.isCompoundingIgnited;
+    item.compoundingIgnitionPriceSource = r.compoundingIgnitionPriceSource;
+    if (hp != null && Number.isFinite(hp.price) && hp.price > 0) {
+      item.currentPrice = hp.price;
+      item.previousClose = hp.previousClose;
+      item.priceSource = hp.source;
+    }
+  }
+}
+
 async function fetchPortfolioSnapshotReturnRows(
   db: Client,
   userId: string,
@@ -797,6 +984,22 @@ type HoldingQueryRow = {
   trade_deadline?: unknown;
   exit_rule_enabled?: unknown;
 };
+
+function buildDashboardHybridPriceTargets(
+  holdingRows: HoldingQueryRow[],
+  listedEcosystemTickersSorted: string[],
+  maxEcosystemOnly: number,
+): { ticker: string; providerSymbol: string | null }[] {
+  const holdings = holdingRows.map((r) => ({
+    ticker: String(r.ticker),
+    providerSymbol:
+      r.provider_symbol != null && String(r.provider_symbol).trim().length > 0 ? String(r.provider_symbol) : null,
+  }));
+  const portfolioUpper = new Set(holdings.map((h) => h.ticker.trim().toUpperCase()));
+  const ecoOnly = listedEcosystemTickersSorted.filter((t) => !portfolioUpper.has(t.trim().toUpperCase()));
+  const capped = ecoOnly.slice(0, maxEcosystemOnly);
+  return [...holdings, ...capped.map((ticker) => ({ ticker, providerSymbol: null as string | null }))];
+}
 
 function parseEarningsSummaryNote(raw: unknown): string | null {
   if (raw == null) return null;
@@ -2375,6 +2578,7 @@ async function enrichEcosystemMemberRow(
     regularMarketVolume: regularMarketVolumeEco,
     averageDailyVolume10Day: averageDailyVolume10DayEco,
     volumeRatio: volumeRatioEco,
+    isCompoundingIgnited: false,
   };
 }
 
@@ -2751,6 +2955,11 @@ async function fetchEnrichedThemeEcosystem(
     await Promise.allSettled(Array.from({ length: Math.min(CONCURRENCY, rows.length) }, () => worker()));
 
     const out = results.filter((x): x is ThemeEcosystemWatchItem => x != null);
+    const dbIgn = await fetchEcosystemDbIgnitionFlagsForTheme(db, themeId);
+    await applyCompoundingIgnitionToEcosystemWatchItems(out, {
+      fast,
+      dbIgnitionByMemberId: dbIgn,
+    });
     if (perf?.enabled && perf.requestId) {
       console.log(
         `[perf] ${perf.requestId} ecosystem:enrich ms=${Date.now() - tEnrich0} rows=${rows.length} ok=${out.length} failed=${failed} concurrency=${CONCURRENCY}`,
@@ -2916,7 +3125,13 @@ export async function getEcosystemCrossThemeBookmarks(
 
   await Promise.allSettled(Array.from({ length: Math.min(CONCURRENCY, rows.length) }, () => worker()));
 
-  return results.filter((x): x is EcosystemCrossThemeBookmarkItem => x != null);
+  const merged = results.filter((x): x is EcosystemCrossThemeBookmarkItem => x != null);
+  const dbIgn = await fetchEcosystemDbIgnitionFlagsForUser(db, userId);
+  await applyCompoundingIgnitionToEcosystemWatchItems(merged, {
+    fast,
+    dbIgnitionByMemberId: dbIgn,
+  });
+  return merged;
 }
 
 /**
@@ -3004,16 +3219,18 @@ export async function getThemeDetailData(
 
   let ecosystem: ThemeEcosystemWatchItem[] = [];
   if (theme?.id != null) {
-    ecosystem = await fetchEnrichedThemeEcosystem(
-      db,
-      userId,
-      theme.id,
-      portfolioTickerSet,
-      theme.createdAt != null ? String(theme.createdAt) : null,
-      liveAlphaCtx,
-      perf,
-      { fast, prefetchedResearchByTicker: researchByTicker },
-    );
+    ecosystem = (
+      await fetchEnrichedThemeEcosystem(
+        db,
+        userId,
+        theme.id,
+        portfolioTickerSet,
+        theme.createdAt != null ? String(theme.createdAt) : null,
+        liveAlphaCtx,
+        perf,
+        { fast, prefetchedResearchByTicker: researchByTicker },
+      )
+    ).map(trimThemeEcosystemWatchItemForApi);
   }
 
   let stocks: Stock[] = [];
@@ -3399,7 +3616,9 @@ export async function getThemeDetailData(
  * 数量 0 の銘柄（売却済み）は一覧・集計から除外する。
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
+  const timing = createDashboardTimingSegmentLogger();
   const h = await fetchHoldingsRowsWithInvestmentMeta(db, userId);
+  timing?.seg("fetchHoldingsRowsWithInvestmentMeta");
 
   if (h.rows.length === 0) {
     const [benchmarkSnap, fxMaybe, totalRealizedPnlJpy, marketIndicators, liveAlphaCtx] = await Promise.all([
@@ -3412,23 +3631,43 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
 
     const allThemes = await fetchAllInvestmentThemes(db, userId);
 
-    const ecosystemTickersRs = await db.execute({
-      sql: `SELECT DISTINCT m.ticker FROM theme_ecosystem_members m
-            INNER JOIN investment_themes t ON m.theme_id = t.id
-            WHERE t.user_id = ?`,
-      args: [userId],
-    });
-    const ecosystemTickers = ecosystemTickersRs.rows.map((r) => String(r.ticker));
+    const [ecosystemTickersRs, listedEcosystemForHybrid] = await Promise.all([
+      db.execute({
+        sql: `SELECT DISTINCT TRIM(m.ticker) AS ticker FROM theme_ecosystem_members m
+              INNER JOIN investment_themes t ON m.theme_id = t.id
+              WHERE t.user_id = ?`,
+        args: [userId],
+      }),
+      fetchListedEcosystemTickersForHybridQuotes(db, userId),
+    ]);
+    const ecosystemTickers = [
+      ...new Set(
+        ecosystemTickersRs.rows
+          .map((r) => String(r.ticker ?? "").trim())
+          .filter((t) => !isPlaceholderEcosystemTickerSymbol(t)),
+      ),
+    ];
     const alphaRows = await fetchAlphaHistoryRowsForTickers(db, userId, ecosystemTickers);
     const byTicker = buildByTickerFromAlphaRows(alphaRows);
+
+    const hybridQuoteTargets = listedEcosystemForHybrid
+      .slice(0, DASHBOARD_ECOSYSTEM_HYBRID_QUOTE_MAX)
+      .map((ticker) => ({ ticker, providerSymbol: null as string | null }));
+
+    const hybridPriceByHoldingKey = await fetchHoldingsHybridPriceSnapshots(
+      hybridQuoteTargets,
+      DASHBOARD_HYBRID_FETCH_OPTIONS,
+    );
+    timing?.seg("hybridQuotes_emptyPortfolio");
 
     const ecosystemWatchlistSearch = await fetchEcosystemWatchlistSearchIndex(
       db,
       userId,
       liveAlphaCtx,
       byTicker,
-      new Map(),
+      hybridPriceByHoldingKey,
     );
+    timing?.seg("ecosystemWatchlistSearch_emptyPortfolio");
 
     const financial = computeFinancialTotals([], totalRealizedPnlJpy);
     const indicatorValueOrNull = (label: string): number | null => {
@@ -3443,6 +3682,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
       allThemes,
       [],
     );
+    timing?.seg("themeStructuralSparklines_emptyPortfolio");
     return {
       stocks: [],
       allThemes,
@@ -3476,14 +3716,32 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
   }
 
   const portfolioTickers = h.rows.map((r) => String(r.ticker));
-  const ecosystemTickersRs = await db.execute({
-    sql: `SELECT DISTINCT m.ticker FROM theme_ecosystem_members m
-          INNER JOIN investment_themes t ON m.theme_id = t.id
-          WHERE t.user_id = ?`,
-    args: [userId],
-  });
-  const ecosystemTickers = ecosystemTickersRs.rows.map((r) => String(r.ticker));
+  const holdingRowsForDash = h.rows as unknown as HoldingQueryRow[];
+
+  const [ecosystemTickersRs, listedEcosystemForHybrid] = await Promise.all([
+    db.execute({
+      sql: `SELECT DISTINCT TRIM(m.ticker) AS ticker FROM theme_ecosystem_members m
+            INNER JOIN investment_themes t ON m.theme_id = t.id
+            WHERE t.user_id = ?`,
+      args: [userId],
+    }),
+    fetchListedEcosystemTickersForHybridQuotes(db, userId),
+  ]);
+  const ecosystemTickers = [
+    ...new Set(
+      ecosystemTickersRs.rows
+        .map((r) => String(r.ticker ?? "").trim())
+        .filter((t) => !isPlaceholderEcosystemTickerSymbol(t)),
+    ),
+  ];
   const tickers = [...new Set([...portfolioTickers, ...ecosystemTickers])];
+
+  const hybridPriceTargets = buildDashboardHybridPriceTargets(
+    holdingRowsForDash,
+    listedEcosystemForHybrid,
+    DASHBOARD_ECOSYSTEM_HYBRID_QUOTE_MAX,
+  );
+  timing?.seg("ecosystemTickerQueries_and_hybridTargets");
 
   const [
     allThemes,
@@ -3504,40 +3762,36 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     resolveLiveAlphaBenchmarkContext(),
     fetchPortfolioSnapshotReturnRows(db, userId),
   ]);
+  timing?.seg("parallel_themes_alpha_benchmarks_indicators_snapshots");
 
   const byTicker = buildByTickerFromAlphaRows(alphaRows);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
-  const holdingRowsForDash = h.rows as unknown as HoldingQueryRow[];
   const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, tickers);
+  timing?.seg("ecosystemEfficiencyByTicker");
 
   const [researchByTicker, hybridPriceByHoldingKey] = await Promise.all([
+    // 全保有に対し quoteSummary を取る（ダッシュボードの PEG/判定/カレンダー等が欠損しないよう、ティッカー単位の省略は未実施）。
     fetchEquityResearchSnapshots(
       holdingRowsForDash.map((r) => ({
         ticker: String(r.ticker),
         providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
       })),
     ),
-    fetchHoldingsHybridPriceSnapshots(
-      holdingRowsForDash.map((r) => ({
-        ticker: String(r.ticker),
-        providerSymbol: r.provider_symbol != null ? String(r.provider_symbol) : null,
-      })),
-    ),
+    fetchHoldingsHybridPriceSnapshots(hybridPriceTargets, DASHBOARD_HYBRID_FETCH_OPTIONS),
   ]);
+  timing?.seg("equityResearchSnapshots_and_hybridQuotes");
 
-  const ecosystemWatchlistSearch = await fetchEcosystemWatchlistSearchIndex(
-    db,
-    userId,
-    liveAlphaCtx,
-    byTicker,
-    hybridPriceByHoldingKey,
-  );
-  await prefetchHoldingsInstrumentMetadata(db, userId, holdingRowsForDash as unknown as Record<string, unknown>[], {
-    fast: false,
-  });
-  const chartListedReturnPctByHoldingKey = await prefetchChartListedTotalReturnByHoldingKey(holdingRowsForDash, {
-    fast: false,
-  });
+  const [ecosystemWatchlistSearch, , chartListedReturnPctByHoldingKey] = await Promise.all([
+    fetchEcosystemWatchlistSearchIndex(db, userId, liveAlphaCtx, byTicker, hybridPriceByHoldingKey),
+    prefetchHoldingsInstrumentMetadata(db, userId, holdingRowsForDash as unknown as Record<string, unknown>[], {
+      fast: false,
+    }),
+    prefetchChartListedTotalReturnByHoldingKey(holdingRowsForDash, {
+      fast: false,
+    }),
+  ]);
+  timing?.seg("ecosystemWatchlistSearch_prefetchMetadata_prefetchChartReturns");
+
   const drafts = buildDraftsFromHoldingRows(
     holdingRowsForDash,
     byTicker,
@@ -3548,13 +3802,18 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     liveAlphaCtx,
     chartListedReturnPctByHoldingKey,
   );
+  timing?.seg("buildDraftsFromHoldingRows");
 
   const totalMarketValue = drafts.reduce(
     (s, d) => s + sanitizeMarketValueForAggregation(d.marketValue),
     0,
   );
 
-  const stocks = finalizeStocksFromDrafts(drafts, totalMarketValue);
+  const stocks = finalizeStocksFromDrafts(drafts, totalMarketValue).map((s) => ({
+    ...s,
+    isCompoundingIgnited: stockFiveDayTrendIgnitionModel(s).isCompoundingIgnited,
+  }));
+  timing?.seg("finalizeStocks_and_compoundingIgnition");
 
   const aggRows = drafts.map((d) => ({ structureTagsJson: d.structureTagsJson, marketValue: d.marketValue }));
   const structureByTheme = aggregateByTheme(aggRows);
@@ -3598,6 +3857,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     portfolioAvgDayChangePct: computePortfolioAvgDayChangePct(stocks),
     ...financial,
   };
+  timing?.seg("summary_aggregation_sync");
 
   const themeStructuralSparklines = await computeThemeStructuralSparklinesForDashboard(
     db,
@@ -3605,6 +3865,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     allThemes,
     drafts,
   );
+  timing?.seg("computeThemeStructuralSparklinesForDashboard");
 
   return {
     stocks,

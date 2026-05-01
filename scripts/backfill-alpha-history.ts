@@ -10,6 +10,7 @@ import { backfillAlphaHistoryForTicker } from "../src/lib/alpha-history-reconcil
 import { defaultBenchmarkTickerForTicker, SIGNAL_BENCHMARK_TICKER } from "../src/lib/alpha-logic";
 import { getDb, isDbConfigured } from "../src/lib/db";
 import { generateSignalsForUser } from "../src/lib/generate-signals";
+import { runEcosystemCompoundingIgnitionBackfill } from "../src/lib/ecosystem-compounding-backfill";
 import { fetchHoldingsWithProviderForUser } from "../src/lib/holdings-queries";
 import type { PriceBar } from "../src/lib/price-service";
 import { fetchPriceHistory } from "../src/lib/price-service";
@@ -101,6 +102,12 @@ async function main() {
     sig.details.length ? sig.details : "",
     `reconcile rows=${sig.reconcile.rowsBackfilled}`,
   );
+
+  if (process.argv.includes("--ecosystem-ignition")) {
+    console.log("Running ecosystem compounding ignition backfill (--ecosystem-ignition)…");
+    const eco = await runEcosystemCompoundingIgnitionBackfill(db, userId);
+    console.log(`Ecosystem ignition: processed=${eco.processed} ignited=${eco.ignitedCount}`);
+  }
 }
 
 main().catch((e) => {

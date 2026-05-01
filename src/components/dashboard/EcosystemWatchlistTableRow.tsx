@@ -789,6 +789,7 @@ export function EcosystemWatchlistTableRow({
             );
           case "trend5d": {
             const m = ecosystemFiveDayTrendCellModel(e);
+            const ignited = e.isCompoundingIgnited;
             return (
               <td key={colId} className={`px-6 py-4 align-middle text-center ${stickyFirst}`}>
                 {m.series.length === 0 ? (
@@ -799,7 +800,7 @@ export function EcosystemWatchlistTableRow({
                       history={m.series}
                       maxPoints={5}
                       lastBarPulse={m.hasIntradayPulse}
-                      isCompoundingIgnited={m.isCompoundingIgnited}
+                      isCompoundingIgnited={ignited}
                     />
                     <span
                       className={cn(

@@ -12,7 +12,7 @@ import { getDb, isDbConfigured } from "@/src/lib/db";
 
 export const dynamic = "force-dynamic";
 
-/** Yahoo/DB が重いと 10s で誤タイムアウトしやすいため既定を緩める。`.env`: `DASHBOARD_SOFT_BUDGET_MS` */
+/** Yahoo/DB が重いと誤タイムアウトしやすいため既定を緩める。`.env`: `DASHBOARD_SOFT_BUDGET_MS`（既定 45000・README の Dashboard API 節参照）。 */
 function resolveDashboardSoftBudgetMs(): number {
   const raw = process.env.DASHBOARD_SOFT_BUDGET_MS?.trim();
   if (!raw) return 45_000;
@@ -73,6 +73,10 @@ export async function GET(request: Request) {
         }
         const msg = e instanceof Error ? e.message : String(e);
         if (msg.includes("timeout after")) {
+          console.warn("[api/dashboard] timeout with no stale cache (inflight join path)", {
+            userId,
+            timeoutMs: softBudgetMs,
+          });
           return NextResponse.json(
             {
               error: "Dashboard build timed out",
@@ -121,6 +125,7 @@ export async function GET(request: Request) {
       const msg = e instanceof Error ? e.message : String(e);
       const isTimeout = msg.includes("timeout after");
       if (isTimeout) {
+        console.warn("[api/dashboard] timeout with no stale cache", { userId, timeoutMs: softBudgetMs });
         return NextResponse.json(
           {
             error: "Dashboard build timed out",

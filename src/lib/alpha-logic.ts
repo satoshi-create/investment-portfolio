@@ -576,6 +576,13 @@ export function stockFiveDayTrendIgnitionModel(s: StockFiveDayTrendIgnitionInput
   return { isCompoundingIgnited: accel.isCompoundingIgnited };
 }
 
+/** API が `isCompoundingIgnited` を載せていればそれを優先（ホームとサーバ定義を一致させる）。 */
+export function resolveStockCompoundingIgnited(
+  s: StockFiveDayTrendIgnitionInput & { isCompoundingIgnited?: boolean },
+): boolean {
+  return s.isCompoundingIgnited ?? stockFiveDayTrendIgnitionModel(s).isCompoundingIgnited;
+}
+
 /** `alpha_history` 等から渡す 1 日分の超過リターン（Ticker% − Bench%）。 */
 export type DatedAlphaRow = {
   /** `recorded_at`（YYYY-MM-DD または ISO。先頭 10 文字を日付として扱う） */
