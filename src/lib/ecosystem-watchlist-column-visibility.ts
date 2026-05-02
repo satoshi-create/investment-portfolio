@@ -52,6 +52,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
   alpha: "Cum. α",
   cumTrend: "累積トレンド",
   volRatio: "Vol 比",
+  ebitda: "EBITDA",
   price: "Last（価格）",
 };
 

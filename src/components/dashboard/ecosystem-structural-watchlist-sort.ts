@@ -42,6 +42,11 @@ function ecoForecastEpsOf(e: ThemeEcosystemWatchItem): number | null {
   return v != null && Number.isFinite(v) ? v : null;
 }
 
+function ecoEbitdaOf(e: ThemeEcosystemWatchItem): number | null {
+  const v = e.ebitda;
+  return v != null && Number.isFinite(v) ? v : null;
+}
+
 function ecoListingYmdKey(e: ThemeEcosystemWatchItem): string | null {
   const d = e.listingDate;
   if (d == null || String(d).trim().length < 10) return null;
@@ -145,6 +150,7 @@ export function sortStructuralEcosystemWatchlist<T extends ThemeEcosystemWatchIt
     if (ecoSortKey === "ruleOf40") return dir * cmpNum(ecoRuleOf40SortValue(a), ecoRuleOf40SortValue(b));
     if (ecoSortKey === "fcfYield") return dir * cmpNum(ecoFcfYieldSortValue(a), ecoFcfYieldSortValue(b));
     if (ecoSortKey === "netCash") return dir * cmpNum(ecoNetCashSortValue(a), ecoNetCashSortValue(b));
+    if (ecoSortKey === "ebitda") return dir * cmpNum(ecoEbitdaOf(a), ecoEbitdaOf(b));
     if (ecoSortKey === "netCashYield") return dir * cmpNum(ecoNetCashYieldSortValue(a), ecoNetCashYieldSortValue(b));
     if (ecoSortKey === "pe") return dir * cmpNum(ecoPeOf(a), ecoPeOf(b));
     if (ecoSortKey === "pbr") return dir * cmpNum(ecoPbrOf(a), ecoPbrOf(b));

@@ -33,7 +33,8 @@
     "debug:yahoo-alpha": "tsx scripts/debug-yahoo-daily-alpha.ts",
     "snapshot:daily": "tsx scripts/record-portfolio-snapshot.ts",
     "migrate:portfolio-benchmark-pct": "tsx scripts/migrate-portfolio-benchmark-change-pct.ts",
-    "backfill:aggregate-kpis": "tsx scripts/backfill-aggregate-kpis.ts"
+    "backfill:aggregate-kpis": "tsx scripts/backfill-aggregate-kpis.ts",
+    "ingest:naphtha": "tsx scripts/ingest-naphtha-price.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

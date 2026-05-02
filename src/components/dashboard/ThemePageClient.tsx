@@ -37,7 +37,6 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   horizontalListSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
@@ -77,6 +76,8 @@ import {
 import { parseYahooBuybackPostureJson } from "@/src/lib/yahoo-buyback-posture";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
 import { cn } from "@/src/lib/cn";
+import { mergeSubsetReorderIntoFullOrder } from "@/src/lib/column-order-dnd-merge";
+import { ecosystemWatchlistItemMatchesQuery } from "@/src/lib/ecosystem-watchlist-search-match";
 import {
   STORY_PANEL_PAGE_PAD_TRANSITION_CLASS,
   STORY_PANEL_PAGE_SHELL_CLASS,
@@ -314,23 +315,6 @@ function ecoOpportunityRow(
   if (!themeUp) return false;
   const z = e.alphaDeviationZ;
   return z != null && Number.isFinite(z) && z <= -1.5;
-}
-
-function ecosystemMatchesSearchQuery(
-  e: ThemeEcosystemWatchItem,
-  raw: string,
-): boolean {
-  const n = raw.trim().toLowerCase();
-  if (n.length === 0) return true;
-  const hay = [
-    e.companyName,
-    e.ticker,
-    e.role,
-    e.observationNotes ?? "",
-    e.chasm ?? "",
-    e.moat ?? "",
-  ];
-  return hay.some((s) => s.toLowerCase().includes(n));
 }
 
 type ThemeDetailJson = ThemeDetailData & { userId?: string; error?: string };
@@ -1649,7 +1633,7 @@ export function ThemePageClient({
     }
     if (ecosystemSearchQuery.trim().length > 0) {
       out = out.filter((e) =>
-        ecosystemMatchesSearchQuery(e, ecosystemSearchQuery),
+        ecosystemWatchlistItemMatchesQuery(e, ecosystemSearchQuery),
       );
     }
     if (ecoMarketFilter !== "all") {
@@ -1868,6 +1852,11 @@ export function ThemePageClient({
     const preset = [...ECOSYSTEM_LYNCH_LENS_COLUMNS[ecoLynchLensKey]];
     const allowed = new Set(ecoBaseVisibleColumnIds);
     const inter = preset.filter((id) => allowed.has(id));
+
+    // ユーザーが保存した全列順序（ecoBaseVisibleColumnIds）に従って、レンズのサブセット列を並べ替える
+    const orderMap = new Map(ecoBaseVisibleColumnIds.map((id, i) => [id, i]));
+    inter.sort((a, b) => (orderMap.get(a) ?? 0) - (orderMap.get(b) ?? 0));
+
     const fallback = (["asset", "lynch", "alpha"] as const).filter((id) => allowed.has(id));
     return inter.length > 0 ? inter : fallback;
   }, [ecoLynchLensKey, ecoBaseVisibleColumnIds]);
@@ -2003,10 +1992,12 @@ export function ThemePageClient({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setEcoColumnOrder((items) => {
-      const oldIndex = items.indexOf(active.id as EcosystemWatchlistColId);
-      const newIndex = items.indexOf(over.id as EcosystemWatchlistColId);
-      if (oldIndex < 0 || newIndex < 0) return items;
-      const next = arrayMove(items, oldIndex, newIndex);
+      const next = mergeSubsetReorderIntoFullOrder(
+        items,
+        ecoVisibleColumnIds,
+        active.id as EcosystemWatchlistColId,
+        over.id as EcosystemWatchlistColId,
+      );
       saveEcosystemWatchlistColumnOrder(next);
       return next;
     });

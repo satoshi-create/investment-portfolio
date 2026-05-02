@@ -23,7 +23,6 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   horizontalListSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
@@ -120,6 +119,7 @@ import { appendTitleBlock, holdingDailyAlphaStoryTitle } from "@/src/lib/alpha-s
 import { regionDisplayFromYahooCountry } from "@/src/lib/region-display";
 import { formatTickerForDisplay, yahooSymbolForTooltip } from "@/src/lib/ticker-display";
 import { stockMatchesVacuumUnpopularFilter } from "@/src/lib/institutional-ownership";
+import { mergeSubsetReorderIntoFullOrder } from "@/src/lib/column-order-dnd-merge";
 
 type SortKey =
   | "asset"
@@ -146,7 +146,9 @@ type SortKey =
   | "egrowth"
   | "eps"
   | "forecastEps"
-  | "volRatio";
+  | "volRatio"
+  | "price"
+  | "ebitda";
 
 function deviationOf(s: Stock): number | null {
   const z = s.alphaDeviationZ;
@@ -802,6 +804,11 @@ export function InventoryTable({
     const preset = [...INVENTORY_LYNCH_LENS_COLUMNS[lynchLensKey]];
     const allowed = new Set(inventoryBaseVisibleColumnIds);
     const inter = preset.filter((id) => allowed.has(id));
+
+    // ユーザーが保存した全列順序（inventoryBaseVisibleColumnIds）に従って、レンズのサブセット列を並べ替える
+    const orderMap = new Map(inventoryBaseVisibleColumnIds.map((id, i) => [id, i]));
+    inter.sort((a, b) => (orderMap.get(a) ?? 0) - (orderMap.get(b) ?? 0));
+
     const fallback = (["asset", "lynch", "alpha"] as const).filter((id) => allowed.has(id));
     return inter.length > 0 ? inter : fallback;
   }, [lynchLensKey, inventoryBaseVisibleColumnIds]);
@@ -923,10 +930,12 @@ export function InventoryTable({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setColumnOrder((items) => {
-      const oldIndex = items.indexOf(active.id as InventoryColId);
-      const newIndex = items.indexOf(over.id as InventoryColId);
-      if (oldIndex < 0 || newIndex < 0) return items;
-      const next = arrayMove(items, oldIndex, newIndex);
+      const next = mergeSubsetReorderIntoFullOrder(
+        items,
+        visibleColumnIds,
+        active.id as InventoryColId,
+        over.id as InventoryColId,
+      );
       saveInventoryColumnOrder(next);
       return next;
     });
@@ -1010,6 +1019,26 @@ export function InventoryTable({
       if (key === "fcfYield") return dir * cmpNum(fcfYieldSortValue(a), fcfYieldSortValue(b));
       if (key === "netCash") return dir * cmpNum(netCashSortValue(a), netCashSortValue(b));
       if (key === "netCps") return dir * cmpNum(netCpsSortValue(a), netCpsSortValue(b));
+      if (key === "price") {
+        const pv = (s: Stock) => {
+          const cp = s.currentPrice;
+          if (cp == null || !Number.isFinite(cp) || cp <= 0) return null;
+          const nat = nativeCurrencyForStock(s);
+          const v = nat === viewCurrency ? cp : convert(cp, nat, viewCurrency);
+          return Number.isFinite(v) && v > 0 ? v : null;
+        };
+        return dir * cmpNum(pv(a), pv(b));
+      }
+      if (key === "ebitda") {
+        const ev = (s: Stock) => {
+          const eb = s.ebitda;
+          if (eb == null || !Number.isFinite(eb)) return null;
+          const nat = nativeCurrencyForStock(s);
+          const v = nat === viewCurrency ? eb : convert(eb, nat, viewCurrency);
+          return Number.isFinite(v) ? v : null;
+        };
+        return dir * cmpNum(ev(a), ev(b));
+      }
       if (key === "deviation") return dir * cmpNum(deviationOf(a), deviationOf(b));
       if (key === "drawdown") return dir * cmpNum(drawdownOf(a), drawdownOf(b));
       if (key === "research") {
@@ -1020,7 +1049,7 @@ export function InventoryTable({
       return 0;
     });
     return arr;
-  }, [filteredStocks, sortDir, sortKey]);
+  }, [filteredStocks, sortDir, sortKey, viewCurrency, convert]);
 
   const dividendCalendarData = useMemo(() => buildDividendCalendarData(sortedStocks), [sortedStocks]);
 
@@ -1073,6 +1102,13 @@ export function InventoryTable({
 
     const avgRuleOf40 = weightedMean((s) => (Number.isFinite(s.ruleOf40) ? s.ruleOf40 : null));
     const avgFcfYield = weightedMean((s) => (Number.isFinite(s.fcfYield) ? s.fcfYield : null));
+    const avgEbitdaVisible = weightedMean((s) => {
+      const eb = s.ebitda;
+      if (eb == null || !Number.isFinite(eb)) return null;
+      const nat = nativeCurrencyForStock(s);
+      const v = nat === viewCurrency ? eb : convert(eb, nat, viewCurrency);
+      return Number.isFinite(v) ? v : null;
+    });
 
     let zSum = 0;
     let zN = 0;
@@ -1213,6 +1249,7 @@ export function InventoryTable({
     return {
       avgRuleOf40,
       avgFcfYield,
+      avgEbitdaVisible,
       avgZ: zN > 0 ? zSum / zN : null,
       avgDd: ddN > 0 ? ddSum / ddN : null,
       avgDailyAlphaVisible,
@@ -2014,16 +2051,40 @@ export function InventoryTable({
                             </button>
                           </SortableInventoryTh>
                         );
+                      case "ebitda":
+                        return (
+                          <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
+                            key={colId}
+                            id={colId}
+                            align="right"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
+                            metricHelpText={METRIC_HEADER_TIP.ebitda}
+                          >
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("ebitda")}
+                            >
+                              EBITDA{sortMark("ebitda")}
+                            </button>
+                          </SortableInventoryTh>
+                        );
                       case "price":
                         return (
                           <SortableInventoryTh onRequestHideColumn={handleInventoryHeaderHideColumn}
                             key={colId}
                             id={colId}
                             align="right"
-                            className="px-4 py-4 text-right whitespace-nowrap"
+                            className="px-4 py-4 text-right cursor-pointer select-none whitespace-nowrap"
                             metricHelpText={METRIC_HEADER_TIP.price}
                           >
-                            <span className="pointer-events-none">Price</span>
+                            <button
+                              type="button"
+                              className="bg-transparent p-0 text-right font-[inherit] text-inherit"
+                              onClick={() => toggleSort("price")}
+                            >
+                              Price{sortMark("price")}
+                            </button>
                           </SortableInventoryTh>
                         );
                       default: {
@@ -2073,9 +2134,9 @@ export function InventoryTable({
                               stickyFirst,
                             )}
                           >
-                            <div className="flex min-w-0 flex-col gap-1">
-                              <div className="flex min-w-0 items-center gap-1.5">
-                                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                            <div className="flex min-w-0 gap-3">
+                              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                   <button
                                     type="button"
                                     onClick={() => handleBookmarkClick(stock)}
@@ -2117,26 +2178,6 @@ export function InventoryTable({
                                     <BookOpen size={14} className="shrink-0" aria-hidden />
                                   </button>
                                 </div>
-                                <div className="flex shrink-0 items-center gap-1">
-                                  {ecoKeep != null && onToggleEcosystemKeep != null ? (
-                                    <EcosystemKeepButton
-                                      size="xs"
-                                      isKept={ecoKeep.isKept}
-                                      onClick={() => void onToggleEcosystemKeep(ecoKeep.memberId)}
-                                    />
-                                  ) : null}
-                                  <span
-                                    className={`shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
-                                      (stock.accountType ?? "特定") === "NISA"
-                                        ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
-                                        : "text-muted-foreground border-border bg-background/60"
-                                    }`}
-                                    title="口座区分（holdings.account_type）"
-                                  >
-                                    {stock.accountType ?? "特定"}
-                                  </span>
-                                </div>
-                              </div>
                               <div className="flex min-w-0 flex-wrap items-center gap-1">
                                 {onTrade ? (
                                   <button
@@ -2167,6 +2208,26 @@ export function InventoryTable({
                                   {stock.tag}
                                 </Link>
                               ) : null}
+                              </div>
+                              <div className="flex shrink-0 flex-col items-end justify-start gap-1 pt-0.5">
+                                {ecoKeep != null && onToggleEcosystemKeep != null ? (
+                                  <EcosystemKeepButton
+                                    size="xs"
+                                    isKept={ecoKeep.isKept}
+                                    onClick={() => void onToggleEcosystemKeep(ecoKeep.memberId)}
+                                  />
+                                ) : null}
+                                <span
+                                  className={`shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                                    (stock.accountType ?? "特定") === "NISA"
+                                      ? "text-emerald-600 border-emerald-500/40 bg-emerald-500/10"
+                                      : "text-muted-foreground border-border bg-background/60"
+                                  }`}
+                                  title="口座区分（holdings.account_type）"
+                                >
+                                  {stock.accountType ?? "特定"}
+                                </span>
+                              </div>
                             </div>
                           </td>
                         );
@@ -2659,12 +2720,12 @@ export function InventoryTable({
                           <td
                             key={colId}
                             className={cn(
-                              "px-4 py-4 text-right font-mono text-xs tabular-nums align-top",
+                              "px-4 py-4 text-right font-mono text-xs tabular-nums align-middle",
                               pegRatioTextClass(peg),
                             )}
                             title="PEG · 「成長%」列で予想成長率を参照"
                           >
-                            <div className="flex flex-col items-end gap-0.5 leading-tight">
+                            <div className="flex flex-col items-end justify-center gap-0.5 leading-tight min-h-[2.25rem]">
                               <div className="flex items-center justify-end gap-0.5">
                                 {pegLynchTreasureEligible(peg) ? (
                                   <span title="お宝（PEG < 1 · PER が成長率を下回る帯）">
@@ -2754,6 +2815,26 @@ export function InventoryTable({
                             >
                               <span className="inline-block w-full text-right">{fmtEps(forecastEpsOf(stock))}</span>
                             </DailyAlphaContextTooltip>
+                          </td>
+                        );
+                      case "ebitda":
+                        return (
+                          <td
+                            key={colId}
+                            className="px-4 py-4 text-right font-mono text-xs align-middle text-foreground/90"
+                          >
+                            {stock.ebitda != null && Number.isFinite(stock.ebitda) ? (
+                              <span title={METRIC_HEADER_TIP.ebitda}>
+                                {formatLocalPriceForView(
+                                  stock.ebitda,
+                                  nativeCurrencyForStock(stock),
+                                  viewCurrency,
+                                  convert,
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </td>
                         );
                       case "price": {
@@ -3130,6 +3211,30 @@ export function InventoryTable({
                         title="表示行の予想EPS（Forward）単純平均"
                       >
                         {footerStats.avgForecastEpsVisible != null ? fmtEps(footerStats.avgForecastEpsVisible) : "—"}
+                      </td>
+                    );
+                  case "ebitda":
+                    return (
+                      <td
+                        key={colId}
+                        className="px-4 py-3 text-right align-top font-mono text-[11px] leading-tight"
+                        title={`表示行の EBITDA（時価加重・欠損除外）。ビュー通貨: ${viewCurrency}`}
+                      >
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                            EBITDA
+                          </span>
+                          <span className="font-bold text-foreground/90 tabular-nums">
+                            {footerStats.avgEbitdaVisible != null && Number.isFinite(footerStats.avgEbitdaVisible)
+                              ? formatLocalPriceForView(
+                                  footerStats.avgEbitdaVisible,
+                                  viewCurrency,
+                                  viewCurrency,
+                                  convert,
+                                )
+                              : "—"}
+                          </span>
+                        </div>
                       </td>
                     );
                   case "price":

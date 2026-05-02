@@ -40,6 +40,7 @@ export const INVENTORY_COLUMN_LABEL_JA: Record<InventoryColId, string> = {
   alpha: "Cum. α",
   position: "比率",
   volRatio: "Vol 比",
+  ebitda: "EBITDA",
   price: "Price",
 };
 

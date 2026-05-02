@@ -21,7 +21,6 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   horizontalListSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
@@ -81,6 +80,8 @@ import {
 } from "@/src/lib/ecosystem-lynch-lens-column-ui";
 import { getEffectiveLynchCategoryForWatchItem } from "@/src/lib/lynch-display";
 import { ecosystemDividendPayoutPercent } from "@/src/lib/eco-dividend-payout";
+import { mergeSubsetReorderIntoFullOrder } from "@/src/lib/column-order-dnd-merge";
+import { ecosystemWatchlistItemMatchesQuery } from "@/src/lib/ecosystem-watchlist-search-match";
 import { formatLocalPriceForView } from "@/src/lib/format-display-currency";
 import {
   THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS,
@@ -117,20 +118,6 @@ function ecosystemMatchesMarketFilter(
   if (filter === "all") return true;
   if (filter === "jp") return e.countryName === "日本";
   return e.countryName === "米国";
-}
-
-function ecosystemMatchesSearchQuery(e: ThemeEcosystemWatchItem, raw: string): boolean {
-  const n = raw.trim().toLowerCase();
-  if (n.length === 0) return true;
-  const hay = [
-    e.companyName,
-    e.ticker,
-    e.role,
-    e.observationNotes ?? "",
-    e.chasm ?? "",
-    e.moat ?? "",
-  ];
-  return hay.some((s) => s.toLowerCase().includes(n));
 }
 
 function ecoOpportunityRow(_e: ThemeEcosystemWatchItem, _themeUp: boolean): boolean {
@@ -430,7 +417,7 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
       });
     }
     if (ecosystemSearchQuery.trim().length > 0) {
-      out = out.filter((e) => ecosystemMatchesSearchQuery(e, ecosystemSearchQuery));
+      out = out.filter((e) => ecosystemWatchlistItemMatchesQuery(e, ecosystemSearchQuery));
     }
     if (ecoMarketFilter !== "all") {
       out = out.filter((e) => ecosystemMatchesMarketFilter(e, ecoMarketFilter));
@@ -502,6 +489,11 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
     const preset = [...ECOSYSTEM_LYNCH_LENS_COLUMNS[ecoLynchLensKey]];
     const allowed = new Set(ecoBaseVisibleColumnIds);
     const inter = preset.filter((id) => allowed.has(id));
+
+    // ユーザーが保存した全列順序（ecoBaseVisibleColumnIds）に従って、レンズのサブセット列を並べ替える
+    const orderMap = new Map(ecoBaseVisibleColumnIds.map((id, i) => [id, i]));
+    inter.sort((a, b) => (orderMap.get(a) ?? 0) - (orderMap.get(b) ?? 0));
+
     const fallback = (["asset", "lynch", "alpha"] as const).filter((id) => allowed.has(id));
     return inter.length > 0 ? inter : fallback;
   }, [ecoLynchLensKey, ecoBaseVisibleColumnIds]);
@@ -637,10 +629,12 @@ export function EcosystemBookmarksClient({ initialItems }: { initialItems: Ecosy
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setEcoColumnOrder((ord) => {
-      const oldIndex = ord.indexOf(active.id as EcosystemWatchlistColId);
-      const newIndex = ord.indexOf(over.id as EcosystemWatchlistColId);
-      if (oldIndex < 0 || newIndex < 0) return ord;
-      const next = arrayMove(ord, oldIndex, newIndex);
+      const next = mergeSubsetReorderIntoFullOrder(
+        ord,
+        ecoVisibleColumnIds,
+        active.id as EcosystemWatchlistColId,
+        over.id as EcosystemWatchlistColId,
+      );
       saveEcosystemWatchlistColumnOrder(next);
       return next;
     });

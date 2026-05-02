@@ -881,6 +881,18 @@ export function EcosystemWatchlistTableRow({
                 {fmtVolumeRatioCell(e.volumeRatio)}
               </td>
             );
+          case "ebitda":
+            return (
+              <td key={colId} className={`px-6 py-4 text-right font-mono text-xs align-middle ${stickyFirst}`}>
+                {e.ebitda != null && Number.isFinite(e.ebitda) ? (
+                  <span title={METRIC_HEADER_TIP.ebitda}>
+                    {formatLocalPriceForView(e.ebitda, ecosystemRowNativeCurrency(e), viewCurrency, convert)}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+            );
           case "price":
             return (
               <td key={colId} className={`px-6 py-4 text-right align-middle min-w-[8rem] whitespace-nowrap ${stickyFirst}`}>

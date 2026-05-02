@@ -64,6 +64,7 @@ export function stocksToCsvRows(stocks: Stock[]): Record<string, unknown>[] {
     forwardEps: s.forwardEps,
     expectedGrowth: s.expectedGrowth,
     netCash: s.netCash,
+    ebitda: s.ebitda,
     netCashPerShare: s.netCashPerShare,
     priceMinusNetCashPerShare: s.priceMinusNetCashPerShare,
   }));
@@ -104,6 +105,7 @@ export const STOCK_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "forwardEps", header: "予想EPS（Forward）" },
   { key: "expectedGrowth", header: "予想EPS成長率（小数）" },
   { key: "netCash", header: "ネットキャッシュ（現地通貨）" },
+  { key: "ebitda", header: "EBITDA（現地通貨・効率テーブル）" },
   { key: "netCashPerShare", header: "1株ネットC（現地通貨）" },
   { key: "priceMinusNetCashPerShare", header: "株価−1株NC（現地通貨）" },
 ];
@@ -303,6 +305,7 @@ export function themeEcosystemWatchlistToCsvRows(
     pegRatio: e.pegRatio,
     priceToBook: e.priceToBook,
     expectedGrowth: e.expectedGrowth,
+    ebitda: e.ebitda,
   }));
 }
 
@@ -345,6 +348,7 @@ export const THEME_ECOSYSTEM_WATCHLIST_CSV_COLUMNS: CsvColumnDef[] = [
   { key: "alphaHistorySeries", header: "累積Alpha系列（JSON）" },
   { key: "alphaDailyHistorySeries", header: "日次Alpha系列（JSON）" },
   { key: "currentPrice", header: "現在値（建て通貨）" },
+  { key: "ebitda", header: "EBITDA（現地通貨・効率テーブル）" },
   { key: "trailingPe", header: "PER（TTM）" },
   { key: "forwardPe", header: "PER（Forward）" },
   { key: "trailingEps", header: "EPS（TTM）" },

@@ -35,6 +35,7 @@ export type StructuralEcoSortKey =
   | "ruleOf40"
   | "fcfYield"
   | "netCash"
+  | "ebitda"
   | "netCashYield"
   | "judgment"
   | "viScore"
@@ -400,6 +401,22 @@ export function StructuralEcosystemThead({
                   className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
                   metricHelpText={METRIC_HEADER_TIP.netCash}
                   label="ネットC"
+                  toggleEcoSort={toggleEcoSort}
+                  ecoSortMark={ecoSortMark}
+                  disableColumnReorder={disableColumnReorder}
+                  onRequestHideColumn={onRequestHideColumn}
+                />
+              );
+            case "ebitda":
+              return (
+                <EcoSortTh
+                  key={colId}
+                  id={colId}
+                  sortKey="ebitda"
+                  align="right"
+                  className={`px-6 py-4 cursor-pointer select-none whitespace-nowrap ${sfirst}`}
+                  metricHelpText={METRIC_HEADER_TIP.ebitda}
+                  label="EBITDA"
                   toggleEcoSort={toggleEcoSort}
                   ecoSortMark={ecoSortMark}
                   disableColumnReorder={disableColumnReorder}

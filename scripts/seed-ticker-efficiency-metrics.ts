@@ -10,6 +10,7 @@ type Row = {
   fcfMargin: number | null;
   fcfYield: number | null;
   fcf: number | null;
+  ebitda: number | null;
   updatedAt: string | null;
 };
 
@@ -91,6 +92,7 @@ async function main() {
   const iMargin = idx("fcf_margin");
   const iYield = idx("fcf_yield");
   const iFcf = idx("fcf");
+  const iEbitda = idx("ebitda");
   const iUpdated = idx("updated_at");
 
   const parsed: Row[] = [];
@@ -103,6 +105,7 @@ async function main() {
       fcfMargin: iMargin >= 0 ? numOrNull(r[iMargin]) : null,
       fcfYield: iYield >= 0 ? numOrNull(r[iYield]) : null,
       fcf: iFcf >= 0 ? numOrNull(r[iFcf]) : null,
+      ebitda: iEbitda >= 0 ? numOrNull(r[iEbitda]) : null,
       updatedAt: iUpdated >= 0 ? strOrNull(r[iUpdated]) : null,
     });
   }
@@ -120,18 +123,20 @@ async function main() {
       r.fcfMargin != null ||
       r.fcfYield != null ||
       r.fcf != null ||
+      r.ebitda != null ||
       r.updatedAt != null;
     if (!hasAny) continue;
     await db.execute({
       sql: `INSERT INTO ticker_efficiency_metrics
-              (ticker, revenue_growth, fcf_margin, fcf_yield, fcf, updated_at)
+              (ticker, revenue_growth, fcf_margin, fcf_yield, fcf, ebitda, updated_at)
             VALUES
-              (?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+              (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
             ON CONFLICT(ticker) DO UPDATE SET
               revenue_growth = COALESCE(excluded.revenue_growth, ticker_efficiency_metrics.revenue_growth),
               fcf_margin = COALESCE(excluded.fcf_margin, ticker_efficiency_metrics.fcf_margin),
               fcf_yield = COALESCE(excluded.fcf_yield, ticker_efficiency_metrics.fcf_yield),
               fcf = COALESCE(excluded.fcf, ticker_efficiency_metrics.fcf),
+              ebitda = COALESCE(excluded.ebitda, ticker_efficiency_metrics.ebitda),
               updated_at = excluded.updated_at`,
       args: [
         r.ticker,
@@ -139,6 +144,7 @@ async function main() {
         r.fcfMargin,
         r.fcfYield,
         r.fcf,
+        r.ebitda,
         r.updatedAt,
       ],
     });

@@ -32,6 +32,7 @@ const DEFAULT_USER_ID = defaultProfileUserId();
 
 /** `/api/dashboard` のサーバー側ソフト上限（既定 45s）より長くし、先に Abort しないようにする */
 const DASHBOARD_FETCH_TIMEOUT_MS = 55_000;
+/** タブが表示中のとき `/api/dashboard` を再取得（signals の ecosystemWatchlistSearch・銘柄ハイブリッド更新を含む）。 */
 const LIVE_PULSE_POLL_MS = 45_000;
 
 export const EMPTY_SUMMARY: DashboardSummary = {

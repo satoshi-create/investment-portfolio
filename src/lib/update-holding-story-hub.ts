@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
+import { upsertTickerStoryHub } from "@/src/lib/ticker-story-hub-db";
 import type { LynchCategory } from "@/src/types/investment";
 
 export type UpdateHoldingStoryHubResult =
@@ -61,6 +62,22 @@ export async function updateHoldingStoryHub(
     });
     if (rs.rows.length === 0) {
       return { ok: false, code: "NOT_FOUND", message: "保有行が見つからないか、権限がありません。" };
+    }
+    const tkRs = await db.execute({
+      sql: `SELECT ticker FROM holdings WHERE id = ? AND user_id = ? LIMIT 1`,
+      args: [params.holdingId, params.userId],
+    });
+    const tk =
+      tkRs.rows[0] != null && tkRs.rows[0]["ticker"] != null ? String(tkRs.rows[0]["ticker"]).trim() : "";
+    if (tk.length > 0) {
+      await upsertTickerStoryHub(db, {
+        userId: params.userId,
+        ticker: tk,
+        memo,
+        earningsSummaryNote: earnings,
+        lynchDriversNarrative: drivers,
+        lynchStoryText: story,
+      });
     }
     return { ok: true };
   } catch (e) {

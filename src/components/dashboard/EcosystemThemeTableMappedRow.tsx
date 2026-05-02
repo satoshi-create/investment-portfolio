@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { BookOpen, CalendarClock, FileText, Gem, MessageSquare, Star } from "lucide-react";
+import { BookOpen, CalendarClock, Gem, Star } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
@@ -670,45 +670,6 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                       観測起点 <span className="text-muted-foreground">{e.alphaObservationStartDate}</span>
                     </span>
                   ) : null}
-                  {showEcoMemoButton && setEcoMemoTarget ? (
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setEcoMemoTarget(e)}
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-colors",
-                          e.memo != null && e.memo.trim().length > 0
-                            ? "border-accent-cyan/45 bg-accent-cyan/10 text-accent-cyan"
-                            : "border-border text-muted-foreground hover:bg-muted/70",
-                        )}
-                        title={
-                          [e.memo, e.observationNotes].filter(Boolean).join("\n---\n") ||
-                          "メモを編集（memo / observation_notes）"
-                        }
-                      >
-                        <MessageSquare size={11} className="shrink-0" aria-hidden />
-                        メモ
-                      </button>
-                    </div>
-                  ) : null}
-                  {setEcoEarningsSummaryTarget ? (
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setEcoEarningsSummaryTarget(e)}
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-colors",
-                          e.earningsSummaryNote != null && e.earningsSummaryNote.trim().length > 0
-                            ? "border-violet-500/45 bg-violet-500/10 text-violet-200"
-                            : "border-border text-muted-foreground hover:bg-muted/70",
-                        )}
-                        title="決算要約メモ（Markdown）を表示・編集"
-                      >
-                        <FileText size={11} className="shrink-0" aria-hidden />
-                        決算要約
-                      </button>
-                    </div>
-                  ) : null}
                 </div>
               </td>
             );
@@ -926,8 +887,8 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
             );
           case "research":
             return (
-              <td key={colId} className={`min-w-[12rem] px-6 py-4 align-top ${stickyFirst}`}>
-                <div className="flex flex-col gap-1">
+              <td key={colId} className={`min-w-[12rem] px-6 py-4 align-middle ${stickyFirst}`}>
+                <div className="flex min-h-[3rem] flex-col justify-center gap-1">
                   <div className="flex flex-row flex-wrap items-center gap-2">
                     <span className="rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
                       {e.countryName}
@@ -1029,6 +990,23 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                   <span title={METRIC_HEADER_TIP.netCash}>
                     {formatLocalPriceForView(
                       e.netCash,
+                      ecosystemRowNativeCurrency(e),
+                      viewCurrency,
+                      convert,
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+            );
+          case "ebitda":
+            return (
+              <td key={colId} className={`px-6 py-4 text-right font-mono text-xs align-middle ${stickyFirst}`}>
+                {e.ebitda != null && Number.isFinite(e.ebitda) ? (
+                  <span title={METRIC_HEADER_TIP.ebitda}>
+                    {formatLocalPriceForView(
+                      e.ebitda,
                       ecosystemRowNativeCurrency(e),
                       viewCurrency,
                       convert,

@@ -20,6 +20,7 @@ import type {
   UrbanMiningMetalSpotRow,
   OilThemeMacroContext,
 } from "@/src/types/investment";
+import type { NaphthaCorrelationChartData } from "@/src/types/naphtha";
 import {
   calculateAlphaAcceleration,
   calculateCumulativeAlpha,
@@ -102,10 +103,12 @@ import {
   prefetchHoldingsInstrumentMetadata,
   prefetchThemeEcosystemInstrumentMetadata,
 } from "@/src/lib/instrument-metadata-sync";
-import { EDO_CIRCULAR_THEME_NAME, URBAN_MINING_THEME_NAME } from "@/src/lib/edo-theme-constants";
+import { isEdoCircularThemeName, URBAN_MINING_THEME_NAME } from "@/src/lib/edo-theme-constants";
 import { fetchEdoResourceStructuralSyncData } from "@/src/lib/edo-resource-structural-sync";
+import { fetchNaphthaCorrelationChartBundle } from "@/src/lib/naphtha-theme-chart-data";
 import { isOilStructuralTheme } from "@/src/lib/market-glance-macros";
 import { buildOilThemeMacroChartData, OIL_THEME_CL_HISTORY_DAYS } from "@/src/lib/oil-theme-macro-chart";
+import { fetchTickerStoryHubMapForUser, type TickerStoryHubRow } from "@/src/lib/ticker-story-hub-db";
 
 export { syncStockMetadata } from "@/src/lib/instrument-metadata-sync";
 export type { SyncStockMetadataResult } from "@/src/lib/instrument-metadata-sync";
@@ -262,12 +265,20 @@ async function fetchEcosystemWatchlistSearchIndex(
       });
     }
 
+    const tickers = (rs.rows as Record<string, unknown>[])
+      .map((r) => String(r["ticker"] ?? "").trim())
+      .filter((t) => t.length > 0);
+    const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, tickers);
+
     return (rs.rows as Record<string, unknown>[])
       .map((row) => {
         const memberId = String(row["member_id"] ?? "").trim();
         const ticker = String(row["ticker"] ?? "").trim();
         const themeName = row["theme_name"] != null ? String(row["theme_name"]).trim() : "";
         const companyName = row["company_name"] != null ? String(row["company_name"]).trim() : "";
+
+        const eff = efficiencyByTickerUpper.get(ticker.toUpperCase());
+        const ebitda = eff?.ebitda ?? null;
 
         // 複利点火の判定
         const series = alphaByTicker.get(ticker) ?? [];
@@ -331,6 +342,7 @@ async function fetchEcosystemWatchlistSearchIndex(
           compoundingIgnitionPriceSource: ign.compoundingIgnitionPriceSource,
           latestAlpha: ign.pulse5d.length > 0 ? ign.pulse5d[ign.pulse5d.length - 1]! : null,
           alphaHistory5d: ign.pulse5d,
+          ebitda,
         };
       })
       .filter((x) => x.memberId.length > 0 && x.ticker.length > 0);
@@ -657,7 +669,7 @@ async function fetchListedEcosystemTickersForHybridQuotes(db: Client, userId: st
              AND LENGTH(TRIM(m.ticker)) > 0
              AND TRIM(m.ticker) NOT LIKE 'N/A:%'
              AND UPPER(TRIM(m.ticker)) NOT IN ('-', 'N/A')
-          ORDER BY MIN(TRIM(m.ticker)) ASC`,
+          ORDER BY MAX(COALESCE(m.is_compounding_ignited, 0)) DESC, MIN(TRIM(m.ticker)) ASC`,
     args: [userId],
   });
   return rs.rows.map((r) => String(r.ticker ?? "").trim()).filter((t) => t.length > 0);
@@ -1128,6 +1140,8 @@ export type TickerEfficiencyBundle = {
   netCash: number | null;
   /** 前期比較用（ACCUMULATE など）。未記録は null */
   priorRuleOf40: number | null;
+  /** `ticker_efficiency_metrics.ebitda`（現地通貨・年次ベース推奨）。未移行 DB は null */
+  ebitda: number | null;
 };
 
 type EcosystemEfficiencyRow = {
@@ -1312,6 +1326,39 @@ function tickerEfficiencyMissingNetCashColumn(e: unknown): boolean {
   return lower.includes("no such column") && lower.includes("net_cash");
 }
 
+function tickerEfficiencyMissingEbitdaColumn(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such column") && lower.includes("ebitda");
+}
+
+async function mergeEbitdaIntoTickerEfficiencyMap(
+  db: Client,
+  map: Map<string, TickerEfficiencyBundle>,
+  tickers: string[],
+): Promise<void> {
+  if (tickers.length === 0) return;
+  try {
+    const ph = tickers.map(() => "?").join(",");
+    const rs = await db.execute({
+      sql: `SELECT ticker, ebitda FROM ticker_efficiency_metrics WHERE ticker IN (${ph})`,
+      args: tickers,
+    });
+    for (const row of rs.rows as Record<string, unknown>[]) {
+      const tk = String(row["ticker"] ?? "").trim().toUpperCase();
+      if (tk.length === 0) continue;
+      const bundle = map.get(tk);
+      if (!bundle) continue;
+      const raw = row["ebitda"];
+      const n = raw != null ? Number(raw) : Number.NaN;
+      bundle.ebitda = Number.isFinite(n) ? n : null;
+    }
+  } catch (e) {
+    if (tickerEfficiencyMissingEbitdaColumn(e)) return;
+    throw e;
+  }
+}
+
 async function fetchEcosystemEfficiencyByTickerUpper(
   db: Client,
   tickers: string[],
@@ -1441,8 +1488,10 @@ async function fetchEcosystemEfficiencyByTickerUpper(
         sharesOutstanding,
         priorRuleOf40,
         netCash,
+        ebitda: null,
       });
     }
+    await mergeEbitdaIntoTickerEfficiencyMap(db, out, unique);
     return out;
   } catch (e) {
     if (ecosystemMissingEfficiencyColumns(e)) return out;
@@ -1579,6 +1628,7 @@ function buildDraftsFromHoldingRows(
   efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
   liveAlphaCtx: LiveAlphaBenchmarkContext,
   chartListedReturnPctByHoldingKey: Map<string, number | null>,
+  storyHubByTicker: Map<string, TickerStoryHubRow>,
 ): StockDraft[] {
   return rows.map((row) => {
     const id = String(row.id);
@@ -1634,6 +1684,8 @@ function buildDraftsFromHoldingRows(
     const marketCap = parseOptionalFiniteNumberMeta(row.market_cap);
     const listingPriceDb = parseOptionalFiniteNumberMeta(row.listing_price);
     const memoDb = row.memo != null && String(row.memo).trim().length > 0 ? String(row.memo) : null;
+    const hubRow = storyHubByTicker.get(ticker.trim().toUpperCase());
+    const memoResolved = hubRow?.memo ?? memoDb;
     const isBookmarked = parseBookmarkFlag(row.is_bookmarked);
     const dbNextEarnings = parseOptionalIsoDatePrefix(row.next_earnings_date);
 
@@ -1766,7 +1818,7 @@ function buildDraftsFromHoldingRows(
       listingDate,
       marketCap,
       listingPrice: listingPriceDb,
-      memo: memoDb,
+      memo: memoResolved,
       isBookmarked,
       stopLossPct: shortTermExit.stopLossPct,
       targetProfitPct: shortTermExit.targetProfitPct,
@@ -1819,9 +1871,9 @@ function buildDraftsFromHoldingRows(
       providerSymbol,
       structureTagsJson: tagsJson,
       expectationCategory,
-      earningsSummaryNote: parseEarningsSummaryNote(row.earnings_summary_note),
-      lynchDriversNarrative: parseEarningsSummaryNote(row.lynch_drivers_narrative),
-      lynchStoryText: parseEarningsSummaryNote(row.lynch_story_text),
+      earningsSummaryNote: hubRow?.earningsSummaryNote ?? parseEarningsSummaryNote(row.earnings_summary_note),
+      lynchDriversNarrative: hubRow?.lynchDriversNarrative ?? parseEarningsSummaryNote(row.lynch_drivers_narrative),
+      lynchStoryText: hubRow?.lynchStoryText ?? parseEarningsSummaryNote(row.lynch_story_text),
       revenueGrowth,
       fcfMargin,
       fcfYield,
@@ -1837,6 +1889,10 @@ function buildDraftsFromHoldingRows(
       regularMarketVolume: fromHybrid?.regularMarketVolume ?? null,
       averageDailyVolume10Day: fromHybrid?.averageDailyVolume10Day ?? null,
       volumeRatio: fromHybrid?.volumeRatio ?? null,
+      ebitda:
+        eff?.ebitda != null && Number.isFinite(eff.ebitda)
+          ? eff.ebitda
+          : null,
     };
   });
 }
@@ -2101,6 +2157,7 @@ async function enrichEcosystemMemberRow(
   researchByTicker: Map<string, EquityResearchSnapshot>,
   efficiencyByTickerUpper: Map<string, TickerEfficiencyBundle>,
   liveAlphaCtx: LiveAlphaBenchmarkContext,
+  storyHubByTicker: Map<string, TickerStoryHubRow>,
   options?: { fast?: boolean },
 ): Promise<ThemeEcosystemWatchItem> {
   const id = String(row["id"]);
@@ -2162,6 +2219,11 @@ async function enrichEcosystemMemberRow(
   const rawLynchStory = row["lynch_story_text"];
   const lynchStoryTextEco =
     rawLynchStory != null && String(rawLynchStory).trim().length > 0 ? String(rawLynchStory) : null;
+  const hubStory = storyHubByTicker.get(ticker.trim().toUpperCase());
+  const memoEcoOut = hubStory?.memo ?? memoEco;
+  const earningsSummaryNoteEcoOut = hubStory?.earningsSummaryNote ?? earningsSummaryNoteEco;
+  const lynchDriversNarrativeEcoOut = hubStory?.lynchDriversNarrative ?? lynchDriversNarrativeEco;
+  const lynchStoryTextEcoOut = hubStory?.lynchStoryText ?? lynchStoryTextEco;
   const isBookmarkedEco = parseBookmarkFlag(row["is_bookmarked"]);
   const dbNextEarningsEco = parseOptionalIsoDatePrefix(row["next_earnings_date"]);
 
@@ -2444,6 +2506,9 @@ async function enrichEcosystemMemberRow(
     netCashEco = merged.netCash;
   }
 
+  const ebitdaEco =
+    !isUnlisted && eff != null && eff.ebitda != null && Number.isFinite(eff.ebitda) ? eff.ebitda : null;
+
   const valuationForUnlisted = (() => {
     if (!isUnlisted) return Number.NaN;
     if (lastRoundValuation != null && Number.isFinite(lastRoundValuation) && lastRoundValuation > 0) return lastRoundValuation;
@@ -2515,10 +2580,10 @@ async function enrichEcosystemMemberRow(
     listingDate: listingDateEco,
     marketCap: marketCapEco,
     listingPrice: listingPriceEco,
-    memo: memoEco,
-    earningsSummaryNote: earningsSummaryNoteEco,
-    lynchDriversNarrative: lynchDriversNarrativeEco,
-    lynchStoryText: lynchStoryTextEco,
+    memo: memoEcoOut,
+    earningsSummaryNote: earningsSummaryNoteEcoOut,
+    lynchDriversNarrative: lynchDriversNarrativeEcoOut,
+    lynchStoryText: lynchStoryTextEcoOut,
     isBookmarked: isBookmarkedEco,
     performanceSinceFoundation,
     nextEarningsDate,
@@ -2567,6 +2632,7 @@ async function enrichEcosystemMemberRow(
     fcfYield,
     ruleOf40,
     netCash: netCashEco,
+    ebitda: ebitdaEco,
     netCashYieldPercent: netCashYieldPercentEco,
     judgmentStatus: judgmentEco.status,
     judgmentReason: judgmentEco.reason,
@@ -2916,6 +2982,8 @@ async function fetchEnrichedThemeEcosystem(
       .filter((t) => t.length > 0);
     const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, listedTickersForEfficiency);
 
+    const storyHubByTicker = await fetchTickerStoryHubMapForUser(db, userId);
+
     /**
      * Yahoo Finance 等の外部 I/O がボトルネックになりやすいので、適度な並列度で回す。
      * 一部失敗してもページ全体を止めない（Promise.allSettled 相当）。
@@ -2942,6 +3010,7 @@ async function fetchEnrichedThemeEcosystem(
             researchByTicker,
             efficiencyByTickerUpper,
             liveAlphaCtx,
+            storyHubByTicker,
             { fast },
           );
         } catch {
@@ -3093,6 +3162,8 @@ export async function getEcosystemCrossThemeBookmarks(
     .filter((t) => t.length > 0);
   const efficiencyByTickerUpper = await fetchEcosystemEfficiencyByTickerUpper(db, listedTickersForEfficiency);
 
+  const storyHubByTicker = await fetchTickerStoryHubMapForUser(db, userId);
+
   const CONCURRENCY = fast ? 10 : 8;
   const results: (EcosystemCrossThemeBookmarkItem | null)[] = new Array(rows.length).fill(null);
   let nextIdx = 0;
@@ -3114,6 +3185,7 @@ export async function getEcosystemCrossThemeBookmarks(
           researchByTicker,
           efficiencyByTickerUpper,
           liveAlphaCtx,
+          storyHubByTicker,
           { fast },
         );
         results[i] = { ...enriched, themeName: themeName.length > 0 ? themeName : "（無題）" };
@@ -3146,7 +3218,7 @@ export async function getThemeDetailData(
   const perf = { enabled: options?.perf === true, requestId: options?.requestId ?? null };
   const fast = options?.fast === true;
   const t0 = perf.enabled ? Date.now() : 0;
-  const [theme, benchmarkSnap, fxMaybe, h, liveAlphaCtx] = await Promise.all([
+  const [theme, benchmarkSnap, fxMaybe, h, liveAlphaCtx, storyHubByTicker] = await Promise.all([
     (async () => {
       const t = perf.enabled ? Date.now() : 0;
       const out = await fetchInvestmentThemeRecord(db, userId, themeName);
@@ -3177,6 +3249,7 @@ export async function getThemeDetailData(
       if (perf.enabled && perf.requestId) console.log(`[perf] ${perf.requestId} liveAlphaBenchmarks ms=${Date.now() - t}`);
       return out;
     })(),
+    fetchTickerStoryHubMapForUser(db, userId),
   ]);
   const fxUsdJpy = fxMaybe != null && Number.isFinite(fxMaybe) && fxMaybe > 0 ? fxMaybe : USD_JPY_RATE_FALLBACK;
 
@@ -3248,6 +3321,7 @@ export async function getThemeDetailData(
   let resourceStructuralSync: ResourceStructuralSyncData | null = null;
   let urbanMiningMetalSpot: UrbanMiningMetalSpotRow[] | null = null;
   let oilMacroContext: OilThemeMacroContext | null = null;
+  let naphthaCorrelation: NaphthaCorrelationChartData | null = null;
 
   let themeSyntheticUsRatio: number | null = null;
   let themeSyntheticJpRatio: number | null = null;
@@ -3279,6 +3353,7 @@ export async function getThemeDetailData(
       efficiencyByTickerUpper,
       liveAlphaCtx,
       chartListedReturnPctByHoldingKey,
+      storyHubByTicker,
     );
     themeTotalMarketValue = drafts.reduce((s, d) => s + sanitizeMarketValueForAggregation(d.marketValue), 0);
     stocks = finalizeStocksFromDrafts(drafts, themeTotalMarketValue);
@@ -3579,6 +3654,22 @@ export async function getThemeDetailData(
     }
   }
 
+  if (isEdoCircularThemeName(themeName) && theme?.id != null && ecosystem.length > 0 && !fast) {
+    try {
+      naphthaCorrelation = await fetchNaphthaCorrelationChartBundle({
+        db,
+        themeName,
+        themeId: theme.id,
+        ecosystem,
+        fast,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[getThemeDetailData] naphthaCorrelation failed: ${msg}`);
+      naphthaCorrelation = null;
+    }
+  }
+
   return {
     themeName,
     themeMissing: theme == null,
@@ -3607,6 +3698,7 @@ export async function getThemeDetailData(
     resourceStructuralSync,
     urbanMiningMetalSpot,
     oilMacroContext,
+    naphthaCorrelation,
   };
 }
 
@@ -3617,7 +3709,10 @@ export async function getThemeDetailData(
  */
 export async function getDashboardData(db: Client, userId: string): Promise<DashboardData> {
   const timing = createDashboardTimingSegmentLogger();
-  const h = await fetchHoldingsRowsWithInvestmentMeta(db, userId);
+  const [h, storyHubByTicker] = await Promise.all([
+    fetchHoldingsRowsWithInvestmentMeta(db, userId),
+    fetchTickerStoryHubMapForUser(db, userId),
+  ]);
   timing?.seg("fetchHoldingsRowsWithInvestmentMeta");
 
   if (h.rows.length === 0) {
@@ -3801,6 +3896,7 @@ export async function getDashboardData(db: Client, userId: string): Promise<Dash
     efficiencyByTickerUpper,
     liveAlphaCtx,
     chartListedReturnPctByHoldingKey,
+    storyHubByTicker,
   );
   timing?.seg("buildDraftsFromHoldingRows");
 
@@ -4001,6 +4097,7 @@ export async function fetchUnresolvedSignalsForUser(db: Client, userId: string):
       regularMarketVolume: null,
       averageDailyVolume10Day: null,
       volumeRatio: null,
+      ebitda: null,
     };
   });
 }

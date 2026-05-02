@@ -5,6 +5,7 @@ import type { Client } from "@libsql/client";
 import { normalizeEcosystemMemberField } from "@/src/lib/ecosystem-field-meta";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import { ecosystemTickerShouldBeUnlisted } from "@/src/lib/ecosystem-ticker-hygiene";
+import { upsertTickerStoryHub } from "@/src/lib/ticker-story-hub-db";
 import type { LynchCategory } from "@/src/types/investment";
 
 export class EcosystemMemberAuthError extends Error {
@@ -262,6 +263,32 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
     sql: `UPDATE theme_ecosystem_members SET ${sets.join(", ")} WHERE id = ? AND theme_id = ?`,
     args: [...args, memberId, input.themeId],
   });
+
+  const storyPatch =
+    nextMemo !== undefined ||
+    nextEarningsSummary !== undefined ||
+    nextLynchDriversNarrative !== undefined ||
+    nextLynchStoryText !== undefined;
+  if (storyPatch) {
+    const snap = await db.execute({
+      sql: `SELECT ticker, memo, earnings_summary_note, lynch_drivers_narrative, lynch_story_text
+            FROM theme_ecosystem_members WHERE id = ? AND theme_id = ? LIMIT 1`,
+      args: [memberId, input.themeId],
+    });
+    const sr = snap.rows[0] as Record<string, unknown> | undefined;
+    const ticker = sr != null && sr["ticker"] != null ? String(sr["ticker"]).trim() : "";
+    if (ticker.length > 0) {
+      await upsertTickerStoryHub(db, {
+        userId: input.userId,
+        ticker,
+        memo: sr != null && sr["memo"] != null ? String(sr["memo"]) : null,
+        earningsSummaryNote: sr != null && sr["earnings_summary_note"] != null ? String(sr["earnings_summary_note"]) : null,
+        lynchDriversNarrative:
+          sr != null && sr["lynch_drivers_narrative"] != null ? String(sr["lynch_drivers_narrative"]) : null,
+        lynchStoryText: sr != null && sr["lynch_story_text"] != null ? String(sr["lynch_story_text"]) : null,
+      });
+    }
+  }
 }
 
 export async function deleteEcosystemMember(

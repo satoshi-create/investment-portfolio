@@ -24,6 +24,7 @@ export const INVENTORY_COLUMN_IDS = [
   "alpha",
   "position",
   "volRatio",
+  "ebitda",
   "price",
 ] as const;
 

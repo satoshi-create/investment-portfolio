@@ -35,4 +35,12 @@ INSERT OR REPLACE INTO investment_themes (id, user_id, name, description, goal, 
   '材料・装置・設計（ファブレス）・IDM・後工程まで、半導体バリューチェーン全体を一枚の地図で観測する。CSV の各プレイヤーをエコシステムに載せ、VOO 対 Alpha と決算・地政イベントで分解する。',
   'SOX/NDX とファウンドリ設備投資・メモリ価格を併読し、テーマ加重累積 Alpha と銘柄別 Z・落率で「全体β」と「チェーン内相対」を切り分ける。',
   datetime('now')
-);
+),
+(
+  'theme-seed-oil-civilization',
+  'user-satoshi',
+  '石油文明',
+  '石油・ガスメジャーからシェール、油田サービス、川中物流・代替化石まで、資源価格と地政学を軸にした「旧エネルギーOS」の観測テーマ。',
+  '供給ショックと政策・在庫サイクルを併読し、ヘッジとサイクリカルのバッファを切り分ける。',
+  datetime('now')
+)

@@ -102,6 +102,7 @@ function mk(overrides: Partial<Stock> & Pick<Stock, "ticker">): Stock {
     regularMarketVolume: null,
     averageDailyVolume10Day: null,
     volumeRatio: null,
+    ebitda: null,
     ...rest,
   };
   return base;

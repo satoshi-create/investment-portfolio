@@ -32,6 +32,7 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_IDS = [
   "egrowth",
   "eps",
   "forecastEps",
+  "ebitda",
   "alpha",
   "cumTrend",
   "volRatio",

@@ -1,4 +1,5 @@
 import type { JudgmentStatus } from "@/src/lib/judgment-logic";
+import type { NaphthaCorrelationChartData } from "@/src/types/naphtha";
 
 export type AlphaHistory = number[];
 
@@ -324,6 +325,8 @@ export interface Stock {
   averageDailyVolume10Day: number | null;
   /** 出来高 / 10 日平均。商い急増の目安。 */
   volumeRatio: number | null;
+  /** `ticker_efficiency_metrics.ebitda`（現地通貨・税引き前営業利益＋減価償却・償却費の一般的 EBITDA）。未取得は null */
+  ebitda: number | null;
   /**
    * 複利点火（ホームの Compounding Ignition 等）。ダッシュボード API がサーバで `stockFiveDayTrendIgnitionModel`
    * と同一ロジックにより設定。未送信の銘柄ではクライアントが再計算する。
@@ -440,6 +443,8 @@ export type EcosystemWatchlistSearchItem = {
   latestAlpha: number | null;
   /** 5日間トレンドの Alpha 系列 */
   alphaHistory5d: number[];
+  /** EBITDA */
+  ebitda: number | null;
 };
 
 export type DashboardData = {
@@ -596,6 +601,8 @@ export type ThemeEcosystemWatchItem = {
   ruleOf40: number;
   /** `ticker_efficiency_metrics.net_cash`（上場のみ・未取得は null） */
   netCash: number | null;
+  /** `ticker_efficiency_metrics.ebitda`（現地通貨）。未取得は null */
+  ebitda: number | null;
   /** ネットキャッシュ ÷ 時価総額 × 100（`marketCap` が正のときのみ算出） */
   netCashYieldPercent: number | null;
   /** `computeInvestmentJudgment` — サーバーが必ず付与（テーマ詳細 API） */
@@ -824,6 +831,10 @@ export type ThemeDetailData = {
    * 原油スポット指標と WTI vs 構造トレンドの並置・相関。
    */
   oilMacroContext: OilThemeMacroContext | null;
+  /**
+   * 江戸循環テーマ専用: ナフサ（プロキシ）価格と監視銘柄の対 VOO 日次 Alpha 相関。`fast` では null。
+   */
+  naphthaCorrelation: NaphthaCorrelationChartData | null;
 };
 
 /** One row from `portfolio_daily_snapshots` (patrol / 乖離ログ). */

@@ -25,11 +25,12 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   horizontalListSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
+import { mergeSubsetReorderIntoFullOrder } from "@/src/lib/column-order-dnd-merge";
+import { ecosystemWatchlistItemMatchesQuery as ecosystemMatchesSearchQuery } from "@/src/lib/ecosystem-watchlist-search-match";
 import { toast } from "sonner";
 
 import { toggleThemeEcosystemMemberBookmark, toggleThemeEcosystemMemberKept } from "@/app/actions/theme-ecosystem";
@@ -71,7 +72,7 @@ import {
   isThemeStructuralTrendPositiveUp,
   THEME_STRUCTURAL_TREND_LOOKBACK_DAYS,
 } from "@/src/lib/alpha-logic";
-import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER, URBAN_MINING_THEME_NAME } from "@/src/lib/edo-theme-constants";
+import { EDO_CIRCULAR_THEME_NAME, EDO_ECOSYSTEM_ROLE_PLACEHOLDER, isEdoCircularThemeName, URBAN_MINING_THEME_NAME } from "@/src/lib/edo-theme-constants";
 import { isOilStructuralTheme } from "@/src/lib/market-glance-macros";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import {
@@ -113,6 +114,7 @@ import { SaaSApocalypseLensPanel } from "@/src/components/dashboard/SaaSApocalyp
 import { ResourceStructuralSyncChart } from "@/src/components/dashboard/ResourceStructuralSyncChart";
 import { OilThemeMacroPanel } from "@/src/components/dashboard/OilThemeMacroPanel";
 import { ThemeStructuralTrendChart } from "@/src/components/dashboard/ThemeStructuralTrendChart";
+import { NaphthaCorrelationChart } from "@/src/components/dashboard/NaphthaCorrelationChart";
 import { ThemeMetaBlock } from "@/src/components/dashboard/ThemeMetaBlock";
 import { InventoryTable } from "@/src/components/dashboard/InventoryTable";
 import { UnicornCard } from "@/src/components/dashboard/UnicornCard";
@@ -378,23 +380,6 @@ function ecoOpportunityRow(
   if (!themeUp) return false;
   const z = e.alphaDeviationZ;
   return z != null && Number.isFinite(z) && z <= -1.5;
-}
-
-function ecosystemMatchesSearchQuery(
-  e: ThemeEcosystemWatchItem,
-  raw: string,
-): boolean {
-  const n = raw.trim().toLowerCase();
-  if (n.length === 0) return true;
-  const hay = [
-    e.companyName,
-    e.ticker,
-    e.role,
-    e.observationNotes ?? "",
-    e.chasm ?? "",
-    e.moat ?? "",
-  ];
-  return hay.some((s) => s.toLowerCase().includes(n));
 }
 
 /** React/DOM key when `theme_ecosystem_members.id` is missing at runtime (e.g. partial SQL rows). */
@@ -864,6 +849,10 @@ function normalizeThemeDetailResponse(
       }
       return { indicators, asOf, chart };
     })(),
+    naphthaCorrelation: ((): ThemeDetailData["naphthaCorrelation"] => {
+      const raw = (rest as ThemeDetailData).naphthaCorrelation;
+      return raw != null && typeof raw === "object" ? raw : null;
+    })(),
   };
 }
 
@@ -1070,6 +1059,14 @@ export function ThemePageClient({
             prev.resourceStructuralSync != null
           ) {
             return { ...next, resourceStructuralSync: prev.resourceStructuralSync };
+          }
+          if (
+            prev != null &&
+            isEdoCircularThemeName(themeLabel.trim()) &&
+            next.naphthaCorrelation == null &&
+            prev.naphthaCorrelation != null
+          ) {
+            return { ...next, naphthaCorrelation: prev.naphthaCorrelation };
           }
           return next;
         });
@@ -2089,6 +2086,11 @@ export function ThemePageClient({
     const preset = [...ECOSYSTEM_LYNCH_LENS_COLUMNS[ecoLynchLensKey]];
     const allowed = new Set(ecoBaseVisibleColumnIds);
     const inter = preset.filter((id) => allowed.has(id));
+
+    // ユーザーが保存した全列順序（ecoBaseVisibleColumnIds）に従って、レンズのサブセット列を並べ替える
+    const orderMap = new Map(ecoBaseVisibleColumnIds.map((id, i) => [id, i]));
+    inter.sort((a, b) => (orderMap.get(a) ?? 0) - (orderMap.get(b) ?? 0));
+
     const fallback = (["asset", "lynch", "alpha"] as const).filter((id) => allowed.has(id));
     return inter.length > 0 ? inter : fallback;
   }, [ecoLynchLensKey, ecoBaseVisibleColumnIds]);
@@ -2224,10 +2226,12 @@ export function ThemePageClient({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setEcoColumnOrder((items) => {
-      const oldIndex = items.indexOf(active.id as EcosystemWatchlistColId);
-      const newIndex = items.indexOf(over.id as EcosystemWatchlistColId);
-      if (oldIndex < 0 || newIndex < 0) return items;
-      const next = arrayMove(items, oldIndex, newIndex);
+      const next = mergeSubsetReorderIntoFullOrder(
+        items,
+        ecoVisibleColumnIds,
+        active.id as EcosystemWatchlistColId,
+        over.id as EcosystemWatchlistColId,
+      );
       saveEcosystemWatchlistColumnOrder(next);
       return next;
     });
@@ -2857,6 +2861,10 @@ export function ThemePageClient({
 
             {isOilStructuralTheme(themeQueryName) && data.oilMacroContext != null ? (
               <OilThemeMacroPanel context={data.oilMacroContext} />
+            ) : null}
+
+            {isEdoCircularThemeName(themeLabel.trim()) && data.naphthaCorrelation != null ? (
+              <NaphthaCorrelationChart data={data.naphthaCorrelation} />
             ) : null}
 
             {stocks.length > 0 ||

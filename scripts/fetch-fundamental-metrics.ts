@@ -102,6 +102,9 @@ type MergedAnnual = {
   totalRevenue: number | null;
   freeCashFlow: number | null;
   netIncome: number | null;
+  ebitda: number | null;
+  operatingIncome: number | null;
+  depreciation: number | null;
 };
 
 /**
@@ -113,7 +116,11 @@ function mergeAnnualRows(
 ): MergedAnnual[] {
   const map = new Map<number, MergedAnnual>();
 
-  const ingest = (rows: unknown, field: "totalRevenue" | "freeCashFlow" | "netIncome", keyCandidates: string[]) => {
+  const ingest = (
+    rows: unknown,
+    field: "totalRevenue" | "freeCashFlow" | "netIncome" | "ebitda" | "operatingIncome" | "depreciation",
+    keyCandidates: string[],
+  ) => {
     if (!Array.isArray(rows)) return;
     for (const raw of rows) {
       if (!raw || typeof raw !== "object") continue;
@@ -121,11 +128,22 @@ function mergeAnnualRows(
       const dk = dateKeyMs(r["date"]);
       if (dk == null) continue;
       const v = pickNum(r, keyCandidates);
-      const cur = map.get(dk) ?? { dateMs: dk, totalRevenue: null, freeCashFlow: null, netIncome: null };
+      const cur = map.get(dk) ?? {
+        dateMs: dk,
+        totalRevenue: null,
+        freeCashFlow: null,
+        netIncome: null,
+        ebitda: null,
+        operatingIncome: null,
+        depreciation: null,
+      };
       if (Number.isFinite(v)) {
         if (field === "totalRevenue") cur.totalRevenue = v;
         if (field === "freeCashFlow") cur.freeCashFlow = v;
         if (field === "netIncome") cur.netIncome = v;
+        if (field === "ebitda") cur.ebitda = v;
+        if (field === "operatingIncome") cur.operatingIncome = v;
+        if (field === "depreciation") cur.depreciation = v;
       }
       map.set(dk, cur);
     }
@@ -133,7 +151,15 @@ function mergeAnnualRows(
 
   ingest(financials, "totalRevenue", ["totalRevenue", "TotalRevenue"]);
   ingest(financials, "netIncome", ["netIncome", "NetIncome"]);
+  ingest(financials, "operatingIncome", ["operatingIncome", "OperatingIncome"]);
+  ingest(financials, "ebitda", ["ebitda", "EBITDA", "trailingEbitda", "TrailingEbitda"]);
   ingest(cashFlow, "freeCashFlow", ["freeCashFlow", "FreeCashFlow"]);
+  ingest(cashFlow, "depreciation", [
+    "depreciation",
+    "depreciationAndAmortization",
+    "DepreciationAndAmortization",
+    "depreciationAmortization",
+  ]);
 
   return [...map.values()].sort((a, b) => b.dateMs - a.dateMs);
 }
@@ -149,6 +175,7 @@ function computeMetricsFromMerged(sortedDesc: MergedAnnual[]): {
   fcfMarginPct: number;
   ruleOf40: number;
   annualFcf: number | null;
+  ebitda: number | null;
 } {
   const revChain = sortedDesc.filter((r) => finitePosRev(r) != null);
   let revenueGrowthPct = Number.NaN;
@@ -162,6 +189,7 @@ function computeMetricsFromMerged(sortedDesc: MergedAnnual[]): {
 
   let fcfMarginPct = Number.NaN;
   let annualFcf: number | null = null;
+  let ebitda: number | null = null;
 
   const both = sortedDesc.find((r) => {
     const rev = finitePosRev(r);
@@ -180,12 +208,28 @@ function computeMetricsFromMerged(sortedDesc: MergedAnnual[]): {
     if (fcfOnly != null && Number.isFinite(fcfOnly)) annualFcf = fcfOnly;
   }
 
+  /** EBITDA の抽出（最新年次） */
+  if (sortedDesc.length > 0) {
+    const top = sortedDesc[0]!;
+    const eb = top.ebitda;
+    if (eb != null && Number.isFinite(eb)) {
+      ebitda = eb;
+    } else {
+      /** 営業利益 + 減価償却費による近似 */
+      const opInc = top.operatingIncome;
+      const dep = top.depreciation;
+      if (opInc != null && dep != null && Number.isFinite(opInc) && Number.isFinite(dep)) {
+        ebitda = opInc + Math.abs(dep);
+      }
+    }
+  }
+
   const ruleOf40 =
     Number.isFinite(revenueGrowthPct) && Number.isFinite(fcfMarginPct)
       ? revenueGrowthPct + fcfMarginPct
       : Number.NaN;
 
-  return { revenueGrowthPct, fcfMarginPct, ruleOf40, annualFcf };
+  return { revenueGrowthPct, fcfMarginPct, ruleOf40, annualFcf, ebitda };
 }
 
 async function fetchLastUpdatedMap(
@@ -434,6 +478,7 @@ type JpFallbackParsed = {
   fcfMarginPct: number;
   annualFcf: number | null;
   fcfYieldPct: number | null;
+  ebitda: number | null;
 };
 
 /**
@@ -475,14 +520,38 @@ function parseJpFallbackFromQuoteSummary(qsRaw: unknown): JpFallbackParsed | nul
     }
   }
 
+  let ebitda: number | null = null;
   const fd = qs["financialData"];
-  if (
-    (annualFcf == null || !Number.isFinite(annualFcf)) &&
-    fd &&
-    typeof fd === "object"
-  ) {
+  if (fd && typeof fd === "object") {
     const fcfYahoo = yahooStatementNum(fd as Record<string, unknown>, ["freeCashflow", "freeCashFlow"]);
-    if (fcfYahoo != null && Number.isFinite(fcfYahoo)) annualFcf = fcfYahoo;
+    if (fcfYahoo != null && Number.isFinite(fcfYahoo)) {
+      if (annualFcf == null || !Number.isFinite(annualFcf)) annualFcf = fcfYahoo;
+    }
+    const eb = yahooStatementNum(fd as Record<string, unknown>, ["ebitda", "EBITDA", "trailingEbitda", "TrailingEbitda"]);
+    if (eb != null && Number.isFinite(eb)) ebitda = eb;
+  }
+
+  if (ebitda == null && topInc) {
+    /** incomeStatementHistory から EBITDA を近似（営業利益 + 減価償却費） */
+    const opInc = yahooStatementNum(topInc, ["operatingIncome", "OperatingIncome"]);
+    if (opInc != null && Number.isFinite(opInc)) {
+      const topEnd = rowFiscalEndMs(topInc);
+      const cfMatch =
+        (topEnd != null ? cashSorted.find((c) => rowFiscalEndMs(c) === topEnd) : null) ??
+        cashSorted[0] ??
+        null;
+      if (cfMatch) {
+        const dep = yahooStatementNum(cfMatch, [
+          "depreciation",
+          "depreciationAndAmortization",
+          "DepreciationAndAmortization",
+          "depreciationAmortization",
+        ]);
+        if (dep != null && Number.isFinite(dep)) {
+          ebitda = opInc + Math.abs(dep);
+        }
+      }
+    }
   }
 
   let fcfMarginPct = Number.NaN;
@@ -511,10 +580,11 @@ function parseJpFallbackFromQuoteSummary(qsRaw: unknown): JpFallbackParsed | nul
   const hasAny =
     Number.isFinite(revenueGrowthPct) ||
     Number.isFinite(fcfMarginPct) ||
-    (annualFcf != null && Number.isFinite(annualFcf));
+    (annualFcf != null && Number.isFinite(annualFcf)) ||
+    (ebitda != null && Number.isFinite(ebitda));
   if (!hasAny) return null;
 
-  return { revenueGrowthPct, fcfMarginPct, annualFcf, fcfYieldPct };
+  return { revenueGrowthPct, fcfMarginPct, annualFcf, fcfYieldPct, ebitda };
 }
 
 function jpNeedsQuoteFallback(
@@ -534,20 +604,22 @@ function jpNeedsQuoteFallback(
  * `fcf_yield` は DB 静的列用に、fb 側が有限なら設定する（TS 単体では null になりやすい）。
  */
 function mergeQuoteSummaryFallbackIntoMetrics(
-  tsBaseline: { revenueGrowthPct: number; fcfMarginPct: number; annualFcf: number | null },
+  tsBaseline: { revenueGrowthPct: number; fcfMarginPct: number; annualFcf: number | null; ebitda: number | null },
   current: {
     revenueGrowthPct: number;
     fcfMarginPct: number;
     annualFcf: number | null;
     fcfYieldStored: number | null;
+    ebitda: number | null;
   },
   fb: JpFallbackParsed,
-): { revenueGrowthPct: number; fcfMarginPct: number; annualFcf: number | null; fcfYieldStored: number | null; applied: boolean } {
+): { revenueGrowthPct: number; fcfMarginPct: number; annualFcf: number | null; fcfYieldStored: number | null; ebitda: number | null; applied: boolean } {
   let applied = false;
   let revenueGrowthPct = current.revenueGrowthPct;
   let fcfMarginPct = current.fcfMarginPct;
   let annualFcf = current.annualFcf;
   let fcfYieldStored = current.fcfYieldStored;
+  let ebitda = current.ebitda;
 
   if (!Number.isFinite(tsBaseline.revenueGrowthPct) && Number.isFinite(fb.revenueGrowthPct)) {
     revenueGrowthPct = fb.revenueGrowthPct;
@@ -569,8 +641,16 @@ function mergeQuoteSummaryFallbackIntoMetrics(
     fcfYieldStored = fb.fcfYieldPct;
     applied = true;
   }
+  if (
+    (tsBaseline.ebitda == null || !Number.isFinite(tsBaseline.ebitda)) &&
+    fb.ebitda != null &&
+    Number.isFinite(fb.ebitda)
+  ) {
+    ebitda = fb.ebitda;
+    applied = true;
+  }
 
-  return { revenueGrowthPct, fcfMarginPct, annualFcf, fcfYieldStored, applied };
+  return { revenueGrowthPct, fcfMarginPct, annualFcf, fcfYieldStored, ebitda, applied };
 }
 
 async function main() {
@@ -711,6 +791,7 @@ async function main() {
       let revenueGrowthPct = tsMetrics.revenueGrowthPct;
       let fcfMarginPct = tsMetrics.fcfMarginPct;
       let annualFcf = tsMetrics.annualFcf;
+      let ebitda = tsMetrics.ebitda;
 
       const needJpQs =
         isJpListedEfficiencyKind(instrumentKind) &&
@@ -727,39 +808,53 @@ async function main() {
         ? ([...QUOTE_SUMMARY_EXTENDED_MODULES] as QuoteSummaryModules[])
         : (["defaultKeyStatistics", ...NET_CASH_QUOTE_EXTRA_MODULES] as QuoteSummaryModules[]);
 
-      const qs = await yahooFinance.quoteSummary(yahooSym, {
-        modules: quoteModules,
-      });
-      await pause(1);
-
-      const sharesOut = sharesFromQuoteSummary(qs);
-      const netCash = netCashFromYahooQuoteSummary(qs);
+      let sharesOut: number | null = null;
+      let netCash: number | null = null;
       let fcfYieldStored: number | null = null;
       let quoteFallbackApplied = false;
 
-      if (needExtendedQuote) {
-        const fb = parseJpFallbackFromQuoteSummary(qs);
-        if (fb != null) {
-          const mergedFb = mergeQuoteSummaryFallbackIntoMetrics(
-            {
-              revenueGrowthPct: tsMetrics.revenueGrowthPct,
-              fcfMarginPct: tsMetrics.fcfMarginPct,
-              annualFcf: tsMetrics.annualFcf,
-            },
-            { revenueGrowthPct, fcfMarginPct, annualFcf, fcfYieldStored },
-            fb,
-          );
-          revenueGrowthPct = mergedFb.revenueGrowthPct;
-          fcfMarginPct = mergedFb.fcfMarginPct;
-          annualFcf = mergedFb.annualFcf;
-          fcfYieldStored = mergedFb.fcfYieldStored;
-          quoteFallbackApplied = mergedFb.applied;
-        } else if (merged.length === 0) {
-          const region = useUsQuoteDetail ? "US" : "JP";
-          console.warn(
-            `[warn] ${ticker} (${yahooSym}): ${region} quoteSummary fallback produced no metrics`,
-          );
+      try {
+        const qs = await yahooFinance.quoteSummary(
+          yahooSym,
+          {
+            modules: quoteModules,
+          },
+          {
+            validateResult: false,
+          } as any,
+        );
+        await pause(1);
+
+        sharesOut = sharesFromQuoteSummary(qs);
+        netCash = netCashFromYahooQuoteSummary(qs);
+
+        if (needExtendedQuote) {
+          const fb = parseJpFallbackFromQuoteSummary(qs);
+          if (fb != null) {
+            const mergedFb = mergeQuoteSummaryFallbackIntoMetrics(
+              {
+                revenueGrowthPct: tsMetrics.revenueGrowthPct,
+                fcfMarginPct: tsMetrics.fcfMarginPct,
+                annualFcf: tsMetrics.annualFcf,
+                ebitda: tsMetrics.ebitda,
+              },
+              { revenueGrowthPct, fcfMarginPct, annualFcf, fcfYieldStored, ebitda },
+              fb,
+            );
+            revenueGrowthPct = mergedFb.revenueGrowthPct;
+            fcfMarginPct = mergedFb.fcfMarginPct;
+            annualFcf = mergedFb.annualFcf;
+            fcfYieldStored = mergedFb.fcfYieldStored;
+            ebitda = mergedFb.ebitda;
+            quoteFallbackApplied = mergedFb.applied;
+          } else if (merged.length === 0) {
+            const region = useUsQuoteDetail ? "US" : "JP";
+            console.warn(`[warn] ${ticker} (${yahooSym}): ${region} quoteSummary fallback produced no metrics`);
+          }
         }
+      } catch (eQs) {
+        const msg = eQs instanceof Error ? eQs.message : String(eQs);
+        console.warn(`[warn] ${ticker} (${yahooSym}): quoteSummary failed, skipping fallback/meta: ${msg}`);
       }
 
       const sourceTag = quoteFallbackApplied
@@ -778,8 +873,8 @@ async function main() {
       await db.execute({
         sql: `INSERT INTO ticker_efficiency_metrics
                 (ticker, revenue_growth, fcf_margin, annual_fcf, shares_outstanding, rule_of_40,
-                 fcf_yield, net_cash, source, last_updated_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                 fcf_yield, net_cash, ebitda, source, last_updated_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
               ON CONFLICT(ticker) DO UPDATE SET
                 revenue_growth = COALESCE(excluded.revenue_growth, ticker_efficiency_metrics.revenue_growth),
                 fcf_margin = COALESCE(excluded.fcf_margin, ticker_efficiency_metrics.fcf_margin),
@@ -788,6 +883,7 @@ async function main() {
                 rule_of_40 = COALESCE(excluded.rule_of_40, ticker_efficiency_metrics.rule_of_40),
                 fcf_yield = COALESCE(excluded.fcf_yield, ticker_efficiency_metrics.fcf_yield),
                 net_cash = COALESCE(excluded.net_cash, ticker_efficiency_metrics.net_cash),
+                ebitda = COALESCE(excluded.ebitda, ticker_efficiency_metrics.ebitda),
                 source = COALESCE(excluded.source, ticker_efficiency_metrics.source),
                 last_updated_at = COALESCE(excluded.last_updated_at, ticker_efficiency_metrics.last_updated_at),
                 updated_at = datetime('now')`,
@@ -800,6 +896,7 @@ async function main() {
           Number.isFinite(ruleOf40) ? ruleOf40 : null,
           fcfYieldStored,
           netCash != null && Number.isFinite(netCash) ? netCash : null,
+          ebitda != null && Number.isFinite(ebitda) ? ebitda : null,
           sourceTag,
           isoNow,
         ],
@@ -811,7 +908,8 @@ async function main() {
         (annualFcf != null && Number.isFinite(annualFcf)) ||
         (sharesOut != null && sharesOut > 0) ||
         (fcfYieldStored != null && Number.isFinite(fcfYieldStored)) ||
-        (netCash != null && Number.isFinite(netCash));
+        (netCash != null && Number.isFinite(netCash)) ||
+        (ebitda != null && Number.isFinite(ebitda));
 
       if (hasAny) {
         ok += 1;
@@ -823,6 +921,12 @@ async function main() {
         if (Number.isFinite(ruleOf40)) bits.push(`R40=${ruleOf40.toFixed(2)}`);
         if (fcfYieldStored != null && Number.isFinite(fcfYieldStored)) {
           bits.push(`fcfY≈${fcfYieldStored.toFixed(2)}%`);
+        }
+        if (ebitda != null && Number.isFinite(ebitda)) {
+          const abs = Math.abs(ebitda);
+          const scale = abs >= 1e12 ? "T" : abs >= 1e9 ? "B" : abs >= 1e6 ? "M" : "";
+          const div = abs >= 1e12 ? 1e12 : abs >= 1e9 ? 1e9 : abs >= 1e6 ? 1e6 : 1;
+          bits.push(`ebitda≈${(ebitda / div).toFixed(2)}${scale}`);
         }
         if (netCash != null && Number.isFinite(netCash)) {
           const abs = Math.abs(netCash);

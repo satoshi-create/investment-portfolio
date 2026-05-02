@@ -94,6 +94,17 @@ function parseLatestAnnualFreeCashFlow(data: unknown): number {
   return numOrNan(getKey(top, ["freeCashFlow", "freeCashFlows"]));
 }
 
+/** 直近年度の EBITDA。 */
+function parseLatestAnnualEbitdaFromIncome(data: unknown): number {
+  if (!Array.isArray(data) || data.length === 0) return Number.NaN;
+  const rows = sortRowsByDateDesc(
+    data.filter((r): r is Record<string, unknown> => r != null && typeof r === "object"),
+  );
+  const top = rows[0];
+  if (!top) return Number.NaN;
+  return numOrNan(getKey(top, ["ebitda", "EBITDA"]));
+}
+
 /**
  * ネットキャッシュ ≈ 流動性の高い資産 − 有利子負債（FMP: cashAndShortTermInvestments 又は
  * cash + shortTermInvestments − totalDebt）。
@@ -250,8 +261,9 @@ async function main() {
       let annualFcf: number | null = null;
       let sharesOut: number | null = null;
       let netCash: number | null = null;
+      let ebitda: number | null = null;
 
-      /** 1) Income statement — YoY growth + latest revenue */
+      /** 1) Income statement — YoY growth + latest revenue + EBITDA */
       let inc = await fmpJson(apiKey, `/income-statement/${encodeURIComponent(fmpSym)}?period=annual&limit=2`);
       if (!inc.ok && shouldRetryWithStable(inc.status)) {
         console.warn(`[warn] ${sym}: income-statement v3 ${inc.status} — trying stable`);
@@ -269,6 +281,8 @@ async function main() {
         );
       } else {
         revenueGrowthPct = computeRevenueGrowthYoYPctFromIncomeAnnual(inc.data);
+        const eb = parseLatestAnnualEbitdaFromIncome(inc.data);
+        if (Number.isFinite(eb)) ebitda = eb;
       }
 
       /** 2) Cash flow — 直近年度の freeCashFlow（年次・limit=1；ソートで最新列を採用） */
@@ -345,9 +359,9 @@ async function main() {
 
       await db.execute({
         sql: `INSERT INTO ticker_efficiency_metrics
-                (ticker, revenue_growth, fcf_margin, annual_fcf, shares_outstanding, rule_of_40, net_cash,
+                (ticker, revenue_growth, fcf_margin, annual_fcf, shares_outstanding, rule_of_40, net_cash, ebitda,
                  source, last_updated_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
               ON CONFLICT(ticker) DO UPDATE SET
                 revenue_growth = COALESCE(excluded.revenue_growth, ticker_efficiency_metrics.revenue_growth),
                 fcf_margin = COALESCE(excluded.fcf_margin, ticker_efficiency_metrics.fcf_margin),
@@ -355,6 +369,7 @@ async function main() {
                 shares_outstanding = COALESCE(excluded.shares_outstanding, ticker_efficiency_metrics.shares_outstanding),
                 rule_of_40 = COALESCE(excluded.rule_of_40, ticker_efficiency_metrics.rule_of_40),
                 net_cash = COALESCE(excluded.net_cash, ticker_efficiency_metrics.net_cash),
+                ebitda = COALESCE(excluded.ebitda, ticker_efficiency_metrics.ebitda),
                 source = COALESCE(excluded.source, ticker_efficiency_metrics.source),
                 last_updated_at = COALESCE(excluded.last_updated_at, ticker_efficiency_metrics.last_updated_at),
                 updated_at = datetime('now')`,
@@ -366,6 +381,7 @@ async function main() {
           sharesOut,
           Number.isFinite(ruleOf40) ? ruleOf40 : null,
           netCash,
+          ebitda,
           "FMP",
           isoNow,
         ],
@@ -376,13 +392,20 @@ async function main() {
         Number.isFinite(fcfMarginPct) ||
         (annualFcf != null && Number.isFinite(annualFcf)) ||
         (sharesOut != null && sharesOut > 0) ||
-        (netCash != null && Number.isFinite(netCash));
+        (netCash != null && Number.isFinite(netCash)) ||
+        (ebitda != null && Number.isFinite(ebitda));
       if (hasAny) {
         ok += 1;
         const bits: string[] = [];
         if (Number.isFinite(revenueGrowthPct)) bits.push(`revYoY=${revenueGrowthPct.toFixed(2)}%`);
         if (Number.isFinite(fcfMarginPct)) bits.push(`fcfM=${fcfMarginPct.toFixed(2)}%`);
         if (Number.isFinite(ruleOf40)) bits.push(`R40=${ruleOf40.toFixed(2)}`);
+        if (ebitda != null && Number.isFinite(ebitda)) {
+          const abs = Math.abs(ebitda);
+          const scale = abs >= 1e12 ? "T" : abs >= 1e9 ? "B" : abs >= 1e6 ? "M" : "";
+          const div = abs >= 1e12 ? 1e12 : abs >= 1e9 ? 1e9 : abs >= 1e6 ? 1e6 : 1;
+          bits.push(`ebitda≈${(ebitda / div).toFixed(2)}${scale}`);
+        }
         console.log(`[ok] ${sym}: ${bits.join(", ") || "partial columns"}`);
       } else skipped += 1;
     } catch (e) {

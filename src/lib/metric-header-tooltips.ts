@@ -41,6 +41,8 @@ export const METRIC_HEADER_TIP = {
     "配当利回り・配当日・連続配当年・自社株買い（Yahoo）。ソートは決算まで→配当落ち→利回りの優先（実装参照）。",
   netCash:
     "ネットキャッシュ（現地通貨）。FMP 年次 BS: 流動性資産 − totalDebt。`ticker_efficiency_metrics`（`npm run fetch:fmp`）。",
+  ebitda:
+    "EBITDA（現地通貨）。税引き前営業利益＋減価償却・償却費相当を集約したバックデータ前提の値（`ticker_efficiency_metrics.ebitda`。未取得時は —）。",
   netCps:
     "1株当たりネットキャッシュ = ネットC ÷ 希薄化株数（FMP quote）。",
   netCashYield:
