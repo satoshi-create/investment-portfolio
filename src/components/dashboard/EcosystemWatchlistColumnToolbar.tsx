@@ -131,7 +131,7 @@ export function EcosystemWatchlistColumnToolbar({
                   ? "border-cyan-500/45 bg-cyan-500/10 text-cyan-200"
                   : "border-border text-muted-foreground hover:bg-muted/60",
               )}
-              title={`Research・江戸的役割・ネットC 等 ${ecosystemHiddenIdsForDisplayPreset("medium", togglableIds).length} 列を非表示`}
+              title={`ネットC・成長%・EPS・Vol 比 等 ${ecosystemHiddenIdsForDisplayPreset("medium", togglableIds).length} 列を非表示`}
             >
               ミディアム
             </button>
@@ -144,7 +144,7 @@ export function EcosystemWatchlistColumnToolbar({
                   ? "border-amber-500/45 bg-amber-500/10 text-amber-100"
                   : "border-border text-muted-foreground hover:bg-muted/60",
               )}
-              title="主要指標・判定・Alpha 中心に列を絞る"
+              title="長期%・Rule of 40・FCF Yield・判定・PEG・成長%・PE・EPS・Alpha・5D・Price に絞る"
             >
               シンプル
             </button>

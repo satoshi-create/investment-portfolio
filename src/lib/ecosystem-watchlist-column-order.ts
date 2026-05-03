@@ -3,40 +3,46 @@
  * 在庫表（inventory-column-order）と重なる列は同一文字列（例: asset, trend5d, pe …）。
  * ブックマークは列 ID ではなく Asset セル内の ☆ のみ（専用列なし）。
  */
+/**
+ * Ecosystem / Watchlist テーブル列 ID。
+ * `src/lib/ecosystem_full.csv` の 22 列を先頭に厳格に並べる。
+ * CSV 外の列は末尾に配置し、プリセットで非表示にする。
+ */
 export const ECOSYSTEM_WATCHLIST_COLUMN_IDS = [
   "asset",
   "lynch",
+  "research",
+  "earnings",
+  "perfListed",
+  "netCash",
+  "netCashYield",
+  "ruleOf40",
+  "fcfYield",
+  "judgment",
+  "egrowth",
+  "peg",
+  "pbr",
+  "trr",
+  "pe",
+  "eps",
+  "forecastEps",
+  "volRatio",
+  "alpha",
   "trend5d",
+  "cumTrend",
+  "price",
+  // 以下、CSV 外の列
+  "role",
   "listing",
   "mktCap",
-  "perfListed",
-  "earnings",
-  "research",
-  "role",
   "viScore",
   "holder",
   "dividend",
   "payout",
   "defensiveRole",
-  "ruleOf40",
-  "fcfYield",
-  "netCash",
-  "netCashYield",
-  "judgment",
+  "ebitda",
   "deviation",
   "drawdown",
-  "pe",
-  "pbr",
-  "peg",
-  "trr",
-  "egrowth",
-  "eps",
-  "forecastEps",
-  "ebitda",
-  "alpha",
-  "cumTrend",
-  "volRatio",
-  "price",
 ] as const;
 
 export type EcosystemWatchlistColId = (typeof ECOSYSTEM_WATCHLIST_COLUMN_IDS)[number];
@@ -54,11 +60,14 @@ export const DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER: EcosystemWatchlistColId[]
 ];
 
 export const ECOSYSTEM_WATCHLIST_COLUMN_ORDER_STORAGE_KEY =
-  "ecosystem-watchlist-table-column-order-v3";
+  "ecosystem-watchlist-table-column-order-v6";
 
 const LEGACY_ECO_ORDER_KEYS = [
-  "ecosystem-watchlist-table-column-order-v1",
+  "ecosystem-watchlist-table-column-order-v5",
+  "ecosystem-watchlist-table-column-order-v4",
+  "ecosystem-watchlist-table-column-order-v3",
   "ecosystem-watchlist-table-column-order-v2",
+  "ecosystem-watchlist-table-column-order-v1",
 ] as const;
 
 /** 構造テーマ・ウォッチリスト共通: visibility で列を間引く */
@@ -129,15 +138,19 @@ export function loadEcosystemWatchlistColumnOrder(): EcosystemWatchlistColId[] {
       if (Array.isArray(parsed))
         return normalizeEcosystemWatchlistColumnOrder(parsed.map(String));
     }
+
+    // v4 移行時: 以前のユーザー設定順序を破棄し、新しい公式順（ecosystem_full.csv 準拠）を強制適用する。
+    let migrated = false;
     for (const key of LEGACY_ECO_ORDER_KEYS) {
-      const legacy = localStorage.getItem(key);
-      if (!legacy) continue;
-      const parsed = JSON.parse(legacy) as unknown;
-      if (!Array.isArray(parsed)) continue;
-      const normalized = normalizeEcosystemWatchlistColumnOrder(parsed.map(String));
-      saveEcosystemWatchlistColumnOrder(normalized);
-      return normalized;
+      if (localStorage.getItem(key)) {
+        localStorage.removeItem(key);
+        migrated = true;
+      }
     }
+    if (migrated) {
+      saveEcosystemWatchlistColumnOrder(DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER);
+    }
+
     return DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER;
   } catch {
     return DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER;

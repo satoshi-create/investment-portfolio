@@ -23,37 +23,38 @@ export const ECOSYSTEM_WATCHLIST_COLUMN_LABEL_JA: Record<
 > = {
   asset: "Asset",
   lynch: "リンチ",
+  research: "Research",
+  earnings: "決算まで",
+  perfListed: "長期%",
+  netCash: "ネットC",
+  netCashYield: "NC/MCAP",
+  ruleOf40: "Rule of 40",
+  fcfYield: "FCF Yield",
+  judgment: "判定",
+  egrowth: "成長%",
+  peg: "PEG",
+  pbr: "PBR",
+  trr: "TRR",
+  pe: "PE",
+  eps: "EPS",
+  forecastEps: "予想EPS",
+  volRatio: "Vol 比",
+  alpha: "Cum. α",
   trend5d: "5D",
+  cumTrend: "Cumulative trend",
+  price: "Last",
+  // 以下、CSV 外または内部用
+  role: "役割",
   listing: "初取引",
   mktCap: "MCAP",
-  perfListed: "長期%",
-  earnings: "決算まで",
-  research: "Research",
-  role: "江戸的役割",
   viScore: "VI",
   holder: "Holder",
   dividend: "配当カレンダー",
   payout: "配当性向",
   defensiveRole: "ディフェンシブ役割",
-  ruleOf40: "Rule of 40",
-  fcfYield: "FCF Yield",
-  netCash: "ネットC",
-  netCashYield: "ネットC÷MCAP",
-  judgment: "判定",
+  ebitda: "EBITDA",
   deviation: "乖離",
   drawdown: "落率",
-  pe: "PE",
-  pbr: "PBR",
-  peg: "PEG",
-  trr: "TRR",
-  egrowth: "予想成長",
-  eps: "EPS",
-  forecastEps: "予想EPS",
-  alpha: "Cum. α",
-  cumTrend: "累積トレンド",
-  volRatio: "Vol 比",
-  ebitda: "EBITDA",
-  price: "Last（価格）",
 };
 
 export function normalizeEcosystemWatchlistHidden(
@@ -100,26 +101,46 @@ export function saveEcosystemWatchlistHiddenColumns(
   }
 }
 
-const ECOSYSTEM_MEDIUM_HIDDEN: readonly EcosystemWatchlistColId[] = [
-  "research",
+/** フル／ミディアム／シンプルいずれでも非表示（CSV 外の列はデフォルト非表示） */
+const ECOSYSTEM_ALWAYS_HIDDEN_IN_PRESETS: readonly EcosystemWatchlistColId[] = [
+  "research", // ミディアム・シンプル CSV にはないため常時非表示へ
   "role",
+  "listing",
+  "mktCap",
+  "viScore",
+  "holder",
+  "dividend",
+  "payout",
+  "defensiveRole",
+  "ebitda",
+  "deviation",
+  "drawdown",
+];
+
+/**
+ * ミディアム: `ecosystem_midiam.csv` の表示列のみ残す。
+ * 畳む追加: ネットC, NC/MCAP, 成長%, EPS, 予想EPS, Vol 比。
+ */
+const ECOSYSTEM_MEDIUM_HIDDEN: readonly EcosystemWatchlistColId[] = [
   "netCash",
   "netCashYield",
-  "volRatio",
   "egrowth",
   "eps",
   "forecastEps",
+  "volRatio",
 ];
 
+/**
+ * シンプル: `ecosystem_simple.csv` の表示列のみ（ミディアムに加えて畳む列）。
+ * 畳む追加: リンチ, 決算まで, TRR, PE (PER), Cumulative trend。
+ * ※ シンプル CSV の「Alpha」はエコシステムの「alpha」に、「Price」は「price」に対応。
+ */
 const ECOSYSTEM_SIMPLE_EXTRA_HIDDEN: readonly EcosystemWatchlistColId[] = [
-  "ruleOf40",
-  "fcfYield",
-  "pe",
-  "pbr",
-  "peg",
+  "lynch",
+  "earnings",
   "trr",
-  "deviation",
-  "drawdown",
+  "pe",
+  "cumTrend",
 ];
 
 function sortedEcoIdsEqual(
@@ -132,17 +153,45 @@ function sortedEcoIdsEqual(
   return as.every((v, i) => v === bs[i]);
 }
 
-/** Asset 以外の表示可能列に対してプリセットで非表示にする列 ID */
+/** 現在の「表示可能列」に対してプリセットで非表示にする列 ID */
 export function ecosystemHiddenIdsForDisplayPreset(
   preset: "full" | "medium" | "simple",
   togglableColumnIds: readonly EcosystemWatchlistColId[],
 ): EcosystemWatchlistColId[] {
   const allowed = new Set(togglableColumnIds);
-  if (preset === "full") return [];
-  const medium = ECOSYSTEM_MEDIUM_HIDDEN.filter((id) => allowed.has(id));
-  if (preset === "medium") return medium;
-  const simpleExtra = ECOSYSTEM_SIMPLE_EXTRA_HIDDEN.filter((id) => allowed.has(id));
-  return Array.from(new Set([...medium, ...simpleExtra]));
+  const always = ECOSYSTEM_ALWAYS_HIDDEN_IN_PRESETS.filter((id) => allowed.has(id));
+
+  if (preset === "full") {
+    return always;
+  }
+
+  if (preset === "medium") {
+    // ecosystem_midiam.csv にない列を隠す
+    const mediumHidden = [
+      "netCash",
+      "netCashYield",
+      "egrowth",
+      "eps",
+      "forecastEps",
+      "volRatio",
+    ] as EcosystemWatchlistColId[];
+    return Array.from(new Set([...always, ...mediumHidden])).filter((id) => allowed.has(id));
+  }
+
+  // preset === "simple"
+  // ecosystem_simple.csv にない列を隠す
+  const simpleHidden = [
+    "lynch",
+    "earnings",
+    "netCash",
+    "netCashYield",
+    "trr",
+    "pbr",
+    "forecastEps",
+    "volRatio",
+    "cumTrend",
+  ] as EcosystemWatchlistColId[];
+  return Array.from(new Set([...always, ...simpleHidden])).filter((id) => allowed.has(id));
 }
 
 export function ecosystemUserHiddenMatchesPreset(
@@ -201,13 +250,13 @@ export function ecosystemWatchlistOverviewHiddenPreset(
 }
 
 export function loadEcosystemWatchlistTableCompact(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") return true;
   try {
     const raw = window.localStorage.getItem(ECOSYSTEM_WATCHLIST_COMPACT_STORAGE_KEY);
-    if (raw === null) return false;
+    if (raw === null) return true; // デフォルト ON
     return raw === "1" || raw === "true";
   } catch {
-    return false;
+    return true;
   }
 }
 

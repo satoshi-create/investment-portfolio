@@ -629,7 +629,7 @@ function isSqliteMissingColumn(e: unknown, col: string): boolean {
  *   キーが無い行は DB フラグをフォールバックとして表示し、テーマページとの完全一致は目標にしない。
  */
 /** Max ecosystem-only tickers for Yahoo hybrid quotes (dashboard timeout mitigation). Production-tunable alongside {@link DASHBOARD_HYBRID_FETCH_OPTIONS}. */
-const DASHBOARD_ECOSYSTEM_HYBRID_QUOTE_MAX = 96;
+const DASHBOARD_ECOSYSTEM_HYBRID_QUOTE_MAX = 32;
 /** Hybrid quote fetch pacing: higher concurrency may reduce wall time but increases Yahoo throttle risk; tune via env-driven overrides only if needed. */
 const DASHBOARD_HYBRID_FETCH_OPTIONS = { concurrency: 2, batchDelayMs: 480 } as const;
 

@@ -34,11 +34,11 @@ export const INVENTORY_COLUMN_LABEL_JA: Record<InventoryColId, string> = {
   pbr: "PBR",
   peg: "PEG",
   trr: "TRR",
-  egrowth: "予想成長",
+  egrowth: "成長%",
   eps: "EPS",
   forecastEps: "予想EPS",
-  alpha: "Cum. α",
-  position: "比率",
+  alpha: "Alpha",
+  position: "Position",
   volRatio: "Vol 比",
   ebitda: "EBITDA",
   price: "Price",
@@ -81,28 +81,38 @@ export function saveInventoryHiddenColumns(hidden: InventoryColId[]): void {
   }
 }
 
-/** フル／ミディアム／シンプルいずれでも非表示（リンチ列はレンズ時のみ表示ロジックで解除） */
-const INVENTORY_ALWAYS_HIDDEN_IN_PRESETS: readonly InventoryColId[] = ["lynch"];
-
-const INVENTORY_MEDIUM_HIDDEN: readonly InventoryColId[] = [
+/** フル／ミディアム／シンプルいずれでも非表示（リンチ列はレンズ時のみ表示ロジックで解除。その他 CSV 外の列もデフォルト非表示） */
+const INVENTORY_ALWAYS_HIDDEN_IN_PRESETS: readonly InventoryColId[] = [
+  "netCash", // 画面幅確保のためデフォルト非表示
+  "lynch",
+  "listing",
   "research",
-  "netCash",
-  "netCps",
-  "volRatio",
-  "egrowth",
-  "eps",
-  "forecastEps",
-];
-
-const INVENTORY_SIMPLE_EXTRA_HIDDEN: readonly InventoryColId[] = [
-  "ruleOf40",
-  "fcfYield",
-  "pe",
-  "pbr",
-  "peg",
-  "trr",
+  "ebitda",
   "deviation",
   "drawdown",
+];
+
+/**
+ * ミディアム: `inventory_midiam.csv` の表示列のみ残す。
+ * 畳む追加: MCAP, 長期%, ネットC, NC/株。
+ */
+const INVENTORY_MEDIUM_HIDDEN: readonly InventoryColId[] = [
+  "mktCap",
+  "perfListed",
+  "netCash",
+  "netCps",
+];
+
+/**
+ * シンプル: `inventory_simple.csv` の表示列のみ（ミディアムに加えて畳む列）。
+ * 畳む追加: 決算まで, TRR, PBR, 予想EPS, Vol 比。
+ */
+const INVENTORY_SIMPLE_EXTRA_HIDDEN: readonly InventoryColId[] = [
+  "earnings",
+  "trr",
+  "pbr",
+  "forecastEps",
+  "volRatio",
 ];
 
 function sortedInventoryIdsEqual(a: readonly InventoryColId[], b: readonly InventoryColId[]): boolean {

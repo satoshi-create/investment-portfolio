@@ -119,7 +119,7 @@ export function InventoryTableColumnToolbar({
                   ? "border-emerald-500/45 bg-emerald-500/10 text-emerald-200"
                   : "border-border text-muted-foreground hover:bg-muted/60",
               )}
-              title="切替可能な列はすべて表示（リンチ列は常に非表示。リンチレンズON時のみ表示）"
+              title="切替可能な列を表示（「ネットC」等は画面幅確保のため非表示。リンチレンズON時のみリンチ表示）"
             >
               フル
             </button>
@@ -132,7 +132,7 @@ export function InventoryTableColumnToolbar({
                   ? "border-cyan-500/45 bg-cyan-500/10 text-cyan-200"
                   : "border-border text-muted-foreground hover:bg-muted/60",
               )}
-              title={`Research ほか ${inventoryHiddenIdsForDisplayPreset("medium", togglableIds).length} 列を非表示`}
+              title={`${inventoryHiddenIdsForDisplayPreset("medium", togglableIds).length} 列を非表示（MCAP・長期%・ネットC・NC/株。その他 CSV 外の列も非表示）`}
             >
               ミディアム
             </button>
@@ -145,7 +145,7 @@ export function InventoryTableColumnToolbar({
                   ? "border-amber-500/45 bg-amber-500/10 text-amber-100"
                   : "border-border text-muted-foreground hover:bg-muted/60",
               )}
-              title="主要指標・判定・Alpha 中心に列を絞る"
+              title="長期%・Rule of 40・FCF Yield・判定・PEG・成長%・PER・EPS・Alpha・5D・Price・Position に絞る"
             >
               シンプル
             </button>
