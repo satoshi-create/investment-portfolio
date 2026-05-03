@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { defaultProfileUserId } from "@/src/lib/authorize-signals";
 import { invalidateDashboardCacheForUser } from "@/src/lib/dashboard-api-cache";
 import { getDb, isDbConfigured } from "@/src/lib/db";
+import { patchTickerStoryHub } from "@/src/lib/ticker-story-hub-db";
 import { parseExpectationCategory } from "@/src/lib/expectation-category";
 
 export type ToggleHoldingBookmarkResult = {
@@ -56,7 +57,7 @@ export async function toggleHoldingBookmark(
 
 export type PatchHoldingMemoResult = { ok: boolean; message?: string };
 
-/** `holdings.memo`（短文メモ）。空文字は NULL にします。 */
+/** 銘柄メモ。正本は `ticker_story_hub`（`holdings.memo` は NULL 化）。 */
 export async function patchHoldingMemo(
   holdingId: string,
   memo: string | null,
@@ -73,9 +74,21 @@ export async function patchHoldingMemo(
 
   try {
     const db = getDb();
+    const tkRs = await db.execute({
+      sql: `SELECT ticker FROM holdings WHERE id = ? AND user_id = ? LIMIT 1`,
+      args: [id, uid],
+    });
+    if (tkRs.rows.length === 0) {
+      return { ok: false, message: "保有行が見つからないか、権限がありません。" };
+    }
+    const tk =
+      tkRs.rows[0] != null && tkRs.rows[0]["ticker"] != null ? String(tkRs.rows[0]["ticker"]).trim() : "";
+    if (tk.length > 0) {
+      await patchTickerStoryHub(db, uid, tk, { memo: normalized });
+    }
     const rs = await db.execute({
-      sql: `UPDATE holdings SET memo = ? WHERE id = ? AND user_id = ? RETURNING id`,
-      args: [normalized, id, uid],
+      sql: `UPDATE holdings SET memo = NULL WHERE id = ? AND user_id = ? RETURNING id`,
+      args: [id, uid],
     });
     if (rs.rows.length === 0) {
       return { ok: false, message: "保有行が見つからないか、権限がありません。" };

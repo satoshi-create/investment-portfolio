@@ -27,8 +27,8 @@ function normalizeMemo(memo: string | null | undefined): string | null {
 }
 
 /**
- * Story サイドパネル用: `memo` / `earnings_summary_note` / lynch 列を 1 文の UPDATE で更新する。
- * `patchHoldingMemo` と同様に `quantity` は見ない（保有行は id + user_id で特定）。
+ * Story サイドパネル用: 正本 `ticker_story_hub` に保存し、`holdings` の重複列は NULL に揃える。
+ * `expectation_category` のみ `holdings` に残す（保有行スコープの分類）。
  */
 export async function updateHoldingStoryHub(
   db: Client,
@@ -48,25 +48,14 @@ export async function updateHoldingStoryHub(
   const drivers = clipLynchNote(params.lynchDriversNarrative);
   const story = clipLynchNote(params.lynchStoryText);
 
-  const sets = ["memo = ?", "earnings_summary_note = ?", "lynch_drivers_narrative = ?", "lynch_story_text = ?"];
-  const args: (string | null)[] = [memo, earnings, drivers, story];
-  if (params.expectationCategory !== undefined) {
-    sets.push("expectation_category = ?");
-    args.push(params.expectationCategory);
-  }
-
   try {
-    const rs = await db.execute({
-      sql: `UPDATE holdings SET ${sets.join(", ")} WHERE id = ? AND user_id = ? RETURNING id`,
-      args: [...args, params.holdingId, params.userId],
-    });
-    if (rs.rows.length === 0) {
-      return { ok: false, code: "NOT_FOUND", message: "保有行が見つからないか、権限がありません。" };
-    }
     const tkRs = await db.execute({
       sql: `SELECT ticker FROM holdings WHERE id = ? AND user_id = ? LIMIT 1`,
       args: [params.holdingId, params.userId],
     });
+    if (tkRs.rows.length === 0) {
+      return { ok: false, code: "NOT_FOUND", message: "保有行が見つからないか、権限がありません。" };
+    }
     const tk =
       tkRs.rows[0] != null && tkRs.rows[0]["ticker"] != null ? String(tkRs.rows[0]["ticker"]).trim() : "";
     if (tk.length > 0) {
@@ -78,6 +67,26 @@ export async function updateHoldingStoryHub(
         lynchDriversNarrative: drivers,
         lynchStoryText: story,
       });
+    }
+
+    const holdSets = [
+      "memo = NULL",
+      "earnings_summary_note = NULL",
+      "lynch_drivers_narrative = NULL",
+      "lynch_story_text = NULL",
+    ];
+    const holdArgs: (string | null)[] = [];
+    if (params.expectationCategory !== undefined) {
+      holdSets.push("expectation_category = ?");
+      holdArgs.push(params.expectationCategory);
+    }
+
+    const rs = await db.execute({
+      sql: `UPDATE holdings SET ${holdSets.join(", ")} WHERE id = ? AND user_id = ? RETURNING id`,
+      args: [...holdArgs, params.holdingId, params.userId],
+    });
+    if (rs.rows.length === 0) {
+      return { ok: false, code: "NOT_FOUND", message: "保有行が見つからないか、権限がありません。" };
     }
     return { ok: true };
   } catch (e) {

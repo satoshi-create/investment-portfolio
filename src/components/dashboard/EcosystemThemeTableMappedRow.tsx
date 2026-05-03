@@ -298,12 +298,12 @@ export type EcosystemThemeTableMappedRowProps = {
   defensiveZClass: (z: number | null) => string;
   resourceSync?: { spread: number; judgment: ResourceSyncJudgment } | null;
   /**
-   * ストーリー・ハブ（StorySidePanel）: 保有 `Stock` が解決できた行のみ活性化。
-   * メモ/決算のインラインモーダルはテーマメンバー用フィールドのまま；保有メモ・lynch 系はパネルが統合ハブ。
+   * ストーリー・ハブ（StorySidePanel）: 保有 `Stock` がこのテーマの `stocks` に含まれるときは保有モードで開く。
+   * 保有だが主タグが別テーマのときは `storyStockResolved` が null になり、`onOpenThemeMemberStory` にフォールバックする。
    */
   storyStockResolved?: Stock | null;
   onOpenStory?: (stock: Stock) => void;
-  /** ウォッチのみ: テーマメンバー行を StorySidePanel（themeMember モード）で開く */
+  /** テーマウォッチ行を StorySidePanel（themeMember モード）で開く。保有行のフォールバックにも使う */
   onOpenThemeMemberStory?: (e: ThemeEcosystemWatchItem) => void;
 };
 
@@ -365,6 +365,11 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
   const okeyaPage = isOkeyaFlowThemePage(themeLabel, theme);
   const okeyaEntry = okeyaPage ? lookupOkeyaFlowEntryForTicker(e.ticker) : null;
 
+  const canOpenHoldingStory = e.inPortfolio && storyStockResolved != null && onOpenStory != null;
+  /** 主タグが別テーマの保有銘柄など、`stocks` に含まれない場合はテーマメンバー経由で同一 ticker_story_hub を編集 */
+  const canOpenThemeMemberStoryFallback =
+    onOpenThemeMemberStory != null && (!e.inPortfolio || (e.inPortfolio && storyStockResolved == null));
+
   return (
     <>
       {visibleColumnIds.map((colId, colIdx) => {
@@ -415,35 +420,31 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                         {formatTickerForDisplay(e.ticker, e.instrumentKind)}
                       </span>
                     </EcosystemStructuralInsightHoverWrap>
-                    {e.inPortfolio && onOpenStory != null ? (
+                    {canOpenHoldingStory ? (
                       <button
                         type="button"
-                        disabled={storyStockResolved == null}
                         onClick={() => {
                           if (storyStockResolved != null) onOpenStory(storyStockResolved);
                         }}
                         className={cn(
-                          "shrink-0 rounded-md p-1 transition-all",
-                          storyStockResolved != null
-                            ? "opacity-0 group-hover:opacity-100 hover:bg-teal-500/20"
-                            : "cursor-not-allowed opacity-40",
+                          "shrink-0 rounded-md p-1 transition-all opacity-0 group-hover:opacity-100 hover:bg-teal-500/20",
                         )}
-                        title={
-                          storyStockResolved != null
-                            ? "ストーリー・ハブを開く"
-                            : "保有と銘柄データを結び付けられません（一覧の再読み込み後にもう一度お試しください）"
-                        }
-                        aria-disabled={storyStockResolved == null}
+                        title="ストーリー・ハブを開く（保有ビュー）"
                       >
                         <BookOpen size={14} className="shrink-0" aria-hidden />
                       </button>
-                    ) : null}
-                    {!e.inPortfolio && onOpenThemeMemberStory != null ? (
+                    ) : canOpenThemeMemberStoryFallback ? (
                       <button
                         type="button"
                         onClick={() => onOpenThemeMemberStory(e)}
-                        className="shrink-0 rounded-md p-1 transition-all opacity-0 group-hover:opacity-100 hover:bg-teal-500/20"
-                        title="ストーリー・ハブ（テーマウォッチ）を開く"
+                        className={cn(
+                          "shrink-0 rounded-md p-1 transition-all opacity-0 group-hover:opacity-100 hover:bg-teal-500/20",
+                        )}
+                        title={
+                          e.inPortfolio
+                            ? "ストーリー・ハブ（このページの保有一覧に無いが保有中。テーマウォッチ経由で編集・正本は同一）"
+                            : "ストーリー・ハブ（テーマウォッチ）を開く"
+                        }
                       >
                         <BookOpen size={14} className="shrink-0" aria-hidden />
                       </button>

@@ -543,7 +543,7 @@ export function StorySidePanel(props: StorySidePanelProps) {
             <div className="flex flex-col gap-5">
               <section className={cn("p-3", sectionFrame)}>
                 <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                  銘柄メモ（{variant === "themeMember" ? "theme_ecosystem_members.memo" : "holdings.memo"}）
+                  銘柄メモ（ticker_story_hub）
                 </h3>
                 <HoldingOrEcosystemMemoTextarea
                   id="story-modal-holding-memo"
@@ -558,8 +558,7 @@ export function StorySidePanel(props: StorySidePanelProps) {
 
               <section className={cn("p-3", sectionFrame)}>
                 <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300">
-                  決算要約（
-                  {variant === "themeMember" ? "theme_ecosystem_members.earnings_summary_note" : "earnings_summary_note"}）
+                  決算要約（ticker_story_hub.earnings_summary_note）
                 </h3>
                 <div className="mb-2 inline-flex gap-1 rounded-md border border-stone-300/60 p-0.5 dark:border-stone-700" role="tablist">
                   <button

@@ -5,7 +5,7 @@ import type { Client } from "@libsql/client";
 import { normalizeEcosystemMemberField } from "@/src/lib/ecosystem-field-meta";
 import { EARNINGS_SUMMARY_NOTE_MAX_LEN } from "@/src/lib/earnings-summary-note-meta";
 import { ecosystemTickerShouldBeUnlisted } from "@/src/lib/ecosystem-ticker-hygiene";
-import { upsertTickerStoryHub } from "@/src/lib/ticker-story-hub-db";
+import { patchTickerStoryHub, type TickerStoryHubFieldPatch } from "@/src/lib/ticker-story-hub-db";
 import type { LynchCategory } from "@/src/types/investment";
 
 export class EcosystemMemberAuthError extends Error {
@@ -40,7 +40,7 @@ export type UpdateEcosystemMemberInput = {
   role?: string | null;
   isMajorPlayer?: boolean;
   companyName?: string | null;
-  /** DB `memo`（短文）。空文字は NULL */
+  /** ストーリー正本 `ticker_story_hub.memo`（短文）。空文字は NULL */
   memo?: string | null;
   /** DB `listing_date`（上場日・YYYY-MM-DD）。undefined=変更なし null=クリア */
   listingDate?: string | null;
@@ -50,11 +50,11 @@ export type UpdateEcosystemMemberInput = {
   listingPrice?: number | null;
   /** DB `field`（分類タグ）。undefined=変更なし null=クリア */
   ecosystemField?: string | null;
-  /** DB `earnings_summary_note`。undefined=変更なし null=クリア */
+  /** 正本 `ticker_story_hub.earnings_summary_note`。undefined=変更なし null=クリア */
   earningsSummaryNote?: string | null;
-  /** DB `lynch_drivers_narrative`（Story パネル永続化 JSON+叙述）。undefined=変更なし null=クリア */
+  /** 正本 `ticker_story_hub.lynch_drivers_narrative`。undefined=変更なし null=クリア */
   lynchDriversNarrative?: string | null;
-  /** DB `lynch_story_text`。undefined=変更なし null=クリア */
+  /** 正本 `ticker_story_hub.lynch_story_text`。undefined=変更なし null=クリア */
   lynchStoryText?: string | null;
   /** DB `expectation_category`（手動リンチ分類）。undefined=変更なし null=クリア */
   expectationCategory?: LynchCategory | null;
@@ -207,6 +207,30 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
 
   const nextExpectationCategory =
     input.expectationCategory === undefined ? undefined : input.expectationCategory;
+
+  const storyPatch =
+    nextMemo !== undefined ||
+    nextEarningsSummary !== undefined ||
+    nextLynchDriversNarrative !== undefined ||
+    nextLynchStoryText !== undefined;
+
+  if (storyPatch) {
+    const tkr = await db.execute({
+      sql: `SELECT ticker FROM theme_ecosystem_members WHERE id = ? AND theme_id = ? LIMIT 1`,
+      args: [memberId, input.themeId],
+    });
+    const ticker =
+      tkr.rows[0] != null && tkr.rows[0]["ticker"] != null ? String(tkr.rows[0]["ticker"]).trim() : "";
+    if (ticker.length > 0) {
+      const hubPatch: TickerStoryHubFieldPatch = {};
+      if (nextMemo !== undefined) hubPatch.memo = nextMemo;
+      if (nextEarningsSummary !== undefined) hubPatch.earningsSummaryNote = nextEarningsSummary;
+      if (nextLynchDriversNarrative !== undefined) hubPatch.lynchDriversNarrative = nextLynchDriversNarrative;
+      if (nextLynchStoryText !== undefined) hubPatch.lynchStoryText = nextLynchStoryText;
+      await patchTickerStoryHub(db, input.userId, ticker, hubPatch);
+    }
+  }
+
   const sets: string[] = [];
   const args: (string | number | null)[] = [];
   if (nextRole !== undefined) {
@@ -220,10 +244,6 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
   if (nextMajor !== undefined) {
     sets.push(`is_major_player = ?`);
     args.push(nextMajor);
-  }
-  if (nextMemo !== undefined) {
-    sets.push(`memo = ?`);
-    args.push(nextMemo);
   }
   if (nextListingDate !== undefined) {
     sets.push(`listing_date = ?`);
@@ -241,21 +261,17 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
     sets.push(`field = ?`);
     args.push(nextField);
   }
-  if (nextEarningsSummary !== undefined) {
-    sets.push(`earnings_summary_note = ?`);
-    args.push(nextEarningsSummary);
-  }
-  if (nextLynchDriversNarrative !== undefined) {
-    sets.push(`lynch_drivers_narrative = ?`);
-    args.push(nextLynchDriversNarrative);
-  }
-  if (nextLynchStoryText !== undefined) {
-    sets.push(`lynch_story_text = ?`);
-    args.push(nextLynchStoryText);
-  }
   if (nextExpectationCategory !== undefined) {
     sets.push(`expectation_category = ?`);
     args.push(nextExpectationCategory);
+  }
+  if (storyPatch) {
+    sets.push(
+      "memo = NULL",
+      "earnings_summary_note = NULL",
+      "lynch_drivers_narrative = NULL",
+      "lynch_story_text = NULL",
+    );
   }
   if (sets.length === 0) return;
 
@@ -263,32 +279,6 @@ export async function updateEcosystemMember(db: Client, input: UpdateEcosystemMe
     sql: `UPDATE theme_ecosystem_members SET ${sets.join(", ")} WHERE id = ? AND theme_id = ?`,
     args: [...args, memberId, input.themeId],
   });
-
-  const storyPatch =
-    nextMemo !== undefined ||
-    nextEarningsSummary !== undefined ||
-    nextLynchDriversNarrative !== undefined ||
-    nextLynchStoryText !== undefined;
-  if (storyPatch) {
-    const snap = await db.execute({
-      sql: `SELECT ticker, memo, earnings_summary_note, lynch_drivers_narrative, lynch_story_text
-            FROM theme_ecosystem_members WHERE id = ? AND theme_id = ? LIMIT 1`,
-      args: [memberId, input.themeId],
-    });
-    const sr = snap.rows[0] as Record<string, unknown> | undefined;
-    const ticker = sr != null && sr["ticker"] != null ? String(sr["ticker"]).trim() : "";
-    if (ticker.length > 0) {
-      await upsertTickerStoryHub(db, {
-        userId: input.userId,
-        ticker,
-        memo: sr != null && sr["memo"] != null ? String(sr["memo"]) : null,
-        earningsSummaryNote: sr != null && sr["earnings_summary_note"] != null ? String(sr["earnings_summary_note"]) : null,
-        lynchDriversNarrative:
-          sr != null && sr["lynch_drivers_narrative"] != null ? String(sr["lynch_drivers_narrative"]) : null,
-        lynchStoryText: sr != null && sr["lynch_story_text"] != null ? String(sr["lynch_story_text"]) : null,
-      });
-    }
-  }
 }
 
 export async function deleteEcosystemMember(
