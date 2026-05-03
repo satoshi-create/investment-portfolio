@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { BookOpen, CalendarClock, Gem, Star } from "lucide-react";
+import { BookOpen, CalendarClock, ChevronDown, Gem, Star, ArrowRight, Wind, Zap } from "lucide-react";
 
 import { JudgmentBadge } from "@/src/components/dashboard/JudgmentBadge";
 import { RegionMarketBadge } from "@/src/components/dashboard/RegionMarketBadge";
@@ -59,6 +59,7 @@ import { lynchAlignmentHintLines } from "@/src/lib/lynch-alignment-hints";
 import { getEffectiveLynchCategoryForWatchItem } from "@/src/lib/lynch-display";
 import { extractChipLabelFromObservationNotes } from "@/src/lib/ecosystem-observation-notes";
 import { isMagnificentArchitectsThemePage } from "@/src/lib/magnificent-architects-theme";
+import { isOkeyaFlowThemePage, lookupOkeyaFlowEntryForTicker } from "@/src/lib/okeya-flow-theme";
 import type {
   InvestmentThemeRecord,
   ResourceSyncJudgment,
@@ -361,6 +362,8 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
 
   const magnificentPage = isMagnificentArchitectsThemePage(themeLabel, theme);
   const maChipLabel = extractChipLabelFromObservationNotes(e.observationNotes);
+  const okeyaPage = isOkeyaFlowThemePage(themeLabel, theme);
+  const okeyaEntry = okeyaPage ? lookupOkeyaFlowEntryForTicker(e.ticker) : null;
 
   return (
     <>
@@ -489,6 +492,55 @@ export function EcosystemThemeTableMappedRow(props: EcosystemThemeTableMappedRow
                     ) : null}
                   </div>
                   <EcosystemStructuralInsightExpandable e={e} />
+                  {okeyaEntry ? (
+                    <details className="mt-2 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] open:[&_.okeya-flow-chevron]:rotate-180 dark:bg-emerald-500/[0.08]">
+                      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900 dark:text-emerald-100 select-none [&::-webkit-details-marker]:hidden">
+                        <ChevronDown
+                          className="okeya-flow-chevron h-3.5 w-3.5 shrink-0 text-emerald-700 opacity-80 transition-transform duration-200 dark:text-emerald-300"
+                          aria-hidden
+                        />
+                        <span>桶屋フロー</span>
+                        <span className="font-normal normal-case tracking-normal text-muted-foreground">
+                          （風 → つながり → 桶屋）
+                        </span>
+                      </summary>
+                      <div
+                        className="border-t border-emerald-500/20 px-2.5 pb-2 pt-1.5 text-[11px] leading-relaxed text-foreground/90"
+                        aria-label="桶屋フロー（因果の説明）"
+                      >
+                        <div className="flex items-start gap-1.5">
+                          <Wind
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-300"
+                            aria-hidden
+                          />
+                          <div>
+                            <span className="font-bold text-sky-700 dark:text-sky-300">風</span>
+                            <span className="text-muted-foreground"> · </span>
+                            <span>{okeyaEntry.wind}</span>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 flex items-start gap-1.5 pl-0.5 text-muted-foreground">
+                          <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                          <div>
+                            <span className="font-bold text-foreground/85">つながり</span>
+                            <span> · </span>
+                            <span className="text-foreground/88">{okeyaEntry.flow}</span>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 flex items-start gap-1.5">
+                          <Zap
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300"
+                            aria-hidden
+                          />
+                          <div>
+                            <span className="font-bold text-amber-700 dark:text-amber-300">桶屋</span>
+                            <span className="text-muted-foreground"> · </span>
+                            <span>{okeyaEntry.tubMaker}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+                  ) : null}
                   {e.isUnlisted ? (
                     <div className="flex flex-wrap items-center gap-1">
                       {e.estimatedIpoDate ? (

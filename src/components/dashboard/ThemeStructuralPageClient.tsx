@@ -196,6 +196,10 @@ import {
   MAGNIFICENT_ARCHITECTS_THEME_QUERY_NAME,
   MAGNIFICENT_ARCHITECTS_THEME_SLUG,
 } from "@/src/lib/magnificent-architects-theme";
+import {
+  OKEYA_FLOW_THEME_QUERY_NAME,
+  OKEYA_FLOW_THEME_SLUG,
+} from "@/src/lib/okeya-flow-theme";
 import { JtcRefactoringCockpitPanel } from "@/src/components/dashboard/JtcRefactoringCockpitPanel";
 
 const DEFAULT_USER_ID = defaultProfileUserId();
@@ -346,6 +350,13 @@ function mapThemeLabelForQuery(raw: string): {
       query: MAGNIFICENT_ARCHITECTS_THEME_QUERY_NAME,
       display: MAGNIFICENT_ARCHITECTS_THEME_QUERY_NAME,
       slug: MAGNIFICENT_ARCHITECTS_THEME_SLUG,
+    };
+  }
+  if (s.toLowerCase() === OKEYA_FLOW_THEME_SLUG || s === OKEYA_FLOW_THEME_QUERY_NAME) {
+    return {
+      query: OKEYA_FLOW_THEME_QUERY_NAME,
+      display: OKEYA_FLOW_THEME_QUERY_NAME,
+      slug: OKEYA_FLOW_THEME_SLUG,
     };
   }
   return { query: s, display: s, slug: s };

@@ -27,8 +27,6 @@ export function ThemesNavigationSection(props: {
   const { data } = useDashboardData();
   const hubStocks = data?.stocks ?? [];
 
-  if (themes.length === 0) return null;
-
   const themesForHub = themes.filter((t) => (t.name ?? "").trim() !== HIDDEN_THEME_HUB_CARD);
 
   return (
@@ -76,6 +74,11 @@ export function ThemesNavigationSection(props: {
         </div>
       </div>
 
+      {themesForHub.length === 0 ? (
+        <p className="mt-4 text-xs text-muted-foreground leading-relaxed">
+          登録テーマがまだありません。上部のショートカットから Research を続けられます。
+        </p>
+      ) : (
       <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-start">
         <div className="shrink-0 lg:w-[min(100%,280px)]">
           <LynchAllocationPiePanel stocks={hubStocks} bare className="rounded-xl border border-border bg-card/50 px-3 py-3" />
@@ -127,6 +130,7 @@ export function ThemesNavigationSection(props: {
         })}
         </div>
       </div>
+      )}
     </section>
   );
 }

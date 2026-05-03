@@ -131,6 +131,10 @@ import {
   MOBILITY_REFACTORING_THEME_SLUG,
 } from "@/src/lib/mobility-refactoring-theme";
 import {
+  OKEYA_FLOW_THEME_QUERY_NAME,
+  OKEYA_FLOW_THEME_SLUG,
+} from "@/src/lib/okeya-flow-theme";
+import {
   DEFAULT_ECOSYSTEM_WATCHLIST_COLUMN_ORDER,
   loadEcosystemWatchlistColumnOrder,
   saveEcosystemWatchlistColumnOrder,
@@ -281,6 +285,13 @@ function mapThemeLabelForQuery(raw: string): {
       query: MOBILITY_REFACTORING_THEME_QUERY_NAME,
       display: MOBILITY_REFACTORING_THEME_QUERY_NAME,
       slug: MOBILITY_REFACTORING_THEME_SLUG,
+    };
+  }
+  if (s.toLowerCase() === OKEYA_FLOW_THEME_SLUG || s === OKEYA_FLOW_THEME_QUERY_NAME) {
+    return {
+      query: OKEYA_FLOW_THEME_QUERY_NAME,
+      display: OKEYA_FLOW_THEME_QUERY_NAME,
+      slug: OKEYA_FLOW_THEME_SLUG,
     };
   }
   return { query: s, display: s, slug: s };
